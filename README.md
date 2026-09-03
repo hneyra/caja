@@ -1,1 +1,64 @@
-# caja
+# `caja`
+
+Ordenes de cobro, recibo, turno, arqueo, cierre y medios de pago. **No sabe que es un
+tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
+
+> **Todavia no hay una sola linea de codigo de negocio, y este README lo dice antes que nada.**
+> Lo que hay es el **descriptor de infraestructura**: como se desplegaria este sistema el dia que
+> exista. El codigo llega en la etapa 5 de [ADR-0029](https://github.com/hneyra/infrastructure/blob/main/docs/30-arquitectura/adr/ADR-0029-cuatro-sistemas-separados.md).
+
+## Que hay hoy, y que falta
+
+| Pieza | Estado |
+|---|---|
+| `infrastructure/` — el descriptor (ADR-0031 §2) | **Existe y verifica**: `yarn verificar` en verde, sin Pulumi, sin token y sin cluster |
+| `.github/workflows/` — su CI | **Existe**, y por ahora **solo verifica el descriptor**. Cuando haya codigo se le anade su trabajo |
+| `docs/30-arquitectura/adr/` | **Existe**, con 0 ADR propio(s) y su indice ⚠ ver la nota de abajo |
+| `backend/` — el codigo | **NO existe.** Etapa 5 |
+| `docs/40-datos/baselines/V1__baseline.sql` — su esquema | **NO esta aqui todavia.** Generado y verificado, vive en [`sgtm/docs/40-datos/baselines/caja/`](https://github.com/hneyra/sgtm/blob/migracion-a-microservicios/docs/40-datos/baselines/caja/V1__baseline.sql) hasta que la extraccion lo traiga |
+| Su frontend (`caja-web`, ADR-0030 §1) | **NO existe** |
+| La imagen `ghcr.io/hneyra/kamayuk-caja` | **NO existe.** El `Deployment` del descriptor la nombra igual: es correcto, y en esta etapa no se despliega nada |
+
+## El descriptor
+
+```bash
+cd infrastructure
+yarn install
+yarn verificar          # lint, tipos y pruebas. Sin Pulumi, sin token y sin cluster
+```
+
+Declara **su base y sus roles**, **su Deployment**, **su Job de migracion**, **sus
+rutas bajo su prefijo `caja/`**, **su egreso**, sus alertas, su panel y su inventario de claves.
+No declara la etiqueta de su imagen: la pone `infrastructure`, y es lo que hace que una
+liberacion normal no sea un `pulumi up` (ADR-0011 §5).
+
+**Su egreso, que es su grafo de dependencias:**
+
+```
+caja  ──▶  rentas
+```
+
+Su unico egreso es a `rentas`, y **no es para preguntar**: es el `PagoRegistrado` que publica al
+cobrar, porque **la imputacion es de rentas** (ADR-0026 §2). Si Caja imputara, la regla del
+Codigo Tributario estaria escrita dos veces, y la que decidiera de verdad acabaria siendo la que
+nadie recuerda que existe.
+
+**Ningun ADR propio todavia**, y es correcto que se vea asi: lo que la caja hace lo deciden dos
+que no son suyos. El primero propio llegara con **D-17** —a quien se le cobra lo que no es
+tributo—.
+
+## Lo que este repositorio NO decide
+
+- **La etiqueta de su imagen.** La fija `infrastructure` al componer.
+- **Su namespace ni sus `PriorityClass`.** Son de alcance de cluster.
+- **Como se sella un valor normativo.** Eso es de `normativa`; aqui se consume un conjunto ya
+  sellado.
+- **Si su descriptor se aplica.** `infrastructure` lo audita con las mismas reglas que audita los
+  suyos y **se niega** si incumple: una ruta fuera del prefijo, un `Deployment` sin limites, un
+  `Secret` en claro o privilegios sobre la base de otro sistema.
+
+## De donde viene
+
+Extraido de [`sgtm`](https://github.com/hneyra/sgtm/tree/migracion-a-microservicios), que **no se borra**: es el archivo historico y la unica copia con
+`git log`. El inventario del corte —que tabla va a que repositorio, y por que— esta en
+[GOB-05](https://github.com/hneyra/sgtm/blob/migracion-a-microservicios/docs/00-gobierno/inventario-del-corte.md).
