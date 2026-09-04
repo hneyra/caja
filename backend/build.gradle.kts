@@ -7,15 +7,15 @@
 tasks.register("verificarAislamiento") {
     group = "verification"
     description =
-        "Aislamiento multi-tenant: RLS, los roles y la trampa del superusuario. " +
-            "Bloqueante. Requiere Docker."
-    dependsOn(":kamayuk-esquema:test")
+        "Aislamiento multi-tenant: la prueba del esquema y la del pool. " +
+            "Bloqueante. Requiere PostgreSQL 16."
+    dependsOn(":kamayuk-caja-esquema:test", ":kamayuk-caja-plataforma:test")
 }
 
 tasks.register("verificarArquitectura") {
     group = "verification"
     description =
-        "Reglas de ArchUnit, escaner del codigo fuente, aserciones y frontera de sistema. " +
-            "Bloqueante."
-    dependsOn(":kamayuk-verificaciones:test")
+        "Reglas de ArchUnit, escaner del codigo fuente, aserciones, frontera de sistema y " +
+            "limites de Spring Modulith. Bloqueante."
+    dependsOn(":kamayuk-caja-aplicacion:test")
 }

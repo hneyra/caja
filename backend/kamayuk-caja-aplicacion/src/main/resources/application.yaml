@@ -1,0 +1,131 @@
+spring:
+  application:
+    name: sgtm
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # La aplicacion se conecta SIEMPRE como sgtm_app: sin DDL, sin BYPASSRLS,
+    # sin ser propietaria de las tablas y sin DELETE (ARQ-03 §4). Las
+    # credenciales de sgtm_owner solo existen en el proceso de migracion.
+    url: ${SGTM_DB_URL}
+    username: ${SGTM_DB_USUARIO:sgtm_app}
+    password: ${SGTM_DB_CLAVE}
+  flyway:
+    # La aplicacion NO migra al arrancar. Las migraciones viven en kamayuk-caja-esquema y
+    # las aplica el migrador del despliegue, como sgtm_owner, antes de que este
+    # proceso arranque (kamayuk.caja.esquema.Migrador).
+    enabled: false
+
+# Lo que este sistema necesita saber para hacer su trabajo, y NADA MAS.
+#
+# No hay escala ni modo de redondeo, y no es un olvido: la caja no calcula. Cobra el
+# importe que la orden trae, con la fecha a la que la orden dice que esta. El dia que
+# aparezca aqui una politica de redondeo, la caja habra empezado a decidir cifras — que
+# es lo que ARQ-01 §3.8 lleva prohibiendo desde el monolito y lo que ADR-0026 §1 vuelve
+# a decir al otro lado de la frontera.
+kamayuk:
+  caja:
+    # A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por nombre
+    # de sistema y no una direccion unica: la caja no sabe cuantos sistemas hay, y el
+    # dia que aparezca `mercados` tiene que ser una linea de configuracion y no un
+    # despliegue de la caja.
+    # Entrecomillado: el valor lleva dos puntos dentro y YAML lo leeria como un mapa.
+    origenes: "${KAMAYUK_CAJA_ORIGENES:{rentas: 'http://rentas:8080/rentas/api/v1'}}"
+    # La credencial de servicio con que el publicador llama. El publicador corre SIN
+    # usuario delante -no hay peticion de la que sacar un token-, asi que sin esto la
+    # llamada sale sin credencial y el destino la rechaza. Es deliberado: ADR-0028 §2
+    # dice como se cierra de verdad, con un token delegado por RFC 8693, y ESO NO ESTA
+    # CONSTRUIDO (hueco declarado de P5D).
+    credencial: ${KAMAYUK_CAJA_CREDENCIAL:}
+    entrega:
+      # Cuantas veces se reintenta antes de dar el pago por MUERTO. Un evento muerto es
+      # dinero cobrado sin registrar y dispara alerta a una persona; con este numero
+      # demasiado bajo, un despliegue de dos minutos del sistema de origen despierta a
+      # alguien de madrugada por nada.
+      intentos: ${KAMAYUK_CAJA_ENTREGA_INTENTOS:8}
+      intervalo: ${KAMAYUK_CAJA_ENTREGA_INTERVALO:PT10S}
+    conciliacion:
+      # QUIEN recibe el aviso cuando hay dinero cobrado sin registrar (ADR-0026 §4).
+      # SIN VALOR POR OMISION A PROPOSITO: la aplicacion no arranca sin las dos
+      # (ResponsableDeLaConciliacion). Una alerta sin destinatario acaba en un panel
+      # que nadie mira, y lo que ADR-0026 pide no es «una alerta» sino «una alerta a
+      # una persona con nombre».
+      responsable: ${KAMAYUK_CAJA_RESPONSABLE}
+      canal: ${KAMAYUK_CAJA_CANAL}
+
+# La sonda de vida y las metricas, y sin detalles en la primera. `health` responde
+# si el proceso esta arriba y llega a la base, y con `show-details: never` no dice
+# cual es la base, ni su version, ni que componentes tiene dentro. `prometheus`
+# expone contadores y medidores —peticiones, JVM, conexiones a la base—, nunca
+# datos de negocio: no hay un padron ahi dentro (issue #156). Un `include: "*"`
+# aqui publicaria la configuracion entera —con la URL de la base— delante de la
+# cadena de seguridad, y SeguridadWeb exige nombrar cada endpoint uno por uno.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: web
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # El emisor no tiene valor por omision, y eso ES la decision: sin la variable
+          # puesta, la aplicacion no arranca. Un emisor por omision dejaria un despliegue
+          # que atiende peticiones sin poder validar un token de verdad, que es la
+          # situacion que ADR-0005 excluye y que nadie ve hasta que la mira.
+          #
+          # Va en el perfil web y no arriba porque el perfil batch no atiende HTTP: no
+          # hay peticion que autenticar, y exigirle el emisor obligaria a que la maquina
+          # que corre una determinacion masiva de madrugada pudiera ver Keycloak.
+          issuer-uri: ${SGTM_OIDC_EMISOR}
+          # El emisor es una identidad, no una direccion de red, y en un despliegue
+          # con contenedores las dos no coinciden: el navegador va a Keycloak por el
+          # nombre publico y el backend lo alcanza por el nombre interno. Si se usara
+          # el publico para las dos cosas, el backend intentaria descargar el JWKS de
+          # una direccion que dentro de su contenedor es el mismo, y todo token seria
+          # invalido por un motivo que no se parece en nada a su causa.
+          #
+          # `issuer-uri` sigue siendo el publico —es lo que se compara con el `iss`
+          # del token, y es lo que hace que un token de otro realm no valga—; lo que
+          # cambia es de donde se traen las claves.
+          jwk-set-uri: ${SGTM_OIDC_JWKS:${SGTM_OIDC_EMISOR}/protocol/openid-connect/certs}
+
+# El realm del CIUDADANO (ADR-0020). Emisor distinto del de funcionarios, y por eso
+# no cuelga de `spring.security.oauth2.resourceserver`: esa rama es la que monta la
+# autoconfiguracion, y la autoconfiguracion monta UNO. Aqui hacen falta dos cadenas,
+# cada una con su decodificador apuntando a un solo emisor.
+#
+# SIN valor por omision, y a diferencia del de funcionarios eso NO impide arrancar:
+# una instalacion sin portal del contribuyente es legitima. Lo que hace la cadena del
+# portal cuando esto esta vacio es NEGARLO TODO —no dejar de registrarse—, porque si
+# no se registrara, `/api/v1/portal/**` caeria en la cadena general y quedaria servido
+# contra el emisor de funcionarios: la mezcla exacta que las dos cadenas impiden.
+sgtm:
+  portal:
+    oidc:
+      emisor: ${SGTM_PORTAL_OIDC_EMISOR:}
+      # Mismo reparto que arriba: el emisor es una identidad y se compara con el `iss`
+      # del token; el JWKS es una direccion de red, y dentro del cluster no coincide
+      # con el nombre publico.
+      jwks: ${SGTM_PORTAL_OIDC_JWKS:}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: batch
+  main:
+    web-application-type: none

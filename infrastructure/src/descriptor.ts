@@ -122,6 +122,30 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                   // no atiende a nadie (ADR-0005).
                   { name: "SGTM_OIDC_EMISOR", value: `https://${e.dominio}/keycloak/realms/sgtm` },
                   { name: "SGTM_OIDC_JWKS", value: `https://${e.dominio}/keycloak/realms/sgtm/protocol/openid-connect/certs` },
+                  // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
+                  // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
+                  // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
+                  // despliegue de la caja.
+                  {
+                    name: "KAMAYUK_CAJA_ORIGENES",
+                    value: `{rentas: 'http://rentas:8080/rentas/api/v1'}`,
+                  },
+                  // FALTA AQUI, Y ES UN HUECO DECLARADO DE P5D: `KAMAYUK_CAJA_RESPONSABLE` y
+                  // `KAMAYUK_CAJA_CANAL`, que dicen QUIEN recibe el aviso cuando hay dinero
+                  // cobrado sin registrar (ADR-0026 §4). La aplicacion NO ARRANCA sin las dos
+                  // —`ResponsableDeLaConciliacion` lo comprueba al construirse— y eso esta
+                  // medido; lo que no esta es de donde las saca este descriptor.
+                  //
+                  // No se ponen con un valor de relleno a proposito: un «responsable: pendiente»
+                  // haria arrancar la instalacion con la guarda satisfecha y sin nadie detras,
+                  // que es exactamente lo que la guarda existe para impedir. Y no se pueden sacar
+                  // del ambiente porque `Ambiente` no tiene campo para ellas: anadirselo es un
+                  // cambio en `infrastructure`, que es otro repositorio.
+                  //
+                  // Consecuencia, dicha aqui y no descubierta al desplegar: con este descriptor
+                  // tal cual, el pod de `caja` NO LEVANTA. Es el estado correcto —mejor eso que
+                  // una caja cobrando sin responsable— y es lo primero que hay que cerrar antes
+                  // de desplegar.
                 ],
                 ...(atiendeHttp ? { ports: [{ name: "http", containerPort: 8080 }] } : {}),
                 resources: RECURSOS,

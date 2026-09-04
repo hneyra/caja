@@ -11,51 +11,77 @@ qué tabla fue a qué repositorio y por qué, [GOB-05](https://github.com/hneyra
 
 ## Qué hay hoy, medido y no supuesto
 
+Desde **P5D** (2026-09-04) este repositorio tiene su negocio dentro. Lo que cada pieza vale está
+medido en [`docs/00-gobierno/P5D-extraccion.md`](docs/00-gobierno/P5D-extraccion.md); esta tabla es
+el resumen.
+
 | Pieza | Estado |
 |---|---|
-| `infrastructure/` — el descriptor de despliegue | **Existe.** `yarn verificar` en verde, sin Pulumi, sin token y sin clúster |
-| `backend/kamayuk-esquema` | **Existe el módulo y su prueba de aislamiento (9 pruebas). Cero migraciones**: el baseline es [ADR-0032](https://github.com/hneyra/infrastructure/blob/main/docs/30-arquitectura/adr/ADR-0032-el-esquema-nace-en-baseline.md) y todavía no está aquí |
-| `backend/kamayuk-verificaciones` | **Existe.** `verificarArquitectura` corre **79 pruebas** contra las muestras de la librería común, con cero clases de negocio |
-| `docs/30-arquitectura/adr/` | **Existe, y sin ningún ADR propio.** Es correcto que se vea así: lo que la caja hace lo deciden dos ADR que no son suyos |
-| **Código de negocio** | **NO existe. Ni una clase.** Llega en la etapa 5 |
-| Su esquema (`V1__baseline.sql`) | **NO está aquí.** Vive en `sgtm/docs/40-datos/baselines/caja/` hasta que la extracción lo traiga |
+| `backend/kamayuk-caja-esquema` | **`V1__baseline.sql`** (23 tablas) y **`V2__ordenes_de_cobro_y_outbox.sql`**. El baseline se corrigió al traerlo: le sobraban **ocho funciones y cinco dominios** de otros sistemas, y una de las ocho hacía morir la migración sobre una base sin `unaccent` |
+| `backend/kamayuk-caja-caja` | El contexto acotado entero: orden de cobro, ventanilla, recibo, turno, cierre, arqueo, tasas y **el buzón de salida** |
+| `backend/kamayuk-caja-{dominio-compartido, plataforma}` | Copias de las de `rentas`, con el paquete renombrado. Ver el hueco de las cuatro copias |
+| `backend/kamayuk-caja-aplicacion` | Ensambla y aloja las barreras |
+| `infrastructure/` — el descriptor | `yarn verificar` en verde. **Le falta nombrar al responsable de la conciliación**, y con eso el pod no levanta: es un hueco declarado, no un olvido |
+| `docs/30-arquitectura/adr/` | Sin ningún ADR propio, y sigue siendo correcto: lo que la caja hace lo deciden ADR-0026 y ADR-0029 |
 | Su frontend (`caja-web`) e imagen | **NO existen** |
 
-**Las barreras se construyeron primero, a propósito.** Hoy este repositorio es exactamente eso:
-dos verificaciones bloqueantes esperando al negocio que van a vigilar.
+**Tres roles y cero extensiones.** `crear-roles.sql` declara `sgtm_owner`, `sgtm_app` y
+`sgtm_readonly` — `rol_carga_parametros` es de `normativa` y aquí no recibe un solo `GRANT`— y
+**ninguna extensión de PostgreSQL**. No es limpieza: una ventanilla cuya base necesita PostGIS no se
+levanta en cualquier sitio, y la caja tiene que poder correr en el motor más simple que exista.
 
 ## Lo que este repositorio NO hace
 
-- **No imputa el abono a la deuda.** Eso es `rentas`
-  ([ADR-0026](https://github.com/hneyra/rentas/blob/main/docs/30-arquitectura/adr/ADR-0026-el-camino-del-dinero.md)):
-  aquí se cobra contra una orden y se avisa; quién extingue qué parte de la deuda lo decide el
-  libro, no la ventanilla.
-- **No conoce tributos, ni fases, ni conceptos.** Recibe una orden de cobro con su importe.
-  Perder eso sería perder lo único que le permite cobrar lo que no es tributo.
-- **No decide su primer ADR todavía.** Llegará con **D-17**: a quién se le cobra un puesto de
-  mercado o un nicho, que puede no estar en el padrón de contribuyentes. **La numeración no se
-  reinicia**: el ADR nuevo es el **0033**, no el 0001.
+- **No imputa el abono a la deuda.** Eso es `rentas` (ADR-0026 §2): aquí se cobra contra una orden y
+  se publica el pago; qué parte de la deuda extingue lo decide el libro. Si la caja imputara, la
+  regla del art. 31 del Código Tributario estaría escrita dos veces.
+- **No conoce tributos, ni fases, ni conceptos.** `OrdenDeCobro` no tiene un campo `ejercicio` ni
+  `tributo`, y `PeticionDeOrdenDeCobro` tampoco. **Ésa es la definición práctica de la frontera**: el
+  día que uno de los dos gane ese campo, la caja habrá dejado de servir para cobrar un puesto de
+  mercado.
+- **No le pregunta nada a nadie para cobrar.** `kamayuk-caja-caja` no declara
+  `implementation(project(...))` de ningún otro contexto y `CajaController` no inyecta un solo puerto
+  hacia otro sistema. Es lo que hace cierto que la ventanilla cobre con `rentas` apagado.
+- **No decide D-17 ni D-20.** Ver abajo.
 - **No decide la etiqueta de su imagen, ni su namespace, ni sus `PriorityClass`.** Las pone `infrastructure`.
 - **No tiene `git log` de su historia.** La tiene `sgtm`, que no se borra.
 
 ## Estructura
 
 ```
-backend/                Gradle. Java 25, Spring Boot 4 cuando llegue el negocio
-  kamayuk-esquema/      migraciones (hoy ninguna) y la prueba de aislamiento
-  kamayuk-verificaciones/  donde corren las barreras. Ve a todos los demás módulos
-infrastructure/         el descriptor de despliegue en TypeScript, con yarn
-docs/                   los ADR que enlaza, hallazgos de RLS y esta guía de desarrollo
+backend/                        Gradle. Java 25, Spring Boot 4
+  kamayuk-caja-dominio-compartido/  objetos de valor y contexto de tenant
+  kamayuk-caja-esquema/             el baseline, V2, el migrador y la prueba de aislamiento
+  kamayuk-caja-plataforma/          del token al SET LOCAL, auditoría, documentos, borde HTTP
+  kamayuk-caja-caja/                EL contexto acotado. Se llama igual que el sistema
+  kamayuk-caja-aplicacion/          ensambla y aloja las barreras
+infrastructure/                 el descriptor de despliegue en TypeScript, con yarn
+docs/                           los ADR que enlaza, hallazgos de RLS, P5D y la guía de desarrollo
 ```
 
 El backend **no compila sin `infrastructure` clonado al lado**: las barreras se consumen como
 *composite build* desde `../../infrastructure/librerias-backend`. `settings.gradle.kts` lo
-comprueba antes y falla diciendo qué `git clone` falta, en vez de dejar reventar a Gradle sobre un
-directorio que no está.
+comprueba antes y falla diciendo qué `git clone` falta.
 
-Los paquetes son `kamayuk.caja.*`; los módulos, `kamayuk-*`. Los **roles de base de datos siguen
-llamándose `sgtm_owner`, `sgtm_app`, `sgtm_readonly` y `rol_carga_parametros`**, y es deliberado:
-son del **clúster**, que los cuatro sistemas comparten.
+Los paquetes son `kamayuk.caja.*` y el contexto acotado es `kamayuk.caja.caja.*` — redundante, y es
+lo que la consistencia produce: en `normativa` el contexto es `kamayuk.normativa.parametros`, y aquí
+el sistema y su único contexto se llaman igual, como en `catastro`. Los **roles de base de datos
+siguen llamándose `sgtm_owner`, `sgtm_app` y `sgtm_readonly`**, y es deliberado: son del **clúster**,
+que los cuatro sistemas comparten.
+
+## Las dos piezas que hay que entender antes de tocar nada
+
+**La orden de cobro.** Es lo único que esta caja sabe cobrar: de dónde viene, cómo la llama quien la
+mandó, qué dice el papel, cuánto, desde cuándo y **a qué fecha está esa cifra**. La caja no
+recalcula: imprime lo que le dieron. Y su `referenciaExterna` es **opaca** — no se analiza, no se
+compara por partes, no se ordena—, que es lo que permite que el día de mañana sea el contrato de un
+puesto de mercado.
+
+**El buzón de salida.** Se escribe **en la misma transacción que el recibo**. Si la fila está, el
+recibo está. Un proceso aparte lo entrega y lo marca. Lo que compra es que la ventanilla cobre con
+el sistema de origen apagado; lo que cuesta es que **la conciliación diaria deje de ser buena
+práctica**. El `pagoId` lo genera **la caja** al cobrar, no el transporte: un reintento manda el
+mismo, y por eso el receptor puede deduplicar.
 
 ## Antes de escribir código, leer
 
@@ -184,4 +210,13 @@ real y las cifras cuadren— no lo puede leer una máquina: eso lo lee la revisi
 
 | Verificación | Cómo se demostró que puede fallar | Resultado |
 |---|---|---|
-| — | — | — |
+| El baseline aplica sobre una base **sin ninguna extensión** (P5D) | Ejecutando el baseline **original** de `sgtm/docs/40-datos/baselines/caja/` sobre la misma base | **Muere en su línea 204**: «ERROR: text search dictionary "unaccent" does not exist», dentro de `nombre_normalizado(text)` — una función de `catastro` y `rentas` que el generador arrastró y que **ninguna columna de esta caja usa**, porque aquí no hay una sola columna generada. Con las ocho funciones ajenas y los cinco dominios muertos fuera, `V1` aplica entera: 23 tablas, `0 extensiones no-plpgsql`. Y eso permitió recortar `crear-roles.sql` a **tres roles y cero extensiones** — que es lo único que hace creíble «con `rentas` apagado la ventanilla sigue cobrando»: una ventanilla cuya base necesita PostGIS no se levanta en cualquier sitio |
+| El `REVOKE UPDATE ON cierre_caja` que `V32` del monolito no pudo hacer (P5D, `V2`) | Reproduciéndolo contra PostgreSQL 16.15 real, y midiendo después la alternativa | Con el `REVOKE` puesto, `SELECT … FOR UPDATE` da **«permission denied for table cierre_caja»** — el hallazgo de `V32` §1.bis, reproducido tal cual. **Y la premisa de ADR-0026 es falsa**: dice que se replantea «donde el cierre ya no comparte base con el libro», y que el libro estuviera al lado nunca tuvo nada que ver. Lo que impedía el REVOKE es que la ventanilla se serializaba **ahí**; movida a `orden_de_cobro`, el turno se abre con `INSERT … ON CONFLICT DO NOTHING`, que **no necesita el privilegio** —medido: dos ejecuciones seguidas dejan un solo turno con `has_table_privilege(…,'UPDATE')` en `f`— y el REVOKE se puede hacer |
+| Con el sistema de origen apagado, la ventanilla **sigue cobrando** (P5D AC 2) | Apuntando el cliente HTTP a **un puerto que nadie escucha** —`ServerSocket(0)` abierto y cerrado—, no a un doble que lanza | Cobra, emite recibo, marca la orden `PAGADA` y deja el pago `PENDIENTE` **con su hora**; el publicador reintenta sin perderlo y, agotados los intentos, **muere y dispara la alerta**. Y la conciliación de ese día **no trae ceros**: trae su motivo. Un cero se leería como «no aplicaron nada» —indistinguible de un día sin cobros— y la conciliación diría que cuadra, que es el criterio de #48 con la licencia de «valor de obra 0,00» |
+| La conciliación del día cuadra, **y deja de cuadrar** (P5D AC 1, parcial) | Tres roturas sobre ocho días simulados con un sistema de origen levantado de verdad | El origen aplicando 40,00 donde se cobraron 100,00 → `diferencia = 60,00`; **el origen rechazando uno con la cifra coincidiendo → tampoco cuadra**, porque cuadrar con un pago sin imputar es cuadrar por casualidad; y un evento devuelto a `PENDIENTE` —que es como está entre los dos `COMMIT`— tampoco. **Los treinta días del criterio NO se cumplen y no se pueden cumplir aquí**: son tiempo de calendario. Está declarado en P5D §2 |
+| Un pago inyectado dos veces produce **un solo asiento** (P5D AC 3, en `rentas`) | Diez hilos de verdad entregando el mismo `pagoId` a la vez | **1 asiento y 1 fila de buzón.** La garantía es `pago_recibido_uq` sobre el `pagoId` **que generó la caja**, no un `if`. Y escribir la prueba encontró **dos defectos vivos**: `jsonb` no devuelve el texto que se guardó —lo reserializa con un espacio detrás de los dos puntos, así que la referencia de la orden no se encontraba y el pago se rechazaba diciendo «no trae ninguna obligación» sobre un cuerpo que las trae todas (#653 otra vez)—; y **atrapar la excepción del libro no sirve de nada**, porque sale de un `@Transactional` anidado y deja la de fuera *rollback-only*. La primera corrección —marcar el rechazo en transacción nueva— **siguió fallando**: la fila que iba a marcar tampoco estaba. Por eso el rechazo **se inserta y no se marca** |
+| Una anulación **reversa y no borra** (P5D AC 4) | Contando filas del libro antes y después, y con el escáner de fuentes | Tras la anulación los asientos del cobro **siguen ahí** y el libro tiene **más filas que antes**, marcadas con `ANULACION RECIBO …`. Una anulación inyectada dos veces **no reversa dos veces** —lo haría dejar al contribuyente debiendo el doble de lo que pagó (#34)—. Y que no borra **no lo dice una lectura del código**: `cuenta_corriente_asiento` está en `TABLAS_PROTEGIDAS` de `rentas`, y en `caja` la lista se reescribió para este sistema con **siete** tablas, incluidas `orden_de_cobro` y `pago_evento` |
+| El listado de recibos, con al menos una fila (P5D) | **No hubo que provocarla: la escribió el agente que adaptó las pruebas y salió roja.** Lo que sí se midió es qué la esconde | `ReciboRepositoryJdbc.buscar` seleccionaba `contribuyente_id` y **no** `pagador_documento` ni `pagador_nombre`, que es lo que su mapeador lee desde P5D: toda página con una fila reventaba con «Der Spaltenname pagador_documento wurde in diesem ResultSet nicht gefunden». **Y una página vacía no lo destapa** —el mapeador no llega a correr—, así que `unaBusquedaSinResultadosDaPaginaVacia` pasaba en verde con el listado entero roto: la prueba más barata de escribir es justo la que no puede verlo. De paso salió un segundo defecto: `pagadorDe` leía `wasNull()` **de la columna equivocada** —los argumentos se evalúan de izquierda a derecha—, así que un recibo con documento y sin nombre perdía su `idExterno`, que es el dato con el que el evento le dice al origen a quién imputar |
+| El interbloqueo del rechazo de un pago (P5D, en `rentas`) | **No hubo que provocarlo: la corrida se colgó.** Y lo que lo dijo no fue ninguna prueba | `pg_stat_activity` con la primera conexión en `idle in transaction` y la segunda en `Lock / transactionid` sobre el `INSERT INTO pago_recibido`. Llamar a `RecibirPago.recibir` **dentro** de una transacción deja a la de fuera abierta con la fila del buzón insertada y marcada *rollback-only*, y el rechazo abre una nueva que intenta insertar el mismo `pago_id`: el índice único la hace esperar a la primera, y la primera espera a la segunda. **Un cuelgue sin mensaje en el camino del dinero**, que es lo peor que puede pasar. La guarda vive ahora en el código y dice qué hacer; en producción no puede ocurrir porque `PagoController.recibir` no lleva `@Transactional`, y ahora tampoco puede empezar a ocurrir sin que alguien lo vea |
+| La regla 10 sobre el publicador del buzón | **Tampoco hubo que provocarla: ArchUnit la encontró.** P5D había afirmado por escrito que la lista de exenciones quedaría vacía | Rojo nombrando `EntregarEventos.entregarUno`. La regla mira la **firma** de un método transaccional que escribe, no la naturaleza de lo que escribe — y ésa es la propiedad que la hace útil: «esto no es un dato de verdad» es lo que cualquiera puede escribir sobre cualquier escritura. Entra en la lista con su motivo real (no hay ningún usuario delante), y al lado queda `ExplicarPagoSinEntregar`, que **sí** exige observación porque ahí hay alguien decidiendo que ese dinero no se registra |
+| El recuento de pruebas, contado una a una (P5D) | **Contando los métodos anotados de cada clase borrada contra los de su heredera**, no comparando totales | 3 246 − 191 (las 14 clases que salieron de `rentas`) + 5 (`PagoInyectadoDosVecesTest`) = **3 060**, que es lo que la corrida mide. Y el conteo destapó **dos cosas que un total nunca habría enseñado**: `AltaDeCajasJdbcTest` medía **10 donde el original decía 11** —el método que lee el archivo real `ejemplos/cajas.csv` se había quedado atrás porque el archivo estaba en `rentas` y el importador viajó aquí; se trajo el archivo con su README y volvió—, y **siete métodos de `CobrarEnVentanillaTest` no tienen contraparte en ningún repositorio**, los siete de la mitad de deuda. Ésos no son un descuido: medían `CobrarDeuda`, que leía el libro y cobraba en un solo acto, y de sus dos mitades **sólo se reescribió la de cobrar** — `OrdenesDeCobro` es un puerto con adaptador HTTP y **cero invocadores**, así que hoy la ventanilla cobra una tasa de punta a punta y una deuda tributaria no. Es el hueco 1 del entregable, y esos siete métodos son la medida exacta de lo que hay que reponer |
