@@ -1,11 +1,11 @@
 package kamayuk.caja.caja.infraestructura;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.time.LocalDate;
 import kamayuk.caja.caja.dominio.AbonosAplicadosEnElOrigen;
 import kamayuk.caja.caja.dominio.SistemaDeOrigen;
 import kamayuk.caja.dominio.Dinero;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Le pregunta al sistema de origen que aplico un dia (ADR-0026 §3, la conciliacion).
@@ -41,6 +41,6 @@ public class AbonosAplicadosHttp implements AbonosAplicadosEnElOrigen {
                 cuerpo.path("rechazados").asInt(),
                 // Como cadena: los importes no viajan como numero de coma flotante (RNF-055), y
                 // leerlo con asDouble() volveria a introducir el defecto por la puerta de atras.
-                Dinero.de(cuerpo.path("importeAplicado").asText("0")));
+                Dinero.de(cuerpo.path("importeAplicado").asString("0")));
     }
 }

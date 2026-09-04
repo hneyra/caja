@@ -44,6 +44,10 @@ class ModulosTest {
                         "persistencia",
                         "auditoria",
                         "autorizacion",
+                        // La copia local de usuarios, grupos y permisos (C-7, D-N5): el
+                        // `ComprobadorDeAcceso` que el guardia pide y la implantacion que la
+                        // siembra. Sin el, el contexto no levanta.
+                        "seguridad",
                         "carga",
                         "documentos",
                         "web",

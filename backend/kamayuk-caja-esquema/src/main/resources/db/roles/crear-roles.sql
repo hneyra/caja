@@ -74,3 +74,30 @@ GRANT USAGE           ON SCHEMA public TO sgtm_app, sgtm_readonly;
 -- Sin GRANT de pertenencia entre roles: sgtm_owner concede privilegios sobre sus
 -- propias tablas sin necesitarla, y ser miembro de sgtm_app le permitiria un
 -- SET ROLE que borra la separacion.
+
+-- ---------- CONNECT sobre esta base ----------
+--  PostgreSQL concede `CONNECT` a PUBLIC al crear una base, asi que TODO rol del cluster puede
+--  conectarse a la de cualquier sistema sin que nadie se lo haya dado. Se midio (C-7 §6): sobre
+--  una base recien creada, `has_database_privilege('<un rol cualquiera>', '<esa base>', 'CONNECT')`
+--  devuelve `true`; tras el `REVOKE ... FROM PUBLIC`, `false`.
+--
+--  Los roles son del CLUSTER y los cuatro sistemas lo comparten, de modo que sin esto la
+--  credencial de carga de valores normativos —y la de la aplicacion de cualquier otro sistema—
+--  puede abrir una sesion contra esta base. No veria filas —RLS esta forzada— pero seria una
+--  credencial de mas apuntando a un padron, que es exactamente lo que #155 midio con el rol del
+--  respaldo y lo que `30-base-de-keycloak.sh` ya hace con la base del monolito.
+--
+--  Los tres, y ninguno mas. `caja` no sabe que es un tributo, asi que no hay ningun rol
+--  de carga de valores normativos que tenga nada que hacer aqui.
+--
+--  Va aqui y no en una migracion porque `REVOKE ... ON DATABASE` solo lo puede hacer quien la
+--  posee, y `sgtm_owner` —que es quien migra— a proposito NO es dueno de la base (#722 lo midio:
+--  «permission denied for database»). Este guion corre como superusuario.
+DO $connect$
+DECLARE
+    base text := current_database();
+BEGIN
+    EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', base);
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO sgtm_owner, sgtm_app, sgtm_readonly', base);
+END
+$connect$;

@@ -3,7 +3,6 @@ package kamayuk.caja.caja.infraestructura;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
@@ -74,6 +73,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * #34 — Duplicado y anulacion contra PostgreSQL de verdad, conectado como {@code sgtm_app}.
@@ -143,7 +143,7 @@ class ReciboJdbcTest {
         turnos = new TurnoDeCajaRepositoryJdbc(jdbc);
         ordenes = new OrdenDeCobroRepositoryJdbc(jdbc);
         buzon = new BuzonDeSalidaJdbc(jdbc);
-        eventos = new ComponedorDeEventosJson(new ObjectMapper());
+        eventos = new ComponedorDeEventosJson(new JsonMapper());
 
         Auditoria auditoria = new AuditoriaJdbc(jdbc, RELOJ);
         AbrirCaja abrirCaja = envolver(new AbrirCaja(cajas, turnos, auditoria, RELOJ));
@@ -1130,8 +1130,8 @@ class ReciboJdbcTest {
      */
     private static String campoDelCuerpo(EventoDePago evento, String campo) {
         try {
-            return new ObjectMapper().readTree(evento.cuerpo()).path(campo).asText();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException noEsJson) {
+            return new JsonMapper().readTree(evento.cuerpo()).path(campo).asString();
+        } catch (tools.jackson.core.JacksonException noEsJson) {
             throw new IllegalStateException(
                     "El cuerpo del evento " + evento.eventoId() + " no es JSON", noEsJson);
         }

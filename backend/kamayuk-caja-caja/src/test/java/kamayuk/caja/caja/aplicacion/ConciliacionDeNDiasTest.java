@@ -127,12 +127,12 @@ class ConciliacionDeNDiasTest {
         buzon = new BuzonDeSalidaJdbc(jdbc);
         Auditoria auditoria = new AuditoriaJdbc(jdbc, relojDe(PRIMER_DIA));
         ComponedorDeEventosJson eventos =
-                new ComponedorDeEventosJson(new com.fasterxml.jackson.databind.ObjectMapper());
+                new ComponedorDeEventosJson(new tools.jackson.databind.json.JsonMapper());
 
         origen = new OrigenDeMentira();
         ClienteHttpDelSistemaDeOrigen cliente =
                 new ClienteHttpDelSistemaDeOrigen(
-                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        new tools.jackson.databind.json.JsonMapper(),
                         Map.of("rentas", "http://127.0.0.1:" + origen.puerto()),
                         "");
 

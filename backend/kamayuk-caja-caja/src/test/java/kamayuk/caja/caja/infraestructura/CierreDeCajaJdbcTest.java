@@ -3,7 +3,6 @@ package kamayuk.caja.caja.infraestructura;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -70,6 +69,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * #36 — El cierre de caja contra PostgreSQL de verdad, conectado como {@code sgtm_app}.
@@ -151,7 +151,7 @@ class CierreDeCajaJdbcTest {
         MovimientoDeReciboRepositoryJdbc movimientosDeRecibo =
                 new MovimientoDeReciboRepositoryJdbc(jdbc);
         RecaudacionRepositoryJdbc recaudacion = new RecaudacionRepositoryJdbc(jdbc);
-        ComponedorDeEventosJson eventos = new ComponedorDeEventosJson(new ObjectMapper());
+        ComponedorDeEventosJson eventos = new ComponedorDeEventosJson(new JsonMapper());
 
         Auditoria auditoria = new AuditoriaJdbc(jdbc, RELOJ);
         AbrirCaja abrirCaja = envolver(new AbrirCaja(cajas, turnos, auditoria, RELOJ));

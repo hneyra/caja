@@ -2,7 +2,6 @@ package kamayuk.caja.caja.infraestructura.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -80,7 +79,7 @@ class CajaControllerTest {
                                             ordenes,
                                             recibos,
                                             buzon,
-                                            new ComponedorDeEventosJson(new ObjectMapper()),
+                                            new ComponedorDeEventosJson(new JsonMapper()),
                                             (RegistroDeAuditoria registro) -> {},
                                             RELOJ),
                                     new CobrarTasa(

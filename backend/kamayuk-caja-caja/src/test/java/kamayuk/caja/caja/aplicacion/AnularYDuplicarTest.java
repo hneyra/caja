@@ -3,7 +3,6 @@ package kamayuk.caja.caja.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -48,6 +47,7 @@ import kamayuk.caja.dominio.Observacion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * #34 — Las decisiones de anular y de duplicar, sin base de datos.
@@ -96,7 +96,7 @@ class AnularYDuplicarTest {
 
     /** El componedor de verdad: el cuerpo del evento se lee, no se supone. */
     private static final CobrarOrdenes.ComponedorDeEventos EVENTOS =
-            new ComponedorDeEventosJson(new ObjectMapper());
+            new ComponedorDeEventosJson(new JsonMapper());
 
     private static final GeneradorDeDocumentos GENERADOR = generador(RegimenDeLaInstalacion.REAL);
 

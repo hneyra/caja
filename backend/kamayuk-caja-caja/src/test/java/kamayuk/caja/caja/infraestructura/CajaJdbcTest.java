@@ -3,7 +3,6 @@ package kamayuk.caja.caja.infraestructura;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -63,6 +62,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * #33 — La caja contra PostgreSQL de verdad, conectada como {@code sgtm_app}.
@@ -160,7 +160,7 @@ class CajaJdbcTest {
                                 ordenes,
                                 recibos,
                                 buzon,
-                                new ComponedorDeEventosJson(new ObjectMapper()),
+                                new ComponedorDeEventosJson(new JsonMapper()),
                                 auditoria,
                                 RELOJ));
         cobrarTasa = envolver(new CobrarTasa(abrirCaja, tasas, recibos, auditoria, RELOJ));
@@ -235,7 +235,7 @@ class CajaJdbcTest {
                                     ordenes,
                                     recibos,
                                     new BuzonQueRevientaAlEncolar(buzon),
-                                    new ComponedorDeEventosJson(new ObjectMapper()),
+                                    new ComponedorDeEventosJson(new JsonMapper()),
                                     new AuditoriaJdbc(jdbc, RELOJ),
                                     RELOJ));
 

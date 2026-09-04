@@ -6,7 +6,7 @@
 
 plugins {
     id("sgtm.java-base")
-    id("sgtm.pruebas")
+    id("sgtm.pruebas-postgres")
     alias(libs.plugins.spring.boot)
 }
 
@@ -16,6 +16,11 @@ dependencies {
 
     implementation(project(":kamayuk-caja-dominio-compartido"))
     implementation(project(":kamayuk-caja-plataforma"))
+
+    // La copia local de seguridad: el `ComprobadorDeAcceso` que el guardia necesita y la
+    // implantacion de la municipalidad. Sin este modulo el contexto NO ARRANCA —el guardia
+    // pide un bean que nadie declara— y eso es lo que C-6 midio y C-7 cierra.
+    implementation(project(":kamayuk-caja-seguridad"))
 
 
     // El unico contexto acotado de este sistema. UNO, y sin puertos de entrada hacia otros
@@ -51,6 +56,12 @@ dependencies {
     // spring-tx no compilaria, y sin ella la regla no tendria como demostrarse.
     testImplementation("org.springframework:spring-tx")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
+
+    // `ArranqueDeLaAplicacionTest` levanta el contexto ENTERO contra un PostgreSQL real, que es
+    // lo unico que ve un bean que falta (C-7). De ahi las dos lineas: los fixtures que provisionan
+    // la base y el arranque de Spring Boot con su servidor de pruebas.
+    testImplementation(testFixtures(project(":kamayuk-caja-esquema")))
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 
 // El contrato vive fuera de este modulo y dos pruebas lo leen del disco:
@@ -96,4 +107,30 @@ tasks.test {
 // alfabetico.
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("sgtm.jar")
+}
+
+// La prueba de arranque va en su PROPIA tarea, y no es una manía de organización.
+//
+// `verificarArquitectura` corre `:kamayuk-caja-aplicacion:test` y no necesita motor de base de
+// datos: son ArchUnit, escaneres de fuentes y limites de Modulith. `ArranqueDeLaAplicacionTest`
+// si lo necesita —levanta el artefacto de verdad y su sonda de salud consulta la base—, asi que
+// meterla en `test` convertiria la barrera de arquitectura en una que no se puede correr sin
+// PostgreSQL. Se excluye de `test` y se declara aparte; `check` depende de las dos, de modo que
+// `./gradlew build` sigue corriendo ambas.
+val pruebaDeArranque = tasks.register<Test>("pruebaDeArranque") {
+    group = "verification"
+    description = "Levanta el artefacto en los perfiles web y batch contra PostgreSQL real (C-7)."
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    filter { includeTestsMatching("*ArranqueDeLaAplicacionTest") }
+    // Un arranque que se salta a si mismo deja el build en verde sin haber arrancado nada.
+    outputs.upToDateWhen { false }
+}
+
+tasks.test {
+    filter { excludeTestsMatching("*ArranqueDeLaAplicacionTest") }
+}
+
+tasks.check {
+    dependsOn(pruebaDeArranque)
 }

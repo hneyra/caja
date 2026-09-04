@@ -14,12 +14,31 @@
 // LO QUE CUESTA, dicho aqui y no descubierto mas tarde: este backend NO COMPILA sin tener
 // `infrastructure` clonado al lado.
 val libreriasComunes = file("../../infrastructure/librerias-backend")
-require(libreriasComunes.isDirectory) {
+
+// LA UNICA SALIDA, Y SOLO PARA CONSTRUIR EL ARTEFACTO (C-7, punto 5).
+//
+// La imagen construye con el contexto en la raiz de ESTE repositorio, y
+// `infrastructure/librerias-backend` vive en un clon hermano: fuera del contexto, y sin forma de
+// meterlo dentro —un `.dockerignore` no puede describir un contexto que es el directorio padre—.
+//
+// Lo que se midio antes de decidir: `comun-verificaciones` es `testImplementation` y **solo** de
+// `kamayuk-caja-aplicacion`. La imagen construye `bootJar` e `installDist` y no corre ni una
+// prueba, asi que no necesita la libreria para nada — lo unico que la necesitaba era el `require`.
+//
+// Con la propiedad puesta el build se queda SIN las verificaciones, y para que eso no pueda
+// convertirse en «verificar sin verificar» el `build.gradle.kts` de la raiz **hace fallar toda
+// tarea de prueba** mientras este puesta. O sea: o esta la libreria, o no hay verificacion; nunca
+// una verificacion que pasa en verde sin ella (#192).
+val soloElArtefacto = providers.gradleProperty("kamayuk.sinLibreriasComunes").isPresent
+
+require(libreriasComunes.isDirectory || soloElArtefacto) {
     "No esta ${libreriasComunes.canonicalPath}. El backend consume comun-verificaciones como" +
         " composite build, asi que `infrastructure` tiene que estar clonado al lado de" +
         " `caja`: git clone https://github.com/hneyra/infrastructure ../../infrastructure"
 }
-includeBuild(libreriasComunes)
+if (!soloElArtefacto) {
+    includeBuild(libreriasComunes)
+}
 
 rootProject.name = "kamayuk-caja-backend"
 
@@ -35,6 +54,11 @@ include("kamayuk-caja-plataforma")
 // El contexto acotado. Se llama igual que el sistema porque `caja` es las dos cosas: el
 // repositorio y el unico contexto que contiene, igual que `kamayuk-catastro-catastro`.
 include("kamayuk-caja-caja")
+
+// La copia local de usuarios, grupos y permisos, y su siembra (D-N5). No es un contexto
+// acotado: es el lector que autoriza y el sembrador que implanta. Las pantallas de
+// administracion de seguridad viven en `rentas` (ADR-0030 §3).
+include("kamayuk-caja-seguridad")
 
 // Ensambla el artefacto y aloja las barreras: es el unico modulo que ve a todos los demas.
 include("kamayuk-caja-aplicacion")

@@ -119,7 +119,7 @@ class CobrarConElOrigenApagadoTest {
         buzon = new BuzonDeSalidaJdbc(jdbc);
         Auditoria auditoria = new AuditoriaJdbc(jdbc, RELOJ);
         ComponedorDeEventosJson eventos =
-                new ComponedorDeEventosJson(new com.fasterxml.jackson.databind.ObjectMapper());
+                new ComponedorDeEventosJson(new tools.jackson.databind.json.JsonMapper());
 
         registrar = envolver(new RegistrarOrdenDeCobro(ordenes, auditoria, RELOJ));
         AbrirCaja abrirCaja =
@@ -143,7 +143,7 @@ class CobrarConElOrigenApagadoTest {
         // El sistema de origen APAGADO: un puerto que nadie escucha.
         ClienteHttpDelSistemaDeOrigen cliente =
                 new ClienteHttpDelSistemaDeOrigen(
-                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        new tools.jackson.databind.json.JsonMapper(),
                         Map.of("rentas", "http://127.0.0.1:" + unPuertoQueNadieEscucha()),
                         "");
         alerta = new AlertaEnMemoria();

@@ -130,22 +130,20 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                     name: "KAMAYUK_CAJA_ORIGENES",
                     value: `{rentas: 'http://rentas:8080/rentas/api/v1'}`,
                   },
-                  // FALTA AQUI, Y ES UN HUECO DECLARADO DE P5D: `KAMAYUK_CAJA_RESPONSABLE` y
-                  // `KAMAYUK_CAJA_CANAL`, que dicen QUIEN recibe el aviso cuando hay dinero
-                  // cobrado sin registrar (ADR-0026 §4). La aplicacion NO ARRANCA sin las dos
-                  // —`ResponsableDeLaConciliacion` lo comprueba al construirse— y eso esta
-                  // medido; lo que no esta es de donde las saca este descriptor.
+                  // QUIEN recibe el aviso cuando hay dinero cobrado sin registrar
+                  // (ADR-0026 §4). La aplicacion NO ARRANCA sin las dos —lo comprueba
+                  // `ResponsableDeLaConciliacion` al construirse, y el propio
+                  // `application.yaml` no les da valor por omision—, y eso es deliberado:
+                  // una alerta sin destinatario acaba en un panel que nadie mira.
                   //
-                  // No se ponen con un valor de relleno a proposito: un «responsable: pendiente»
-                  // haria arrancar la instalacion con la guarda satisfecha y sin nadie detras,
-                  // que es exactamente lo que la guarda existe para impedir. Y no se pueden sacar
-                  // del ambiente porque `Ambiente` no tiene campo para ellas: anadirselo es un
-                  // cambio en `infrastructure`, que es otro repositorio.
-                  //
-                  // Consecuencia, dicha aqui y no descubierta al desplegar: con este descriptor
-                  // tal cual, el pod de `caja` NO LEVANTA. Es el estado correcto —mejor eso que
-                  // una caja cobrando sin responsable— y es lo primero que hay que cerrar antes
-                  // de desplegar.
+                  // Salen del AMBIENTE y no de este descriptor (C-7, punto 4). Hasta C-7
+                  // `EntornoDelDescriptor` no tenia campo para ellas y el hueco no se podia
+                  // cerrar desde aqui: cerrarlo era cambiar `infrastructure`, que es otro
+                  // repositorio. Con `e.operacion` el dato viaja como cualquier otro, y
+                  // `checkInvariants` rechaza ademas el relleno —«pendiente», «TBD»—, que
+                  // satisfaria la guarda de la aplicacion y la vaciaria de sentido.
+                  { name: "KAMAYUK_CAJA_RESPONSABLE", value: e.operacion.responsable },
+                  { name: "KAMAYUK_CAJA_CANAL", value: e.operacion.canal },
                 ],
                 ...(atiendeHttp ? { ports: [{ name: "http", containerPort: 8080 }] } : {}),
                 resources: RECURSOS,

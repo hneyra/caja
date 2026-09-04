@@ -1,8 +1,5 @@
 package kamayuk.caja.caja.infraestructura;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -11,6 +8,9 @@ import kamayuk.caja.caja.dominio.OrdenDeCobro;
 import kamayuk.caja.caja.dominio.Recibo;
 import kamayuk.caja.dominio.Dinero;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Escribe el cuerpo de los eventos que la caja publica (ADR-0026 §3).
@@ -38,9 +38,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ComponedorDeEventosJson implements CobrarOrdenes.ComponedorDeEventos {
 
-    private final ObjectMapper json;
+    private final JsonMapper json;
 
-    public ComponedorDeEventosJson(ObjectMapper json) {
+    public ComponedorDeEventosJson(JsonMapper json) {
         this.json = json;
     }
 
@@ -111,7 +111,7 @@ public class ComponedorDeEventosJson implements CobrarOrdenes.ComponedorDeEvento
     private String escribir(ObjectNode raiz) {
         try {
             return json.writeValueAsString(raiz);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException noSePuede) {
+        } catch (tools.jackson.core.JacksonException noSePuede) {
             // No puede pasar con un arbol que este componedor construye. Si pasara, la cobranza
             // entera tiene que caerse: un evento que no se puede escribir es un pago que nadie
             // va a imputar, y dejarlo pasar seria cobrar sin registrar.

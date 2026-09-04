@@ -21,7 +21,7 @@ dependencies {
     // entran el estereotipo, `@Value` y el acceso a la peticion en curso, y de Jackson el arbol
     // JSON —el cuerpo del evento se congela como texto, asi que hace falta escribirlo y leerlo—.
     implementation("org.springframework:spring-web")
-    implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("tools.jackson.core:jackson-databind")
 
     // Las pruebas de repositorio y de atomicidad corren contra PostgreSQL de verdad: provisionan
     // la base como un ambiente real y se conectan como sgtm_app, no como el superusuario que

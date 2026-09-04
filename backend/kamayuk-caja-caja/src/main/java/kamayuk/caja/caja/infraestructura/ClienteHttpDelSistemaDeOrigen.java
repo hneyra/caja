@@ -1,7 +1,5 @@
 package kamayuk.caja.caja.infraestructura;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,6 +12,9 @@ import kamayuk.caja.caja.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.caja.dominio.SistemaDeOrigen;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * El unico camino de la caja hacia otro sistema (P5D, ADR-0026 §3 y ADR-0030).
@@ -53,12 +54,12 @@ public class ClienteHttpDelSistemaDeOrigen {
     private static final Duration ESPERA_DE_LECTURA = Duration.ofSeconds(30);
 
     private final HttpClient cliente;
-    private final ObjectMapper json;
+    private final JsonMapper json;
     private final Map<String, String> origenes;
     private final String credencial;
 
     public ClienteHttpDelSistemaDeOrigen(
-            ObjectMapper json,
+            JsonMapper json,
             @Value("#{${kamayuk.caja.origenes:{:}}}") Map<String, String> origenes,
             @Value("${kamayuk.caja.credencial:}") String credencial) {
         this.json = json;
@@ -129,7 +130,10 @@ public class ClienteHttpDelSistemaDeOrigen {
         }
         try {
             return json.readTree(respuesta.body());
-        } catch (IOException ilegible) {
+        } catch (JacksonException ilegible) {
+            // Jackson 3 lanza `JacksonException`, que NO es comprobada (C-7). Se sigue capturando
+            // a proposito: es la unica forma de que «contesto algo que no es JSON» se reintente
+            // como un `NoContesta` en vez de matar el evento con una excepcion de libreria.
             throw new BuzonDelSistemaDeOrigen.NoContesta(
                     "«" + sistema + "» contesto algo que no es JSON al " + que, ilegible);
         }
