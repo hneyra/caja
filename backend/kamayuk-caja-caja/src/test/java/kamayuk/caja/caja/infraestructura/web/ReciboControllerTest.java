@@ -161,9 +161,7 @@ class ReciboControllerTest {
     @DisplayName("#548 — sin recibos, 200 con una pagina vacia y totalElementos 0, nunca 404")
     void elListadoVacioEs200ConTotalCero() throws Exception {
         MvcResult resultado =
-                mvc.perform(
-                                MockMvcRequestBuilders.get(RECIBOS)
-                                        .param("codContribuyente", "NO-EXISTE"))
+                mvc.perform(MockMvcRequestBuilders.get(RECIBOS).param("documento", "NO-EXISTE"))
                         .andReturn();
 
         assertThat(resultado.getResponse().getStatus()).isEqualTo(200);
@@ -177,7 +175,7 @@ class ReciboControllerTest {
     void losSeisFiltrosLleganAlCriterio() throws Exception {
         mvc.perform(
                         MockMvcRequestBuilders.get(RECIBOS)
-                                .param("codContribuyente", "C-0007")
+                                .param("documento", "70123456")
                                 .param("caja", "c-01")
                                 .param("cajero", "cajero.prueba")
                                 .param("desde", "2026-03-01")
@@ -187,7 +185,11 @@ class ReciboControllerTest {
                 .andReturn();
 
         assertThat(recibos.ultimoCriterio()).isNotNull();
-        assertThat(recibos.ultimoCriterio().codigoContribuyente()).isEqualTo("C-0007");
+        // P5E: el filtro es el DOCUMENTO de quien pago y no el codigo del padron. Lo que se
+        // comprueba aqui no es el nombre del parametro sino que llegue al criterio: hasta P5E
+        // llegaba «C-0007» y el repositorio lo resolvia contra `contribuyente`, una tabla de
+        // `rentas` que esta base no tiene.
+        assertThat(recibos.ultimoCriterio().documentoDelPagador()).isEqualTo("70123456");
         assertThat(recibos.ultimoCriterio().caja())
                 .as("el codigo de la caja se normaliza a mayusculas, como en el padron")
                 .isEqualTo("C-01");

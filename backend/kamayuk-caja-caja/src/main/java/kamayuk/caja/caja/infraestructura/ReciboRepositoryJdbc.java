@@ -189,11 +189,13 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
     /**
      * El listado de recibos (#548), con el estado y los duplicados derivados en la misma consulta.
      *
-     * <p><b>Sin ningun {@code JOIN}.</b> El codigo del contribuyente y el de la caja entran como
-     * subconsultas escalares, igual que en {@code ConvenioRepositoryJdbc} y por lo mismo: con un
-     * {@code JOIN}, el dia que alguien anada a {@code contribuyente} o a {@code caja} una columna
-     * que se llame como una del {@code ORDER BY}, la paginacion se rompe entera y no se ve en
-     * revision.
+     * <p><b>Sin ningun {@code JOIN}.</b> El codigo de la caja entra como subconsulta escalar, igual
+     * que en {@code ConvenioRepositoryJdbc} y por lo mismo: con un {@code JOIN}, el dia que alguien
+     * anada a {@code caja} una columna que se llame como una del {@code ORDER BY}, la paginacion se
+     * rompe entera y no se ve en revision.
+     *
+     * <p>El pagador ya no se resuelve contra el padron: se filtra por {@code pagador_documento}, la
+     * columna que el propio recibo lleva (P5E).
      *
      * <p>El {@code EXISTS} sobre {@code recibo_movimiento} y el {@code count} de duplicados van los
      * dos por {@code recibo_movimiento_recibo_ix} (V30), que es {@code (municipalidad_id,
@@ -205,11 +207,14 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
         StringBuilder donde = new StringBuilder(" WHERE 1 = 1");
         Map<String, Object> parametros = new LinkedHashMap<>();
 
-        if (criterio.codigoContribuyente() != null) {
-            donde.append(
-                    " AND r.contribuyente_id = (SELECT t.id FROM contribuyente t"
-                            + " WHERE t.codigo_contribuyente = :codigo)");
-            parametros.put("codigo", criterio.codigoContribuyente());
+        if (criterio.documentoDelPagador() != null) {
+            // Sobre la columna del propio recibo (P5E). Hasta aqui esto era una subconsulta a
+            // `contribuyente` —una tabla de `rentas` que esta base no tiene— y por eso era el
+            // ultimo trozo vivo de PENDIENTE-CRUCE-06: la mitad que P5D no cerro al copiar el
+            // pagador, porque cerro la EMISION y no la BUSQUEDA. Va por
+            // `recibo_pagador_ix` (V2).
+            donde.append(" AND r.pagador_documento = :documento");
+            parametros.put("documento", criterio.documentoDelPagador());
         }
         if (criterio.caja() != null) {
             donde.append(" AND r.caja_id = (SELECT c.id FROM caja c WHERE c.codigo = :caja)");

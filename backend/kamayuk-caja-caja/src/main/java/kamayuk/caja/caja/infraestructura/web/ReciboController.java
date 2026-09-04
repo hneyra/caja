@@ -119,13 +119,20 @@ public class ReciboController {
      * <p>El acceso es {@code duplicado_recibo} con {@code LECTURA} —la opcion del catalogo desde la
      * que se busca—, no {@code IMPRESION}: mirar la lista no emite ningun papel.
      *
-     * <p>Un contribuyente sin recibos devuelve una <b>pagina vacia</b> con {@code totalElementos:
-     * 0}, nunca un 404: buscar y no encontrar no es un error.
+     * <p>Un pagador sin recibos devuelve una <b>pagina vacia</b> con {@code totalElementos: 0},
+     * nunca un 404: buscar y no encontrar no es un error.
+     *
+     * <p><b>El filtro es {@code ?documento=}, no el codigo del padron</b> (P5E). Hasta aqui era
+     * {@code ?codContribuyente=} y se resolvia con una subconsulta a {@code contribuyente}, que es
+     * de {@code rentas} y no esta en esta base: funcionaba solo porque las dos bases todavia eran
+     * una. Lo que cuesta el cambio, dicho aqui: desde la caja ya no se puede buscar por codigo
+     * municipal; quien lo tenga resuelve antes su documento en el padron, que es el orden en que la
+     * ventanilla lo hace de todas formas —viene una persona con un DNI, no con un codigo—.
      */
     @GetMapping("/recibos")
     @RequiereAcceso(acceso = ACCESO_DUPLICADO, privilegio = Privilegio.LECTURA)
     public RespuestaPaginada<ReciboEnListaResource> listar(
-            @RequestParam(required = false) @Nullable String codContribuyente,
+            @RequestParam(required = false) @Nullable String documento,
             @RequestParam(required = false) @Nullable String caja,
             @RequestParam(required = false) @Nullable String cajero,
             @RequestParam(required = false) @Nullable String desde,
@@ -137,7 +144,7 @@ public class ReciboController {
         try {
             criterio =
                     new CriterioDeRecibos(
-                            vacioAnulo(codContribuyente),
+                            vacioAnulo(documento),
                             vacioAnulo(caja),
                             vacioAnulo(cajero),
                             fechaOpcional(desde, "desde"),

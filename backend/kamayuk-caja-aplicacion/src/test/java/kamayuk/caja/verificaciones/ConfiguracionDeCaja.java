@@ -21,9 +21,18 @@ import kamayuk.comun.verificaciones.ConfiguracionDeLasVerificaciones;
  * acotado: todo archivo de este repositorio es de {@code caja}, y por eso {@link
  * #sistemaDelArchivo(String)} no se sobrescribe.
  *
- * <p>La consecuencia practica es {@code NINGUN_SQL_CRUZA_LA_FRONTERA_DE_SISTEMA}: como el reparto
- * de tablas solo nombra las de este esquema, <b>cualquier</b> consulta a una tabla ajena se detecta
- * — y no hay ninguna lista de excepciones donde esconderla.
+ * <p>La consecuencia practica es {@code NINGUN_SQL_CRUZA_LA_FRONTERA_DE_SISTEMA}, y <b>hasta P5E
+ * esta clase afirmaba de si misma algo que no era cierto</b>: decia que «como el reparto de tablas
+ * solo nombra las de este esquema, cualquier consulta a una tabla ajena se detecta». No se detecta.
+ * El escaner distingue tres casos a proposito —lo propio, lo replicado y <b>lo que nadie
+ * repartio</b>— y el tercero <b>no es un cruce</b>, porque un escaner que marcara toda tabla
+ * desconocida gritaria en cada archivo y dejaria de leerse (#437). Con el reparto anterior, una
+ * consulta {@code FROM contribuyente JOIN predio} en {@code src/main} pasaba en VERDE; se midio.
+ *
+ * <p>Por eso este reparto nombra tambien las tablas de los otros tres sistemas, como ya hacian
+ * {@code catastro} y {@code normativa}. No son tablas de esta base —{@code caja} no las tiene— y
+ * justamente por eso hay que nombrarlas: es la unica forma de que consultarlas se vea al construir
+ * y no en produccion.
  */
 public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificaciones {
 
@@ -48,6 +57,131 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
                     "tasa",
                     "orden_de_cobro",
                     "pago_evento");
+
+    /**
+     * Las tablas de los otros tres sistemas (P5E).
+     *
+     * <p>Copiadas del reparto de {@code catastro} y {@code normativa}, que ya las tenian. No estan
+     * en esta base y no van a estarlo: se declaran para que una consulta a cualquiera de ellas se
+     * vea al construir, en vez de fallar en ejecucion contra una tabla que no existe.
+     */
+    private static final Set<String> DE_RENTAS =
+            Set.of(
+                    "acta_fiscalizacion",
+                    "acto_coactivo",
+                    "anuncio",
+                    "anuncio_correlativo",
+                    "anuncio_movimiento",
+                    "beneficio",
+                    "certificado",
+                    "certificado_correlativo",
+                    "ciiu",
+                    "codigo_infraccion",
+                    "constancia_libre",
+                    "contacto",
+                    "contribuyente",
+                    "convenio",
+                    "convenio_correlativo",
+                    "convenio_cuota",
+                    "convenio_deuda",
+                    "convenio_movimiento",
+                    "corrida_predial",
+                    "corrida_predial_observado",
+                    "costa_obligacion",
+                    "costa_procesal",
+                    "cuenta_corriente_asiento",
+                    "cuenta_corriente_asiento_2026",
+                    "cuenta_corriente_asiento_2027",
+                    "declaracion_jurada",
+                    "descargo",
+                    "determinacion",
+                    "determinacion_2026",
+                    "determinacion_2027",
+                    "determinacion_arbitrio",
+                    "determinacion_arbitrio_2026",
+                    "determinacion_arbitrio_2027",
+                    "determinacion_predio_detalle",
+                    "determinacion_predio_detalle_2026",
+                    "determinacion_predio_detalle_2027",
+                    "dj_correlativo",
+                    "domicilio",
+                    "edificacion_correlativo",
+                    "edificacion_estructura",
+                    "edificacion_movimiento",
+                    "edificacion_profesional",
+                    "edificacion_proyecto",
+                    "edificacion_requisito",
+                    "edificacion_terreno",
+                    "edificacion_vigencia",
+                    "espectaculo",
+                    "expediente_coactivo",
+                    "expediente_correlativo",
+                    "expediente_movimiento",
+                    "expediente_valor",
+                    "internamiento",
+                    "internamiento_movimiento",
+                    "licencia_correlativo",
+                    "licencia_duplicado",
+                    "licencia_edificacion",
+                    "licencia_funcionamiento",
+                    "licencia_giro",
+                    "licencia_movimiento",
+                    "liquidacion_correlativo",
+                    "liquidacion_costas",
+                    "liquidacion_costas_correlativo",
+                    "liquidacion_detalle",
+                    "liquidacion_fiscalizacion",
+                    "liquidacion_movimiento",
+                    "notificacion",
+                    "notificacion_administrativa",
+                    "papeleta",
+                    "papeleta_cambio_numero",
+                    "papeleta_masivo",
+                    "papeleta_masivo_item",
+                    "prescripcion",
+                    "prescripcion_ejercicio",
+                    "prescripcion_hecho",
+                    "programa_fiscalizacion",
+                    "programa_muestra",
+                    "resolucion_determinacion",
+                    "resolucion_gerencia",
+                    "responsable_solidario",
+                    "saldo_proyectado",
+                    "transferencia",
+                    "valor",
+                    "valor_correlativo",
+                    "valor_detalle",
+                    "valor_masivo",
+                    "valor_masivo_item",
+                    "valor_movimiento",
+                    "vehiculo");
+
+    private static final Set<String> DE_CATASTRO =
+            Set.of(
+                    "actividad_economica",
+                    "arancel",
+                    "bien_comun",
+                    "colindante_rural",
+                    "construccion",
+                    "ficha_catastral",
+                    "inquilino",
+                    "manzana",
+                    "otra_instalacion",
+                    "participacion_comun",
+                    "predio",
+                    "sector",
+                    "tierra_rural",
+                    "titularidad",
+                    "via");
+
+    private static final Set<String> DE_NORMATIVA =
+            Set.of(
+                    "conjunto_parametro_detalle",
+                    "conjunto_parametros",
+                    "depreciacion",
+                    "parametro_tributario",
+                    "valor_referencial_vehiculo",
+                    "valor_unitario_edificacion");
 
     /** Transversales (§2.5) y las siete de seguridad (§2.6): se replican en los cuatro. */
     private static final Set<String> REPLICADAS =
@@ -86,6 +220,9 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
     public Map<String, String> sistemaDeCadaTabla() {
         Map<String, String> reparto = new HashMap<>();
         DE_CAJA.forEach(t -> reparto.put(t, "caja"));
+        DE_RENTAS.forEach(t -> reparto.put(t, "rentas"));
+        DE_CATASTRO.forEach(t -> reparto.put(t, "catastro"));
+        DE_NORMATIVA.forEach(t -> reparto.put(t, "normativa"));
         REPLICADAS.forEach(t -> reparto.put(t, SISTEMA_REPLICADO));
         return Map.copyOf(reparto);
     }

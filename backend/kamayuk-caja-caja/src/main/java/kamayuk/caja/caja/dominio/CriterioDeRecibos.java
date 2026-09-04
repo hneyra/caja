@@ -20,7 +20,13 @@ import org.jspecify.annotations.Nullable;
  * que filtrar por el se resuelve contra {@code recibo_movimiento}. Es el precio de no tener una
  * columna que mienta, y se paga una vez, aqui.
  *
- * @param codigoContribuyente el codigo del contribuyente al que se le cobro, exacto
+ * @param documentoDelPagador el documento de quien pago, exacto — <b>no</b> el codigo del padron de
+ *     {@code rentas} (P5E). Hasta P5E este filtro era {@code codigoContribuyente} y se resolvia con
+ *     una subconsulta a {@code contribuyente}, una tabla que esta base <b>no tiene</b>: era el
+ *     ultimo trozo vivo de {@code PENDIENTE-CRUCE-06}, que P5D dio por cerrado al copiar el pagador
+ *     en el recibo y que solo cerro la mitad de la emision. Se busca por documento porque es lo que
+ *     {@link Pagador} ya declaraba de si mismo —«es con lo que se busca un recibo en ventanilla, y
+ *     por eso tiene indice»— y porque un pagador que no esta en ningun padron no tiene codigo
  * @param caja el codigo de la caja que emitio, exacto
  * @param cajero la cuenta de quien cobro, exacta
  * @param desde el primer dia del rango de emision, inclusive
@@ -28,7 +34,7 @@ import org.jspecify.annotations.Nullable;
  * @param estado {@code EMITIDO} o {@code ANULADO}; {@code null} es «todos»
  */
 public record CriterioDeRecibos(
-        @Nullable String codigoContribuyente,
+        @Nullable String documentoDelPagador,
         @Nullable String caja,
         @Nullable String cajero,
         @Nullable LocalDate desde,
@@ -36,7 +42,7 @@ public record CriterioDeRecibos(
         @Nullable EstadoDeRecibo estado) {
 
     public CriterioDeRecibos {
-        codigoContribuyente = normalizar(codigoContribuyente);
+        documentoDelPagador = normalizar(documentoDelPagador);
         caja = normalizar(caja);
         // El cajero es la cuenta del token y llega tal cual: `recibo.cajero` guarda lo que
         // `OrigenContext` traia, y pasarlo a mayusculas aqui haria que el filtro no

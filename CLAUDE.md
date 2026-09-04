@@ -131,6 +131,20 @@ sólo existe desde que hay cinco repositorios: **ningún SQL cruza la frontera d
 `JOIN` contra una tabla de otro sistema no deja huella en el bytecode, así que la vigila un
 escáner de texto y no ArchUnit—.
 
+> **Y hasta P5E esa undécima regla estaba MUDA aquí, medido.** `ConfiguracionDeCaja` sólo repartía
+> las tablas de este esquema, y el escáner distingue a propósito tres casos —lo propio, lo replicado
+> y **lo que nadie repartió**—, de los que el tercero **no es un cruce**: uno que marcara toda tabla
+> desconocida gritaría en cada archivo y dejaría de leerse (#437). De modo que un
+> `SELECT … FROM contribuyente JOIN predio` en `src/main` pasaba en **verde**.
+>
+> El reparto nombra ahora también las 88 tablas de `rentas`, las 15 de `catastro` y las 6 de
+> `normativa`, como ya hacían esos dos repositorios. No están en esta base y **justamente por eso
+> hay que nombrarlas**. En cuanto pudo ver, la regla encontró un cruce vivo: `ReciboRepositoryJdbc`
+> resolvía el filtro del listado con una subconsulta a `contribuyente`, o sea la mitad de
+> `PENDIENTE-CRUCE-06` que P5D no cerró —cerró la **emisión** copiando el pagador, no la
+> **búsqueda**—. Hoy el listado se filtra por `?documento=`, contra `recibo.pagador_documento` y su
+> índice. Todo en [P5E §2](https://github.com/hneyra/rentas/blob/main/docs/00-gobierno/P5E-cierre.md).
+
 **Si agregas una regla, agrega también la clase de muestra que la viola**, en las `muestras/` de
 `comun-verificaciones`: una regla que no puede fallar no protege nada. Y lo exige por
 construcción `ReglasDeArquitecturaMuerdenTest`, un `@TestFactory` sobre todas las reglas: una
