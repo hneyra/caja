@@ -5,7 +5,7 @@
 **`sgtm` no se tocó:** `git status` queda limpio, sin un solo archivo modificado.
 **Corridas:** `build verificarArquitectura verificarAislamiento` en verde en los dos repositorios,
 contra PostgreSQL 16.15 real (`127.0.0.1:55444`) y **no por Testcontainers** (§10, hueco 9).
-`rentas` **3 060** pruebas · 0 fallos; `caja` **667** · 0 fallos. El recuento método a método,
+`rentas` **3 076** pruebas · 0 fallos; `caja` **667** · 0 fallos. El recuento método a método,
 en §6.bis.
 
 Es la tercera extracción de verdad y la única que **convierte un `COMMIT` en dos**. ADR-0003 la
@@ -61,6 +61,21 @@ Lo honesto es decirlo así: **la bandera no se puede ejercitar porque no hay dos
 tanto el criterio 1 tal como está enunciado —treinta días *en paralelo*— no es alcanzable desde
 esta etapa. Lo que sí queda es la conciliación, que es el instrumento con el que esos treinta días
 se medirían el día que la instalación exista.
+
+### El camino nuevo, en cambio, sí está entero (corregido tras la primera entrega)
+
+La primera versión de este documento declaraba como hueco 1 que **nadie emitía una orden de cobro
+tributaria**, y eso no era un hueco: era una **regresión funcional que esta etapa introdujo**.
+`CobrarDeuda` leía el libro y cobraba en un solo acto; la resta lo borró y se reescribió sólo la
+mitad de cobrar, de modo que la ventanilla podía cobrar una tasa de punta a punta y una deuda
+tributaria **no**. Los siete métodos huérfanos de `CobrarEnVentanillaTest` (§6.bis) eran la prueba
+exacta de eso: no es que se hubieran movido, es que el camino no existía.
+
+Se cerró escribiendo la mitad que faltaba —`EmitirOrdenDeCobro` y `POST
+/rentas/api/v1/ordenes-de-cobro`, en `rentas`— y reponiendo con ella la cobertura. Lo que se puede
+ejercitar hoy de punta a punta es: **la ventanilla marca deuda → `rentas` emite las órdenes contra
+el libro → `caja` cobra e imprime → `caja` publica el pago → `rentas` lo imputa**. Lo que sigue sin
+poder ejercitarse son los treinta días de calendario, que es otra cosa y sigue declarado arriba.
 
 ---
 
@@ -182,12 +197,18 @@ El módulo **no se movió entero: se partió por dentro**, que es lo que lo dist
 
 | | A `caja` | Se queda en `rentas` |
 |---|---|---|
-| Clases de `src/main` | **76** borradas de `rentas` y reescritas aquí | **33** del convenio y el fraccionamiento coactivo |
+| Clases de `src/main` | **76** borradas de `rentas` y reescritas aquí | **33** del convenio y el fraccionamiento coactivo, **más la mitad de `CobrarDeuda` que pide** (`EmitirOrdenDeCobro`) |
 | Tablas | 10 (`V7` las retira de `rentas`) | `convenio`, `convenio_cuota`, `convenio_deuda`, `convenio_movimiento`, `convenio_correlativo` |
 
 **El convenio se queda porque es deuda reprogramada** (ADR-0026 §5): tiene interés, tiene quiebre y
 tiene consecuencias coactivas. Si viajara a la caja, la caja adquiriría reglas tributarias y dejaría
 de servir para cobrar un puesto de mercado — que es la razón entera de la separación.
+
+**`CobrarDeuda` es la única clase que se partió por dentro**, y no en dos módulos sino en dos
+sistemas: leía el libro y cobraba en un solo acto. Lo que lee el libro y compone la orden se quedó
+aquí como `EmitirOrdenDeCobro`; lo que cobra se fue como `CobrarOrdenes`. **La primera entrega de
+esta etapa sólo reescribió la segunda mitad**, y el resultado era que la ventanilla podía cobrar una
+tasa de punta a punta y una deuda tributaria no: está contado en §2 y en §6.bis, y se cerró.
 
 **Y la ventanilla no cambia:** la cuota inicial de un convenio se cobra «como cualquier otra
 orden». `TipoDePago` pierde de hecho tres de sus cinco valores —`A_CUENTA`, `PRECONVENIO` y
@@ -225,7 +246,7 @@ y con los dos `build verificarArquitectura verificarAislamiento` en verde:
 
 | | Antes (`rentas`) | Después |
 |---|---|---|
-| `rentas` | **3 246** | **3 060** · 0 fallos |
+| `rentas` | **3 246** | **3 076** · 0 fallos |
 | `caja` | — | **667** · 0 fallos |
 
 ### Las 186 que `rentas` perdió, y dónde están
@@ -239,8 +260,26 @@ y con los dos `build verificarArquitectura verificarAislamiento` en verde:
   `CajaControllerTest` 11, `CatalogoDeCajasFronteraTest` 11, `CierreYRecaudacionControllerTest` 13,
   `ReciboControllerTest` 17).
 - **+5**: `PagoInyectadoDosVecesTest`, la prueba nueva del buzón de entrada (criterios 3 y 4).
+- **+16**: `EmitirOrdenDeCobroTest` (11) y `OrdenDeCobroControllerTest` (5), la mitad que la resta
+  se había dejado sin reescribir. Once de esas dieciséis son la reposición de los cinco métodos
+  huérfanos que sí tenían contraparte, más nueve afirmaciones que el camino viejo no podía tener
+  porque no había dos sistemas (§6.bis).
 
-−191 + 5 = **−186**. 3 246 − 186 = **3 060**, que es lo que la corrida mide.
+−191 + 5 + 16 = **−170**. 3 246 − 170 = **3 076**, que es lo que la corrida mide.
+
+### El desglose de `rentas`, por módulo
+
+| Módulo | Pruebas | | Módulo | Pruebas |
+|---|---|---|---|---|
+| `rentas-rentas` | 595 | | `rentas-seguridad` | 180 |
+| `rentas-fiscalizacion` | 298 | | `rentas-plataforma` | 177 |
+| `rentas-licencias` | 285 | | `rentas-dominio-compartido` | 154 |
+| `rentas-cuentacorriente` | 273 | | `rentas-tesoreria` | **134** |
+| `rentas-sanciones` | 240 | | `rentas-aplicacion` | 130 |
+| `rentas-coactiva` | 197 | | `rentas-contribuyentes` | 80 |
+| `rentas-valores` | 181 | | `rentas-parametros` | 54 |
+| `rentas-indicadores` | 57 | | `rentas-esquema` | 41 |
+| `rentas-catastro` | 0 (adaptador cliente desde P5C) | | | |
 
 ### Las 667 de `caja`, por módulo
 
@@ -267,22 +306,43 @@ Las **216** de `kamayuk-caja-caja` se descomponen así:
 - **+13** nuevas: `CobrarConElOrigenApagadoTest` (6, criterio 2) y `ConciliacionDeNDiasTest`
   (6, criterio 1 parcial), más la que se recuperó (abajo).
 
-### Siete métodos SÍ desaparecieron, y hay que decir cuáles
+### Los siete métodos huérfanos, uno por uno
 
 `CobrarEnVentanillaTest` era una sola clase para dos cobros —el de una deuda tributaria y el de una
-tasa— y **solo su mitad de tasas viajó**, como `CobrarTasasEnVentanillaTest`. Los siete métodos de
-la mitad de deuda **no tienen hoy contraparte en ningún repositorio**:
+tasa— y **sólo su mitad de tasas viajó**, como `CobrarTasasEnVentanillaTest`. Los otros siete
+medían `CobrarDeuda`, que leía el libro y cobraba en un solo acto: esa clase no existe en ningún
+repositorio, así que cada uno se rehizo contra el camino nuevo o se retiró diciendo por qué.
+**Ninguno se queda sin sitio.**
 
-`elImporteSaleDelLibro`, `elReciboLlevaLaFechaDeLaDeuda`, `cobrarDosVecesNoEncuentraNada`,
-`elBeneficioNoDescuenta`, `elLibroSabeQueReciboLoOrigino`, `unTipoDePagoNoImplementadoSeRechaza`,
-`laMismaObligacionDosVecesSeRechaza`.
+| Método original | Dónde acabó |
+|---|---|
+| `elImporteSaleDelLibro` | **Reescrito**, mismo nombre, en `EmitirOrdenDeCobroTest` (`rentas`): el importe de la orden es la suma de las cuatro partes que devuelve `ConsultaDeDeudaPublica`, y la petición **no tiene componente donde poner uno** |
+| `elReciboLlevaLaFechaDeLaDeuda` | **Reescrito** como `laOrdenLlevaLaFechaConLaQueSeLeyoElLibro`: la fecha va **dentro de la referencia** (`PREDIAL\|2026\|71\|\|2026-03-16`), que es la regla 9 aplicada a la identidad de la orden |
+| `cobrarDosVecesNoEncuentraNada` | **Reescrito** como `emitirDosVecesNoEncuentraNada`: imputado el pago, el libro ya no tiene esa deuda y la segunda emisión falla con `NadaQueCobrar` |
+| `elBeneficioNoDescuenta` | **Reescrito** como `noHayDondeDeclararUnBeneficio`, y ahora es **estructural**: en el monolito la campaña se guardaba en el recibo *como constancia y sin efecto* (D-02b); aquí no viaja siquiera, ni en la petición de la pantalla ni en la del puerto |
+| `laMismaObligacionDosVecesSeRechaza` | **Reescrito**, mismo nombre: en la caja las dos líneas compartirían referencia, la segunda sería un reintento de la primera y se cobraría **la mitad de lo que la pantalla enseñó** |
+| `elLibroSabeQueReciboLoOrigino` | **RETIRADO con su motivo.** Lo que medía —que el abono lleve `documento_origen = "RECIBO <n>"`— lo mide hoy `PagoInyectadoDosVecesTest` **contra PostgreSQL real**, leyendo la fila. Rehacerlo aquí sería una segunda copia de la misma afirmación, y la de allá es más fuerte |
+| `unTipoDePagoNoImplementadoSeRechaza` | **RETIRADO con su motivo.** `TipoDePago` ya no cruza esta frontera: con qué se paga es de la caja y se elige **al cobrar**, no al emitir. Los tres valores que rechazaba —`A_CUENTA`, `PRECONVENIO`, `CUOTA_CONVENIO`— quedaron sin escritor posible, y eso está en §6 |
 
-Los siete medían `CobrarDeuda`, que **leía el libro y cobraba en el mismo acto**. Esa clase no
-existe en ninguno de los dos sistemas: en `caja` la sustituye `CobrarOrdenes`, que cobra una orden
-sin saber qué es —y por eso no puede decir de dónde salió el importe—, y en `rentas` la mitad que
-lee el libro **está sin escribir**: `OrdenesDeCobro` es un puerto que **nadie llama**. Es el hueco
-1 de §10, y estos siete métodos son su medida exacta: son la cobertura que hay que reponer cuando
-se escriba `EmitirOrdenDeCobro`, y hasta entonces no hay nada que la sustituya.
+Y con ellos entraron **nueve** que el camino viejo no podía tener, porque no había dos sistemas:
+que la petición no lleve importe ni beneficio (dos afirmaciones estructurales sobre los
+componentes del `record`), que el mismo día la misma obligación sea la **misma** orden y otro día
+**otra**, que una fila marcada sin deuda **salga nombrada** en vez de desaparecer del total, que el
+libro se lea **una vez por petición** y no una por obligación, y que si la caja no contesta no se
+devuelva una orden inventada.
+
+#### Que las nuevas pueden fallar
+
+Cinco roturas sobre `src/main`, cada una aplicada sola y restaurada **por copia comprobada con
+`cmp`**:
+
+| Rotura | Rojas |
+|---|---|
+| La referencia pierde su fecha (`texto()` sin `actualizadoA`) | **2** — la de la fecha y `otroDiaEsOtraOrden`, que pasa a devolver la misma orden con el importe de la semana pasada |
+| Sin la guarda de la obligación repetida | 1 |
+| Sin `NadaQueCobrar`: se devuelve una emisión vacía | 1 |
+| El importe se toma del `insoluto` y no del total | 1 — «expected 340.00» |
+| El libro se relee dentro del bucle, una vez por obligación | 1 |
 
 ### Y una que sí se recuperó al hacer la cuenta
 
@@ -382,11 +442,31 @@ checksum de Flyway eso importa. **El mismo defecto está 37 veces en el baseline
 ## 9. El contrato, y las dos operaciones que ninguna pantalla llama
 
 El contrato de `rentas` se **deriva** del prototipo del manual (#312) y `--comprobar` exige en CI que
-siga siendo lo que el generador produce. Las dos operaciones del buzón —`POST /rentas/api/v1/pagos`
-y `GET /rentas/api/v1/pagos/conciliacion`— entran por `OPERACIONES_ADICIONALES`, y son **las dos
-únicas del contrato que ninguna pantalla llama**: quien llama es el publicador de `caja`, después de
-su `COMMIT`. Están ahí igual porque el contrato es lo que este backend publica, y `ContratoDeApiTest`
-compara las dos direcciones. El contrato pasa de **225 operaciones en 202 rutas a 227 en 204**.
+siga siendo lo que el generador produce. Tres operaciones nuevas entran por
+`OPERACIONES_ADICIONALES`, todas bajo el acceso de `caja_tributaria`, y el contrato pasa de **225
+operaciones en 202 rutas a 228 en 205**:
+
+| Operación | Quién la llama |
+|---|---|
+| `POST /rentas/api/v1/ordenes-de-cobro` | **La ventanilla**, al marcar deuda. Es la primera mitad de lo que era un solo cobro |
+| `POST /rentas/api/v1/pagos` | El publicador de `caja`, después de su `COMMIT` |
+| `GET /rentas/api/v1/pagos/conciliacion` | `caja`, para cuadrar su cierre |
+
+Las dos del buzón son **las dos únicas del contrato que ninguna pantalla llama**. Están ahí igual
+porque el contrato es lo que este backend publica, y `ContratoDeApiTest` compara las dos direcciones.
+
+**El cuerpo de la emisión no tiene dónde poner un importe**, y eso lo comprueba una prueba sobre los
+componentes del `record` y no un comentario: si lo tuviera, la pantalla podría mandar el que leyó
+hace cinco minutos y `caja` lo imprimiría sin discutir, porque no recalcula por diseño. Tampoco
+tiene dónde declarar una campaña de beneficio —en el monolito se guardaba *como constancia y sin
+efecto* (D-02b); aquí no viaja siquiera—.
+
+**Y la respuesta distingue cuatro cosas que se arreglan de cuatro maneras**: `404` «ese código no
+está en el padrón» (#622), `422` «no debe nada a esa fecha» —una orden de cero soles se cobraría,
+imprimiría un recibo y no abonaría nada—, `422` nombrando el campo que falta, y **`503` cuando
+`caja` no contesta**. El 503 estrena `CodigoDeError.SERVICIO_NO_DISPONIBLE`, y es un código propio
+porque la respuesta correcta del cliente es la contraria a la de un 500: ante un fallo del servidor
+reintentar no cambia nada, y ante esto **sí**.
 
 **Y el generador tiene una guarda que se disparó**: declarar un segundo `caja_tributaria:` en
 `OPERACIONES_ADICIONALES` produce «Clave declarada dos veces, y la segunda se come a la primera sin
@@ -411,17 +491,23 @@ silencio, y por eso la forma del evento se comprueba **del otro lado**, en las p
 
 ## 10. Huecos declarados
 
-1. **Nadie emite una orden de cobro tributaria.** `OrdenesDeCobro` es un puerto con su adaptador
-   HTTP y **cero invocadores**: `rentas` sabe imputar el pago que vuelve, y no sabe todavía mandar
-   a cobrar. Por eso los siete métodos de la mitad de deuda de `CobrarEnVentanillaTest` (§6.bis)
-   no tienen contraparte: medían `CobrarDeuda`, que leía el libro y cobraba en un solo acto, y de
-   esas dos mitades solo se reescribió la de cobrar. **Consecuencia: hoy la ventanilla puede cobrar
-   una tasa de punta a punta y una deuda tributaria no**, porque no hay quien le dé la orden. Lo que
-   falta es un caso de uso `EmitirOrdenDeCobro` en `rentas` —leer la obligación del libro, componer
-   la `Peticion` con su importe **ya actualizado a una fecha**, llamar al puerto— y reponer con él
-   esos siete métodos. **No estaba en el enunciado de esta etapa** (sus cinco operaciones son todas
-   de `caja`, y la parte de `rentas` que sí pedía era la imputación), pero es lo primero que hay que
-   escribir antes de encender nada.
+1. **La emisión de la orden ya existe; lo que falta es la cuota inicial de un convenio.** La
+   primera versión de este documento declaraba aquí que nadie emitía una orden de cobro tributaria,
+   y eso no era un hueco sino una regresión de esta etapa: **se cerró** (§2). Hoy `rentas` publica
+   `POST /rentas/api/v1/ordenes-de-cobro`, `EmitirOrdenDeCobro` lee el libro y compone una orden
+   por obligación, y los siete métodos huérfanos volvieron o se retiraron con su motivo (§6.bis).
+   Lo que sigue faltando de verdad, y es más pequeño y más concreto:
+   - **la cuota inicial de un preconvenio no se puede cobrar por este camino.** `EmitirOrdenDeCobro`
+     lee obligaciones del libro, y una cuota inicial no está en el libro: la dice el cronograma
+     congelado (`FormalizarConvenio.cuotaInicialDe`). Hace falta una segunda forma de componer la
+     orden, y con ella vuelve `FormalizarConvenio` (hueco 5);
+   - **una orden pendiente no caduca sola.** Dos órdenes de la misma obligación a fechas distintas
+     pueden coexistir —es lo que permite cobrar el interés devengado—, y cobrar las dos produce un
+     segundo pago que `rentas` rechaza a la cola de muertos: **visible, pero después de haber
+     cobrado**. Caducar órdenes es trabajo de `caja` y no está hecho;
+   - **la pantalla no lo llama todavía.** El endpoint existe y está probado en su borde, pero
+     `caja_tributaria` sigue mandando el cuerpo de antes: conectar la interfaz es otra etapa, y aquí
+     no hay interfaz que conectar.
 2. **Los treinta días del criterio 1 no se pueden medir aquí**, y el camino viejo **no existe**
    detrás de ninguna bandera porque la resta lo eliminó. §2.
 3. **La alerta escribe en el registro, no manda un correo.** ADR-0026 §4 dice «no se queda en un
