@@ -62,6 +62,15 @@ dependencies {
 // #192 punto 2, aplicada al contrato: lo destapo #399 al mutar el YAML y ver la
 // prueba dar BUILD SUCCESSFUL sin haber corrido.
 tasks.test {
+    // Gradle NO hereda las propiedades del sistema en la JVM de las pruebas: sin esto,
+    // `-Dkamayuk.contratos.regenerar=true` no llega y el contrato que este repositorio
+    // publica para sus proveedores no se puede regenerar. Es la misma linea que
+    // `rentas` tiene desde #400 para las formas de la API.
+    providers
+        .systemProperty("kamayuk.contratos.regenerar")
+        .orNull
+        ?.let { systemProperty("kamayuk.contratos.regenerar", it) }
+
     // `AsercionesQueNoPuedenFallarTest` lee del disco las pruebas de TODOS los modulos (#724).
     // Es el unico escaner que recorre `src/test`, y esas fuentes no estan en el classpath de este
     // modulo —solo lo estan las de `src/main`, por las dependencias—, asi que sin declararlas

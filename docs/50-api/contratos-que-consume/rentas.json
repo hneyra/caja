@@ -1,0 +1,40 @@
+{
+  "PROCEDENCIA" : "ARCHIVO GENERADO — no editar a mano. Lo publica el CONSUMIDOR con lo que su adaptador pide y lee de verdad; lo comprueba el PROVEEDOR en su propio CI (ADR-0030 §4). Un campo que el proveedor deje de publicar, o un parametro que deje de leer, pone rojo el build del proveedor y no el del consumidor: es lo que sustituye a lo que hacia el compilador cuando los contextos compartian repositorio.",
+  "consumidor" : "caja",
+  "proveedor" : "rentas",
+  "raiz" : "/rentas/api/v1",
+  "operaciones" : {
+    "POST /pagos" : {
+      "parametros" : [ ],
+      "respuesta" : { },
+      "cuerpo" : {
+        "pagoId" : "texto",
+        "tipo" : "texto",
+        "pagoOriginalId" : "texto",
+        "sistemaOrigen" : "texto",
+        "total" : "texto",
+        "actualizadoA" : "texto",
+        "recibo" : {
+          "numero" : "texto",
+          "serie" : "texto",
+          "fechaDePago" : "texto",
+          "cajero" : "texto",
+          "formaDePago" : "texto"
+        },
+        "pagador" : {
+          "documento" : "texto",
+          "nombre" : "texto",
+          "idExterno" : "entero"
+        },
+        "ordenes" : [ {
+          "ordenId" : "entero",
+          "referenciaExterna" : "texto",
+          "importe" : "texto",
+          "actualizadoA" : "texto"
+        } ],
+        "motivo" : "texto",
+        "fecha" : "texto"
+      }
+    }
+  }
+}
