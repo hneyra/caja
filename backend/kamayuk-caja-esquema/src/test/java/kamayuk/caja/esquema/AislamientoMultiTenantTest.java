@@ -46,7 +46,7 @@ class AislamientoMultiTenantTest {
      * pruebas no tienen ninguna premisa ajena que escribir. Que esta lista sea corta es la
      * propiedad, no la casualidad.
      *
-     * <p><b>{@code pg_stat_statements_info} salio de aqui en C-11</b>, y conviene decir por que en
+     * <p><b>{@code pg_stat_statements_info} salio de aqui en C-21</b>, y conviene decir por que en
      * vez de dejar la entrada. Se puso «para que una maquina que tenga esa extension no ponga la
      * prueba en rojo», y no podia pasar por dos motivos independientes: la base de cada corrida se
      * crea con {@code TEMPLATE template0}, que no hereda ninguna extension del cluster anfitrion, y
@@ -160,7 +160,7 @@ class AislamientoMultiTenantTest {
             // exige que toda tabla este en alguna lista; sin esta, una entrada que ya no exime
             // nada se queda dentro para siempre y la lista deja de decir lo que exime.
             //
-            // Y no es hipotetico: `spatial_ref_sys` la instala PostGIS, y hasta C-11 la base de
+            // Y no es hipotetico: `spatial_ref_sys` la instala PostGIS, y hasta C-21 la base de
             // prueba la heredaba de `template1` por el camino de Testcontainers. La salida comoda
             // ante ese rojo era anadirla aqui en los tres sistemas que NO crean PostGIS —lo que
             // habria dejado a local y a CI midiendo bases distintas—. Con esta guarda, esa salida
