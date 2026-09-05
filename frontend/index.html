@@ -4,6 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/png" href="/escudo-catacaos.png" />
+    <!--
+      Source Sans 3, cargada como en `TesoreriaV6.dc.html` (lineas 12-14): las mismas tres
+      etiquetas y la misma URL. Es la unica familia de V6.
+
+      Esto es una peticion a un tercero, y la regla de ESLint que prohibe `fetch` no la
+      alcanza: no es codigo. Se acepta porque la pila de respaldo del token `--familia`
+      termina en `system-ui, sans-serif`, asi que una ventanilla sin salida a internet
+      dibuja la pantalla con la fuente del sistema en vez de quedarse en blanco. El dia que
+      se autohospede, se cambian estas tres lineas y el token no se entera.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&amp;display=swap"
+    />
     <title>Tesorería · caja-web</title>
   </head>
   <body>
