@@ -44,6 +44,14 @@ import org.junit.jupiter.api.Test;
  * simple»: lo unico que faltaba era <b>afirmarlo</b>, porque nada distinguia «no necesita ninguna»
  * de «ya se las habia creado alguien».
  *
+ * <p><b>Y esa frase era falsa a medias hasta C-21, que es lo que esta prueba destapo.</b> {@code
+ * sentenciaDeCreacion} solo la ejecutaba el camino del motor externo —el de local—; el de
+ * Testcontainers se quedaba con la base por omision del contenedor, que {@code initdb} crea desde
+ * {@code template1}, y la imagen instala PostGIS ahi. Por eso este caso llevaba rojo en CI diciendo
+ * {@code ["fuzzystrmatch", "postgis", "postgis_tiger_geocoder", "postgis_topology"]} y verde en
+ * toda maquina de desarrollo. Desde C-21 los dos caminos crean su base igual, y la premisa de
+ * arriba es cierta se llegue por donde se llegue.
+ *
  * <p>Lo que esta prueba NO puede decir es que la IMAGEN del motor pueda ser {@code
  * postgres:16-alpine} en vez de {@code postgis/postgis}. Eso no depende de este esquema sino del
  * cluster, que es <b>uno solo para los cuatro sistemas</b>: basta con que {@code catastro} necesite
