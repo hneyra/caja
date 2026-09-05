@@ -11,8 +11,8 @@
 // baselines (ADR-0032). Este modulo es el que las usa.
 
 plugins {
-    id("sgtm.modulo")
-    id("sgtm.pruebas-postgres")
+    id("kamayuk.modulo")
+    id("kamayuk.pruebas-postgres")
 }
 
 dependencies {

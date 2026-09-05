@@ -5,8 +5,8 @@
 // Modulith. Ningun otro modulo tiene en su classpath a todos los demas.
 
 plugins {
-    id("sgtm.java-base")
-    id("sgtm.pruebas-postgres")
+    id("kamayuk.java-base")
+    id("kamayuk.pruebas-postgres")
     alias(libs.plugins.spring.boot)
 }
 
