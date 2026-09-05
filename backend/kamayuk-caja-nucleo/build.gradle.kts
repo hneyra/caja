@@ -24,7 +24,7 @@ dependencies {
     implementation("tools.jackson.core:jackson-databind")
 
     // Las pruebas de repositorio y de atomicidad corren contra PostgreSQL de verdad: provisionan
-    // la base como un ambiente real y se conectan como sgtm_app, no como el superusuario que
+    // la base como un ambiente real y se conectan como kamayuk_app, no como el superusuario que
     // entrega Testcontainers (CAL-01 §3.2). Contra un doble no se puede demostrar ni el FOR UPDATE
     // sobre la orden, ni el REVOKE de `cierre_caja`, ni que una transaccion deje cero filas al
     // fallar a mitad.

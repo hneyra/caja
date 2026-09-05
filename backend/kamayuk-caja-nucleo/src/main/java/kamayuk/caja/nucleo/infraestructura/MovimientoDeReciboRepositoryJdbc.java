@@ -19,8 +19,8 @@ import org.springframework.stereotype.Repository;
  * Los movimientos de un recibo contra PostgreSQL (V30).
  *
  * <p><b>Solo inserta.</b> No hay aqui ni un {@code UPDATE recibo_movimiento} ni un {@code DELETE}:
- * V30 le concede a {@code sgtm_app} solo {@code SELECT} e {@code INSERT}, y el escaner de fuentes
- * rechaza esas dos cadenas antes de que lleguen a ejecutarse.
+ * V30 le concede a {@code kamayuk_app} solo {@code SELECT} e {@code INSERT}, y el escaner de
+ * fuentes rechaza esas dos cadenas antes de que lleguen a ejecutarse.
  *
  * <p><b>La doble anulacion la rechaza el indice, no un {@code if}.</b> Se inserta y se traduce el
  * choque contra {@code recibo_movimiento_anulacion_uq}. Con un {@code SELECT} previo, dos

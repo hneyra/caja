@@ -57,11 +57,11 @@ import tools.jackson.databind.json.JsonMapper;
  * <b>area legible</b> sale de un {@code LEFT JOIN} con una segunda tabla que tambien tiene RLS:
  * comprobarlo en memoria seria comprobar el doble.
  *
- * <p>La conexion es la de {@code sgtm_app}. Un superusuario omite RLS incluso con {@code FORCE ROW
- * LEVEL SECURITY}, asi que una prueba escrita sobre el no verificaria ningun aislamiento; y con
- * {@code sgtm_owner} tampoco basta —{@code FORCE} lo sujeta a la politica igual, de modo que la
+ * <p>La conexion es la de {@code kamayuk_app}. Un superusuario omite RLS incluso con {@code FORCE
+ * ROW LEVEL SECURITY}, asi que una prueba escrita sobre el no verificaria ningun aislamiento; y con
+ * {@code kamayuk_owner} tampoco basta —{@code FORCE} lo sujeta a la politica igual, de modo que la
  * rotura clasica escrita con el dueño saldria en VERDE (#537, #545)—. Lo fija {@link
- * #seConectaComoSgtmApp}.
+ * #seConectaComoKamayukApp}.
  *
  * <p>El proxy transaccional se construye con {@link AnnotationTransactionAttributeSource}, o sea
  * <b>obedeciendo a la anotacion</b> como haria el contenedor: envolver el caso de uso en un {@code
@@ -265,13 +265,13 @@ class CatalogoDeCajasFronteraTest {
     }
 
     @Test
-    @DisplayName("AC 2 — el centinela: la prueba se conecta como sgtm_app y no como otra cosa")
-    void seConectaComoSgtmApp() {
+    @DisplayName("AC 2 — el centinela: la prueba se conecta como kamayuk_app y no como otra cosa")
+    void seConectaComoKamayukApp() {
         assertThat(jdbc.sql("SELECT current_user").query(String.class).single())
                 .as(
                         "con superusuario RLS se omite —incluso con FORCE ROW LEVEL SECURITY— y"
                                 + " todo lo de este archivo pasaria sin verificar nada. Con"
-                                + " sgtm_owner NO basta: FORCE lo sujeta a la politica igual, asi"
+                                + " kamayuk_owner NO basta: FORCE lo sujeta a la politica igual, asi"
                                 + " que la rotura clasica escrita con el dueño sale VERDE (#537,"
                                 + " #545)")
                 .isEqualTo(BaseDeDatosDePrueba.APP);

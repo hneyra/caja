@@ -72,8 +72,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * prueba que el codigo maneja una excepcion; un puerto muerto prueba que la excepcion <b>ocurre</b>
  * por donde se cree.
  *
- * <p>Y se cobra contra PostgreSQL de verdad, como {@code sgtm_app}: el recibo, la orden marcada y
- * el evento tienen que caer en la MISMA transaccion, y eso no se puede demostrar contra un doble.
+ * <p>Y se cobra contra PostgreSQL de verdad, como {@code kamayuk_app}: el recibo, la orden marcada
+ * y el evento tienen que caer en la MISMA transaccion, y eso no se puede demostrar contra un doble.
  */
 @DisplayName("P5D AC 2 — la ventanilla cobra con el sistema de origen apagado")
 class CobrarConElOrigenApagadoTest {

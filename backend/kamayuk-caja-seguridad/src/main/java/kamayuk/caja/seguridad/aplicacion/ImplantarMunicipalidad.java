@@ -32,14 +32,14 @@ import org.springframework.stereotype.Component;
  *
  * <h2>Por que un proceso y no un endpoint</h2>
  *
- * <p>Porque {@code municipalidad} solo la escribe {@code sgtm_owner}. Un endpoint que lo hiciera le
- * exigiria a {@code sgtm_app} un privilegio que se le quito a proposito, y seria el camino mas
- * corto de una pantalla de alta a una escalada entre municipalidades.
+ * <p>Porque {@code municipalidad} solo la escribe {@code kamayuk_owner}. Un endpoint que lo hiciera
+ * le exigiria a {@code kamayuk_app} un privilegio que se le quito a proposito, y seria el camino
+ * mas corto de una pantalla de alta a una escalada entre municipalidades.
  *
  * <p>Corre en el perfil {@code batch}: sin servidor web, sin puerto expuesto y con vida corta. Las
- * credenciales de {@code sgtm_owner} entran <b>solo</b> en el paso 1, para <b>un</b> {@code
+ * credenciales de {@code kamayuk_owner} entran <b>solo</b> en el paso 1, para <b>un</b> {@code
  * INSERT}, en una conexion que se abre y se cierra. Todo lo demas va por el camino normal de la
- * aplicacion, como {@code sgtm_app} y con su auditoria.
+ * aplicacion, como {@code kamayuk_app} y con su auditoria.
  *
  * <h2>Un grupo, no dos</h2>
  *

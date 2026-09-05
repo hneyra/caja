@@ -31,7 +31,7 @@
 --
 --  ANTES DE ESTE ARCHIVO hay que haber corrido `crear-roles.sql`: los roles y
 --  las extensiones se provisionan con una conexion de superusuario, porque las
---  politicas de §6 NOMBRAN roles que deben existir, y `sgtm_owner` no puede
+--  politicas de §6 NOMBRAN roles que deben existir, y `kamayuk_owner` no puede
 --  crearse a si mismo.
 --
 --  Y NINGUNA EXTENSION HACE FALTA AQUI. `crear-roles.sql` del monolito instala
@@ -719,7 +719,7 @@ CREATE POLICY modulo_sistema_tenant ON modulo_sistema FOR ALL TO PUBLIC
     WITH CHECK ((municipalidad_id = (current_setting('app.municipalidad_id'::text))::bigint));
 ALTER TABLE municipalidad ENABLE ROW LEVEL SECURITY;
 ALTER TABLE municipalidad FORCE ROW LEVEL SECURITY;
-CREATE POLICY municipalidad_escritura ON municipalidad FOR ALL TO sgtm_owner
+CREATE POLICY municipalidad_escritura ON municipalidad FOR ALL TO kamayuk_owner
     USING (true)
     WITH CHECK (true);
 CREATE POLICY municipalidad_lectura ON municipalidad FOR SELECT TO PUBLIC
@@ -751,7 +751,7 @@ CREATE POLICY recibo_movimiento_tenant ON recibo_movimiento FOR ALL TO PUBLIC
     WITH CHECK ((municipalidad_id = (current_setting('app.municipalidad_id'::text))::bigint));
 ALTER TABLE respaldo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE respaldo FORCE ROW LEVEL SECURITY;
-CREATE POLICY respaldo_escritura ON respaldo FOR ALL TO sgtm_owner
+CREATE POLICY respaldo_escritura ON respaldo FOR ALL TO kamayuk_owner
     USING (true)
     WITH CHECK (true);
 CREATE POLICY respaldo_lectura ON respaldo FOR SELECT TO PUBLIC
@@ -787,48 +787,48 @@ CREATE POLICY usuario_tenant ON usuario FOR ALL TO PUBLIC
 --  vea en ningun diff.
 -- ==========================================================================
 
-GRANT INSERT, SELECT, UPDATE ON acceso TO sgtm_app;
-GRANT SELECT ON acceso TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON area TO sgtm_app;
-GRANT SELECT ON area TO sgtm_readonly;
-GRANT INSERT, SELECT ON auditoria TO sgtm_app;
-GRANT SELECT ON auditoria TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON caja TO sgtm_app;
-GRANT SELECT ON caja TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON cierre_caja TO sgtm_app;
-GRANT SELECT ON cierre_caja TO sgtm_readonly;
-GRANT INSERT, SELECT ON cierre_turno TO sgtm_app;
-GRANT SELECT ON cierre_turno TO sgtm_readonly;
-GRANT INSERT, SELECT ON cierre_turno_detalle TO sgtm_app;
-GRANT SELECT ON cierre_turno_detalle TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON documento_emitido TO sgtm_app;
-GRANT SELECT ON documento_emitido TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON grupo TO sgtm_app;
-GRANT SELECT ON grupo TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON miembro TO sgtm_app;
-GRANT SELECT ON miembro TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON modulo_sistema TO sgtm_app;
-GRANT SELECT ON modulo_sistema TO sgtm_readonly;
-GRANT SELECT ON municipalidad TO sgtm_app;
-GRANT SELECT ON municipalidad TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON permiso TO sgtm_app;
-GRANT SELECT ON permiso TO sgtm_readonly;
-GRANT INSERT, SELECT ON recibo TO sgtm_app;
-GRANT SELECT ON recibo TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON recibo_correlativo TO sgtm_app;
-GRANT SELECT ON recibo_correlativo TO sgtm_readonly;
-GRANT INSERT, SELECT ON recibo_detalle TO sgtm_app;
-GRANT SELECT ON recibo_detalle TO sgtm_readonly;
-GRANT INSERT, SELECT ON recibo_movimiento TO sgtm_app;
-GRANT SELECT ON recibo_movimiento TO sgtm_readonly;
-GRANT SELECT ON respaldo TO sgtm_app;
-GRANT SELECT ON respaldo TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON sesion TO sgtm_app;
-GRANT SELECT ON sesion TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON tasa TO sgtm_app;
-GRANT SELECT ON tasa TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON usuario TO sgtm_app;
-GRANT SELECT ON usuario TO sgtm_readonly;
+GRANT INSERT, SELECT, UPDATE ON acceso TO kamayuk_app;
+GRANT SELECT ON acceso TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON area TO kamayuk_app;
+GRANT SELECT ON area TO kamayuk_readonly;
+GRANT INSERT, SELECT ON auditoria TO kamayuk_app;
+GRANT SELECT ON auditoria TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON caja TO kamayuk_app;
+GRANT SELECT ON caja TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON cierre_caja TO kamayuk_app;
+GRANT SELECT ON cierre_caja TO kamayuk_readonly;
+GRANT INSERT, SELECT ON cierre_turno TO kamayuk_app;
+GRANT SELECT ON cierre_turno TO kamayuk_readonly;
+GRANT INSERT, SELECT ON cierre_turno_detalle TO kamayuk_app;
+GRANT SELECT ON cierre_turno_detalle TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON documento_emitido TO kamayuk_app;
+GRANT SELECT ON documento_emitido TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON grupo TO kamayuk_app;
+GRANT SELECT ON grupo TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON miembro TO kamayuk_app;
+GRANT SELECT ON miembro TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON modulo_sistema TO kamayuk_app;
+GRANT SELECT ON modulo_sistema TO kamayuk_readonly;
+GRANT SELECT ON municipalidad TO kamayuk_app;
+GRANT SELECT ON municipalidad TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON permiso TO kamayuk_app;
+GRANT SELECT ON permiso TO kamayuk_readonly;
+GRANT INSERT, SELECT ON recibo TO kamayuk_app;
+GRANT SELECT ON recibo TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON recibo_correlativo TO kamayuk_app;
+GRANT SELECT ON recibo_correlativo TO kamayuk_readonly;
+GRANT INSERT, SELECT ON recibo_detalle TO kamayuk_app;
+GRANT SELECT ON recibo_detalle TO kamayuk_readonly;
+GRANT INSERT, SELECT ON recibo_movimiento TO kamayuk_app;
+GRANT SELECT ON recibo_movimiento TO kamayuk_readonly;
+GRANT SELECT ON respaldo TO kamayuk_app;
+GRANT SELECT ON respaldo TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON sesion TO kamayuk_app;
+GRANT SELECT ON sesion TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON tasa TO kamayuk_app;
+GRANT SELECT ON tasa TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON usuario TO kamayuk_app;
+GRANT SELECT ON usuario TO kamayuk_readonly;
 
 -- ==========================================================================
 --  8. DISPARADORES DE INMUTABILIDAD Y DE INVARIANTE
@@ -843,7 +843,7 @@ CREATE TRIGGER documento_inmutable_trg BEFORE UPDATE ON public.documento_emitido
 -- ==========================================================================
 
 COMMENT ON COLUMN caja.serie IS 'La serie de sus recibos, unica en la municipalidad (#33). Es lo que impide que dos ventanillas compitan por el mismo correlativo: cada una incrementa su propia fila de recibo_correlativo.';
-COMMENT ON TABLE cierre_caja IS 'El turno de una caja: se abre por cajero y fecha (#33) y se cobra contra el. Su fila es donde se serializa la ventanilla —una cobranza la bloquea con FOR UPDATE antes de numerar y de asentar—, y por eso sgtm_app CONSERVA el UPDATE aunque el turno no se edite nunca: PostgreSQL exige ese privilegio para poder bloquear una fila. La inmutabilidad la sostiene el escaner de fuentes (#36, V32 §1.bis). El cierre, su reversion y el estado que de ellos se deriva viven en cierre_turno.';
+COMMENT ON TABLE cierre_caja IS 'El turno de una caja: se abre por cajero y fecha (#33) y se cobra contra el. Su fila es donde se serializa la ventanilla —una cobranza la bloquea con FOR UPDATE antes de numerar y de asentar—, y por eso kamayuk_app CONSERVA el UPDATE aunque el turno no se edite nunca: PostgreSQL exige ese privilegio para poder bloquear una fila. La inmutabilidad la sostiene el escaner de fuentes (#36, V32 §1.bis). El cierre, su reversion y el estado que de ellos se deriva viven en cierre_turno.';
 COMMENT ON COLUMN cierre_caja.fecha_apertura IS 'Cuando se abrio el turno. Sale del reloj INYECTADO de la aplicacion, no de un DEFAULT now() de la base: la fila se audita por ejercicio y el ejercicio tiene que ser el mismo que la aplicacion cree que es.';
 COMMENT ON TABLE cierre_turno IS 'El cierre de un turno de caja y su reversion (#36, RF-087). Solo se agrega: un cierre no se modifica ni se borra —se reversa con otro registro que lo deja sin efecto y reabre el turno (regla 4, RNF-051)—. El estado del turno se DERIVA de aqui: hay cierre vigente o no lo hay.';
 COMMENT ON COLUMN cierre_turno.secuencia IS 'El orden del movimiento dentro del turno, unico por turno. Es lo que impide dos cierres simultaneos: los dos calculan la misma secuencia y uno recibe 23505. Un indice unico parcial «un solo CIERRE» no serviria, porque despues de una reversion tiene que caber otro.';
@@ -851,8 +851,8 @@ COMMENT ON COLUMN cierre_turno.total_anulado IS 'Lo que las anulaciones del dia 
 COMMENT ON COLUMN cierre_turno.diferencia IS 'Lo declarado menos el neto del sistema. Admite negativo a proposito, y es la unica columna de importe del esquema que lo hace: un arqueo que exigiera diferencia cero haria que el cajero al que le faltan diez soles declarara lo que el sistema diga, y el descuadre desapareceria del papel en vez de quedar escrito.';
 COMMENT ON TABLE cierre_turno_detalle IS 'El arqueo del cierre, una fila por medio de pago (#36, RF-087): lo cobrado, lo anulado, el neto del sistema y lo DECLARADO por el cajero. Lo declarado no esta en ningun otro sitio —es lo que se conto en el cajon—, y por eso el desglose se congela aqui en vez de recomponerse sumando recibos.';
 COMMENT ON TABLE documento_emitido IS 'Documentos emitidos con los datos que los generaron, para reimprimirlos identicos (RF-132).';
-COMMENT ON TABLE municipalidad IS 'Registro de tenants. No es tabla de tenant: la aplicacion la lee entera porque los procesos masivos iteran municipalidad por municipalidad. Solo sgtm_owner escribe.';
-COMMENT ON COLUMN municipalidad.es_demostracion IS 'Instalacion de demostracion: todo documento emitido bajo este tenant sale marcado, en los tres formatos. Lo lee la capa de documentos, no cada emisor. Solo sgtm_owner la escribe, como el alta de la municipalidad.';
+COMMENT ON TABLE municipalidad IS 'Registro de tenants. No es tabla de tenant: la aplicacion la lee entera porque los procesos masivos iteran municipalidad por municipalidad. Solo kamayuk_owner escribe.';
+COMMENT ON COLUMN municipalidad.es_demostracion IS 'Instalacion de demostracion: todo documento emitido bajo este tenant sale marcado, en los tres formatos. Lo lee la capa de documentos, no cada emisor. Solo kamayuk_owner la escribe, como el alta de la municipalidad.';
 COMMENT ON COLUMN recibo.campania_beneficio IS 'Que campana de beneficio se declaro en ventanilla. Hoy es SOLO constancia: el importe cobrado es el integro. Aplicarle un descuento esta bloqueado por D-02b, que es la que firma los valores de ordenanza local con su ratificacion provincial (#33).';
 COMMENT ON COLUMN recibo.actualizado_a IS 'A que fecha estaban actualizados los importes que este recibo cobro (regla 9, RNF-075). En caja tributaria es la fecha de pago con la que se releyo deudaActualizadaA; en caja de tasas, la fecha a la que la tarifa del TUPA estaba vigente. Sin ella un duplicado no puede explicar por que su interes no es el de hoy.';
 COMMENT ON COLUMN recibo.clave_idempotencia IS 'La clave que el cliente manda en la cabecera idempotency-key. Con su indice unico parcial, reenviar la misma cobranza devuelve el recibo de la primera y no emite otro.';
@@ -861,6 +861,6 @@ COMMENT ON TABLE recibo_movimiento IS 'Lo que le pasa a un recibo despues de emi
 COMMENT ON COLUMN recibo_movimiento.turno_id IS 'El turno DEL RECIBO, no el de quien anula: una anulacion del mismo dia saca dinero del cajon en el que entro, y el arqueo de ese turno (#36) tiene que poder restarla.';
 COMMENT ON COLUMN recibo_movimiento.importe IS 'El importe del recibo que deja de estar cobrado, copiado y no releido. Dentro de dos anios el libro dira otra cosa -habra mas asientos- y el acta de anulacion tiene que explicarse sola. Es lo que el arqueo del turno (#36) resta del cajon; en una cobranza tributaria coincide con lo que la reversion devolvio al libro, y la aplicacion lo comprueba.';
 COMMENT ON COLUMN recibo_movimiento.resumen IS 'SHA-256 del recibo dibujado a partir de lo congelado. Misma garantia que documento_emitido.resumen (V15): la segunda reimpresion se compara con la primera y FALLA si no coincide, en vez de entregar un papel distinto con el mismo numero.';
-COMMENT ON TABLE respaldo IS 'Estado de las copias de seguridad (RF-126). La aplicacion solo lee: quien hace la copia y escribe aqui es el proceso de despliegue, como sgtm_owner.';
+COMMENT ON TABLE respaldo IS 'Estado de las copias de seguridad (RF-126). La aplicacion solo lee: quien hace la copia y escribe aqui es el proceso de despliegue, como kamayuk_owner.';
 COMMENT ON COLUMN respaldo.ultima_restauracion_verificada IS 'Instante en que se comprobo, restaurandola de verdad, que esta copia se puede restaurar (RNF-079). NULO significa «nunca se probo», nunca «hoy».';
 COMMENT ON COLUMN respaldo.ultima_restauracion_verificada_por IS 'Que proceso lo comprobo: el simulacro de restauracion y el ambiente contra el que corrio. No es un usuario de la aplicacion: la aplicacion no restaura.';

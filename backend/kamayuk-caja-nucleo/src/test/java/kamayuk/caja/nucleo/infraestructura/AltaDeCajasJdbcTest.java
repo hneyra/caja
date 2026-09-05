@@ -47,7 +47,7 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * #430 — El alta de las ventanillas, contra PostgreSQL de verdad y como {@code sgtm_app}.
+ * #430 — El alta de las ventanillas, contra PostgreSQL de verdad y como {@code kamayuk_app}.
  *
  * <p><b>Lo que este archivo existe para medir</b> no es que una fila entre: es que <b>antes de la
  * carga la ventanilla no se puede abrir</b>. Hasta #430 nada creaba una {@code caja} ni un {@code
@@ -56,9 +56,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * del sistema. La prueba {@link #laVentanillaNoSePuedeAbrirHastaQueLaCajaExiste} es esa afirmación,
  * ejecutada.
  *
- * <p>Se conecta como {@code sgtm_app} —nunca como el superusuario que entrega Testcontainers, que
- * omite RLS incluso con {@code FORCE ROW LEVEL SECURITY}—, y el caso de uso va envuelto en un proxy
- * transaccional de verdad: lo que se verifica es la anotación del código de producción.
+ * <p>Se conecta como {@code kamayuk_app} —nunca como el superusuario que entrega Testcontainers,
+ * que omite RLS incluso con {@code FORCE ROW LEVEL SECURITY}—, y el caso de uso va envuelto en un
+ * proxy transaccional de verdad: lo que se verifica es la anotación del código de producción.
  */
 @DisplayName("#430 — El alta de las ventanillas de una instalacion nueva")
 class AltaDeCajasJdbcTest {

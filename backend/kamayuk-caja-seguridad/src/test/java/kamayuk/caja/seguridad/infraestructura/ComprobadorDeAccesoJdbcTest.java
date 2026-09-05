@@ -24,7 +24,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * El comprobador de acceso de este sistema, contra PostgreSQL real y como {@code sgtm_app}.
+ * El comprobador de acceso de este sistema, contra PostgreSQL real y como {@code kamayuk_app}.
  *
  * <h2>Por que este sistema tiene el suyo (D-N5, que contesta D-19)</h2>
  *
@@ -40,10 +40,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * de sus grupos)}— y el aislamiento lo pone la politica RLS, no un {@code WHERE}. Un doble del
  * repositorio devolveria lo que se le pidiera; lo que hay que comprobar es lo que hace PostgreSQL.
  *
- * <p>Se conecta como {@code sgtm_app} y no como {@code sgtm_owner}: con {@code FORCE ROW LEVEL
- * SECURITY} el dueno tambien queda sujeto a la politica, asi que la rotura de aislamiento que uno
- * teclea por costumbre pasaria en verde y no demostraria nada (#537, #545, #601). Y el {@code SET
- * LOCAL} lo emite {@link TenantTransactionManager}, el de produccion, no la prueba.
+ * <p>Se conecta como {@code kamayuk_app} y no como {@code kamayuk_owner}: con {@code FORCE ROW
+ * LEVEL SECURITY} el dueno tambien queda sujeto a la politica, asi que la rotura de aislamiento que
+ * uno teclea por costumbre pasaria en verde y no demostraria nada (#537, #545, #601). Y el {@code
+ * SET LOCAL} lo emite {@link TenantTransactionManager}, el de produccion, no la prueba.
  */
 @DisplayName("C-7 — el comprobador de acceso de caja, contra su propia copia")
 class ComprobadorDeAccesoJdbcTest {

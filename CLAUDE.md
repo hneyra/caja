@@ -25,8 +25,8 @@ el resumen.
 | `docs/30-arquitectura/adr/` | Sin ningún ADR propio, y sigue siendo correcto: lo que la caja hace lo deciden ADR-0026 y ADR-0029 |
 | Su frontend (`caja-web`) e imagen | **NO existen** |
 
-**Tres roles y cero extensiones.** `crear-roles.sql` declara `sgtm_owner`, `sgtm_app` y
-`sgtm_readonly` — `rol_carga_parametros` es de `normativa` y aquí no recibe un solo `GRANT`— y
+**Tres roles y cero extensiones.** `crear-roles.sql` declara `kamayuk_owner`, `kamayuk_app` y
+`kamayuk_readonly` — `rol_carga_parametros` es de `normativa` y aquí no recibe un solo `GRANT`— y
 **ninguna extensión de PostgreSQL**. No es limpieza: una ventanilla cuya base necesita PostGIS no se
 levanta en cualquier sitio, y la caja tiene que poder correr en el motor más simple que exista.
 
@@ -69,9 +69,9 @@ nombre repetido allí donde el sistema tiene un solo contexto y se llama igual q
 `caja`, en `catastro` y en `rentas`—, y la dirección pidió quitarlo. El contexto pasa a llamarse
 `nucleo` y el patrón queda intacto; `normativa` no cambia porque su contexto ya se llama
 `parametros`. El porqué y lo que costó están en
-`infrastructure/docs/00-gobierno/R-N-los-tres-modulos-repetidos.md`. Los **roles de base de datos
-siguen llamándose `sgtm_owner`, `sgtm_app` y `sgtm_readonly`**, y es deliberado: son del **clúster**,
-que los cuatro sistemas comparten.
+`infrastructure/docs/00-gobierno/R-N-los-tres-modulos-repetidos.md`. Los **roles de base de datos son
+`kamayuk_owner`, `kamayuk_app` y `kamayuk_readonly`** (etapa C del renombrado): son del **clúster**,
+que los cuatro sistemas comparten, así que se renombran en los cuatro a la vez o en ninguno.
 
 ## Las dos piezas que hay que entender antes de tocar nada
 

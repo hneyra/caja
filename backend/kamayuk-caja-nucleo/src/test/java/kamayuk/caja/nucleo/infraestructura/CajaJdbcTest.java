@@ -65,7 +65,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * #33 — La caja contra PostgreSQL de verdad, conectada como {@code sgtm_app}.
+ * #33 — La caja contra PostgreSQL de verdad, conectada como {@code kamayuk_app}.
  *
  * <p>Lo que esta clase defiende y ninguna prueba con dobles puede:
  *
@@ -79,8 +79,8 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li><b>El doble cobro</b> (AC 3), seriado y con <b>hilos de verdad</b>. Desde P5D no lo impide
  *       la relectura del libro —ese libro esta en otra base— sino el {@code FOR UPDATE} sobre la
  *       orden. Un doble pasa esta prueba haga lo que haga el codigo real.
- *   <li><b>Que {@code sgtm_app} no pueda actualizar un recibo</b> (AC 5). No es una convencion: es
- *       un {@code REVOKE} de V29, y se comprueba intentandolo por SQL directo.
+ *   <li><b>Que {@code kamayuk_app} no pueda actualizar un recibo</b> (AC 5). No es una convencion:
+ *       es un {@code REVOKE} de V29, y se comprueba intentandolo por SQL directo.
  *   <li><b>El aislamiento</b> (AC 6). Con el contexto de B, la caja, los recibos y las ordenes de A
  *       no existen.
  *   <li><b>La numeracion sin huecos</b> bajo concurrencia, que es lo que el {@code UPSERT} del
@@ -638,7 +638,7 @@ class CajaJdbcTest {
     class DeLaInmutabilidad {
 
         @Test
-        @DisplayName("sgtm_app no tiene privilegio para actualizar un recibo (V29)")
+        @DisplayName("kamayuk_app no tiene privilegio para actualizar un recibo (V29)")
         void noSePuedeActualizarUnRecibo() {
             Orden orden = ordenPendiente("INMUT-1", Dinero.de("30.00"));
             Recibo emitido = cobrarOrdenes.cobrar(cobranza(orden, "C-01", null), porQue()).recibo();
@@ -659,7 +659,7 @@ class CajaJdbcTest {
         }
 
         @Test
-        @DisplayName("sgtm_app tampoco puede actualizar el detalle congelado")
+        @DisplayName("kamayuk_app tampoco puede actualizar el detalle congelado")
         void noSePuedeActualizarElDetalle() {
             Orden orden = ordenPendiente("INMUT-2", Dinero.de("30.00"));
             Recibo emitido = cobrarOrdenes.cobrar(cobranza(orden, "C-01", null), porQue()).recibo();
@@ -1173,7 +1173,7 @@ class CajaJdbcTest {
     }
 
     /**
-     * Inserta una fila de siembra como {@code sgtm_owner}, con el contexto de tenant fijado.
+     * Inserta una fila de siembra como {@code kamayuk_owner}, con el contexto de tenant fijado.
      *
      * <p>Fijarlo no es opcional aunque quien escriba sea el dueno de la tabla: {@code FORCE ROW
      * LEVEL SECURITY} alcanza tambien al dueno, y sin contexto la insercion falla con «unrecognized

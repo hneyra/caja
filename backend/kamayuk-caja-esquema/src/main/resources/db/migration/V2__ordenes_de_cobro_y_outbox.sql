@@ -26,7 +26,7 @@
 --     privilegio de UPDATE, y esa fila era EL PUNTO DE SERIALIZACION DE LA
 --     VENTANILLA. Reproducido aqui, contra PostgreSQL 16.15:
 --
---         REVOKE UPDATE ON cierre_caja FROM sgtm_app;
+--         REVOKE UPDATE ON cierre_caja FROM kamayuk_app;
 --         BEGIN; SET LOCAL app.municipalidad_id='1';
 --         SELECT id FROM cierre_caja WHERE caja_id=2 AND cajero='jperez' FOR UPDATE;
 --         -- ERROR:  permission denied for table cierre_caja
@@ -341,10 +341,10 @@ CREATE POLICY pago_evento_tenant ON pago_evento FOR ALL TO PUBLIC
 --  explica, no se borra (regla 4, RNF-051).
 -- ----------------------------------------------------------------------------
 
-GRANT INSERT, SELECT, UPDATE ON orden_de_cobro TO sgtm_app;
-GRANT SELECT                  ON orden_de_cobro TO sgtm_readonly;
-GRANT INSERT, SELECT, UPDATE ON pago_evento TO sgtm_app;
-GRANT SELECT                  ON pago_evento TO sgtm_readonly;
+GRANT INSERT, SELECT, UPDATE ON orden_de_cobro TO kamayuk_app;
+GRANT SELECT                  ON orden_de_cobro TO kamayuk_readonly;
+GRANT INSERT, SELECT, UPDATE ON pago_evento TO kamayuk_app;
+GRANT SELECT                  ON pago_evento TO kamayuk_readonly;
 
 
 -- ----------------------------------------------------------------------------
@@ -354,7 +354,7 @@ GRANT SELECT                  ON pago_evento TO sgtm_readonly;
 --  serializa en `orden_de_cobro`, y el turno se abre con `INSERT ... ON CONFLICT
 --  DO NOTHING`, que NO necesita el privilegio de UPDATE —medido contra PostgreSQL
 --  16.15: dos ejecuciones seguidas dejan un solo turno, con `has_table_privilege(
---  'sgtm_app','cierre_caja','UPDATE')` en `f`—.
+--  'kamayuk_app','cierre_caja','UPDATE')` en `f`—.
 --
 --  QUIEN VUELVA A PONER UN `FOR UPDATE` SOBRE `cierre_caja` ROMPE LA CAJA, y el
 --  sintoma no se parece a su causa: «bad SQL grammar» en la primera cobranza,
@@ -363,7 +363,7 @@ GRANT SELECT                  ON pago_evento TO sgtm_readonly;
 --  y las dos dan 42501, asi que el sintoma no distingue cual actuo (#435).
 -- ----------------------------------------------------------------------------
 
-REVOKE UPDATE ON cierre_caja FROM sgtm_app;
+REVOKE UPDATE ON cierre_caja FROM kamayuk_app;
 
 COMMENT ON TABLE cierre_caja IS
     'El turno de una caja: se abre por cajero y fecha (#33) y se cobra contra el. Se abre con '

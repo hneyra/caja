@@ -7,7 +7,7 @@
 # municipalidad-, no un paso que corra en cada despliegue. Un ConfigMap efimero lleva
 # el CSV al pod (backoffLimit: 0 y el ConfigMap se borra al salir, con exito o sin el);
 # las credenciales son las mismas que ya usa el Deployment de la aplicacion
-# (sgtm_app: area y caja son tablas de tenant que ya escribe, desde V7).
+# (kamayuk_app: area y caja son tablas de tenant que ya escribe, desde V7).
 #
 # NO exige municipalidad.es_demostracion, a diferencia de los seis pasos que siembran
 # personas y predios inventados: una ventanilla no es un dato inventado, es la
@@ -107,7 +107,7 @@ spec:
             - name: KAMAYUK_DB_URL
               value: jdbc:postgresql://sgtm-${AMBIENTE}-postgres:5432/sgtm
             - name: KAMAYUK_DB_USUARIO
-              value: sgtm_app
+              value: kamayuk_app
             - name: KAMAYUK_DB_CLAVE
               valueFrom:
                 secretKeyRef:

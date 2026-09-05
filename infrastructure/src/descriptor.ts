@@ -85,11 +85,11 @@ const RECURSOS_DE_ARRANQUE = {
   limits: { cpu: "1", memory: "1Gi" },
 };
 
-/** La conexion de la aplicacion: `sgtm_app` y solo `sgtm_app` (ARQ-03 §4). */
+/** La conexion de la aplicacion: `kamayuk_app` y solo `kamayuk_app` (ARQ-03 §4). */
 function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
   return [
     { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
-    { name: "KAMAYUK_DB_USUARIO", value: "sgtm_app" },
+    { name: "KAMAYUK_DB_USUARIO", value: "kamayuk_app" },
     {
       name: "KAMAYUK_DB_CLAVE",
       valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
@@ -104,7 +104,7 @@ function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[
  * `kamayuk.caja.esquema.Migrador`, que rechaza argumentos a proposito para que una
  * clave no quede en el historial del proceso—, y **no** `KAMAYUK_DB_USUARIO`, que es lo que este
  * descriptor ponia hasta C-14 sobre la imagen de la aplicacion: aquello arrancaba el proceso web
- * con las credenciales de `sgtm_owner` y con `spring.flyway.enabled: false`, o sea DDL al alcance
+ * con las credenciales de `kamayuk_owner` y con `spring.flyway.enabled: false`, o sea DDL al alcance
  * de un servidor HTTP y ninguna migracion aplicada.
  */
 function contenedorDelMigrador(e: EntornoDelDescriptor): Contenedor {
@@ -113,8 +113,8 @@ function contenedorDelMigrador(e: EntornoDelDescriptor): Contenedor {
     image: e.imagenDe(MIGRADOR),
     env: [
       { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
-      // Migrar es lo unico que corre como `sgtm_owner`: es el unico rol con DDL.
-      { name: "KAMAYUK_DB_OWNER_USUARIO", value: "sgtm_owner" },
+      // Migrar es lo unico que corre como `kamayuk_owner`: es el unico rol con DDL.
+      { name: "KAMAYUK_DB_OWNER_USUARIO", value: "kamayuk_owner" },
       {
         name: "KAMAYUK_DB_OWNER_CLAVE",
         valueFrom: { secretKeyRef: { name: e.secretoDe("owner"), key: "clave" } },
@@ -232,7 +232,7 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                 env: [
                   { name: "SPRING_PROFILES_ACTIVE", value: perfil },
                   { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
-                  { name: "KAMAYUK_DB_USUARIO", value: "sgtm_app" },
+                  { name: "KAMAYUK_DB_USUARIO", value: "kamayuk_app" },
                   {
                     name: "KAMAYUK_DB_CLAVE",
                     valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
@@ -299,7 +299,7 @@ export const caja: DescriptorDeSistema = {
   sistema: SISTEMA,
   prefijo: SISTEMA,
   // DOS imagenes, y son dos objetivos del mismo `Dockerfile` (C-14, punto 1): las
-  // credenciales de `sgtm_owner` existen durante la migracion y desaparecen con ella.
+  // credenciales de `kamayuk_owner` existen durante la migracion y desaparecen con ella.
   imagenes: [SISTEMA, MIGRADOR],
 
   /**
@@ -313,14 +313,14 @@ export const caja: DescriptorDeSistema = {
     return {
       nombre: SISTEMA,
       roles: [
-        { nombre: "sgtm_owner", sobre: [SISTEMA], privilegios: ["ALL"], superusuario: false },
+        { nombre: "kamayuk_owner", sobre: [SISTEMA], privilegios: ["ALL"], superusuario: false },
         {
-          nombre: "sgtm_app",
+          nombre: "kamayuk_app",
           sobre: [SISTEMA],
           privilegios: ["SELECT", "INSERT", "UPDATE"],
           superusuario: false,
         },
-        { nombre: "sgtm_readonly", sobre: [SISTEMA], privilegios: ["SELECT"], superusuario: false },
+        { nombre: "kamayuk_readonly", sobre: [SISTEMA], privilegios: ["SELECT"], superusuario: false },
       ],
     };
   },
@@ -592,14 +592,14 @@ export const caja: DescriptorDeSistema = {
     {
       nombre: e.secretoDe("app"),
       clave: "clave",
-      rol: "sgtm_app",
+      rol: "kamayuk_app",
       rotacion: "trimestral",
       proposito: `la conexion de ${SISTEMA} a su base`,
     },
     {
       nombre: e.secretoDe("owner"),
       clave: "clave",
-      rol: "sgtm_owner",
+      rol: "kamayuk_owner",
       rotacion: "anual",
       proposito: `migrar la base de ${SISTEMA}; es el unico rol con DDL`,
     },

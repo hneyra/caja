@@ -8,8 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Lo que hay que saber para implantar la municipalidad en la base de {@code caja}.
  *
  * <p>Son propiedades y no argumentos de linea de comandos por lo mismo que en el migrador: la clave
- * de {@code sgtm_owner} esta entre ellas, y un argumento queda en el historial del proceso y en los
- * registros del orquestador.
+ * de {@code kamayuk_owner} esta entre ellas, y un argumento queda en el historial del proceso y en
+ * los registros del orquestador.
  *
  * <p><b>El prefijo es {@code kamayuk.implantacion}, y desde R-A/B lo es en los cuatro</b>. Hasta
  * entonces {@code rentas} leia {@code sgtm.implantacion} —era el monolito— y este nacio con el
@@ -26,7 +26,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * <p>Porque un escaneo la registra en <b>todos</b> los perfiles, y este record valida en su
  * constructor compacto: sin las propiedades puestas, el bean falla y el contexto no arranca. Con el
  * escaneo, el proceso <b>web</b> —que no implanta nada y no tiene por que conocer la clave de
- * {@code sgtm_owner}— moriria al arrancar. Por eso la declara {@code ImplantarMunicipalidad} con
+ * {@code kamayuk_owner}— moriria al arrancar. Por eso la declara {@code ImplantarMunicipalidad} con
  * {@code @EnableConfigurationProperties}: asi hereda sus dos condiciones.
  *
  * @param ubigeo los seis digitos que identifican a la municipalidad; es la clave por la que el

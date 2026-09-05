@@ -72,7 +72,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * #36 — El cierre de caja contra PostgreSQL de verdad, conectado como {@code sgtm_app}.
+ * #36 — El cierre de caja contra PostgreSQL de verdad, conectado como {@code kamayuk_app}.
  *
  * <h2>Contra que cuadra el cierre desde P5D</h2>
  *
@@ -81,11 +81,11 @@ import tools.jackson.databind.json.JsonMapper;
  * ser una decision de un caso de uso y pasa a medirse con las filas de {@code pago_evento} de
  * verdad, entregandolas con el mismo {@code UPDATE} que hace el publicador.
  *
- * <p>Y cambio la barrera de la inmutabilidad: `V2` le retira a {@code sgtm_app} el {@code UPDATE}
- * sobre {@code cierre_caja}, que es justo lo que V32 del monolito intento y no pudo — porque
- * entonces el turno era el punto de serializacion de la ventanilla y {@code SELECT ... FOR UPDATE}
- * exige ese privilegio. Desde P5D lo serializa la orden de cobro, asi que el turno puede ser
- * inmutable de verdad. Esta clase lo comprueba <b>en las dos tablas</b>.
+ * <p>Y cambio la barrera de la inmutabilidad: `V2` le retira a {@code kamayuk_app} el {@code
+ * UPDATE} sobre {@code cierre_caja}, que es justo lo que V32 del monolito intento y no pudo —
+ * porque entonces el turno era el punto de serializacion de la ventanilla y {@code SELECT ... FOR
+ * UPDATE} exige ese privilegio. Desde P5D lo serializa la orden de cobro, asi que el turno puede
+ * ser inmutable de verdad. Esta clase lo comprueba <b>en las dos tablas</b>.
  */
 @DisplayName("#36 — El cierre de caja contra PostgreSQL")
 class CierreDeCajaJdbcTest {
@@ -472,7 +472,7 @@ class CierreDeCajaJdbcTest {
     class DeLaInmutabilidad {
 
         @Test
-        @DisplayName("sgtm_app no puede actualizar el acta, su desglose ni el turno")
+        @DisplayName("kamayuk_app no puede actualizar el acta, su desglose ni el turno")
         void sinUpdate() {
             String cajero = cajero("inmutable");
             cobrarLaTasa(cajero, "T-360", 1, FormaDePago.EFECTIVO);
@@ -507,7 +507,7 @@ class CierreDeCajaJdbcTest {
         @Test
         @DisplayName("y desde P5D el TURNO tampoco: `V2` le hizo el REVOKE que V32 no pudo")
         void elTurnoTambienEsInmutableDesdeP5D() {
-            // Este es el reverso del hallazgo de #36. V32 quiso revocarle a `sgtm_app` el
+            // Este es el reverso del hallazgo de #36. V32 quiso revocarle a `kamayuk_app` el
             // UPDATE sobre `cierre_caja` y no pudo: `SELECT ... FOR UPDATE` exige ese
             // privilegio, y esa fila era donde se serializaba la ventanilla. Revocarlo no
             // habria hecho el turno inmutable: habria dejado la caja sin poder cobrar.
@@ -1046,7 +1046,7 @@ class CierreDeCajaJdbcTest {
         return Observacion.de("Operacion de caja, prueba de #36");
     }
 
-    /** Si {@code sgtm_app} tiene UPDATE sobre esa tabla, preguntado a la propia base. */
+    /** Si {@code kamayuk_app} tiene UPDATE sobre esa tabla, preguntado a la propia base. */
     private static boolean privilegioDeUpdateSobre(String tabla) {
         Boolean tiene =
                 enTransaccion(
@@ -1128,7 +1128,7 @@ class CierreDeCajaJdbcTest {
     }
 
     /**
-     * Inserta una fila de siembra como {@code sgtm_owner}, con el contexto de tenant fijado.
+     * Inserta una fila de siembra como {@code kamayuk_owner}, con el contexto de tenant fijado.
      *
      * <p>Fijarlo no es opcional aunque quien escriba sea el dueno de la tabla: {@code FORCE ROW
      * LEVEL SECURITY} alcanza tambien al dueno (DAT-01 §0).

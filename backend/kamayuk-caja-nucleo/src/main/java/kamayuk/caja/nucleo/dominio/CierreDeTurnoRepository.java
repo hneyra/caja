@@ -7,7 +7,7 @@ import java.util.List;
  * 2): la filtra la politica RLS.
  *
  * <p><b>No hay {@code actualizar} ni {@code borrar}</b>, y no es un olvido: V32 le concede a {@code
- * sgtm_app} solo {@code SELECT} e {@code INSERT}. Un cierre equivocado se reversa (regla 4).
+ * kamayuk_app} solo {@code SELECT} e {@code INSERT}. Un cierre equivocado se reversa (regla 4).
  */
 public interface CierreDeTurnoRepository {
 

@@ -200,7 +200,7 @@ public class CerrarTurno {
      *
      * <p>Se llamaba {@code bloquear} y bloqueaba de verdad: hasta P5D el turno era el punto de
      * serializacion de la ventanilla. Desde `V2` no lo es —lo son las ordenes— y el turno se lee
-     * sin {@code FOR UPDATE}, porque `sgtm_app` ya no tiene el privilegio de UPDATE sobre {@code
+     * sin {@code FOR UPDATE}, porque `kamayuk_app` ya no tiene el privilegio de UPDATE sobre {@code
      * cierre_caja} y pedirlo daria {@code permission denied}. Lo que serializa dos cierres del
      * mismo turno sigue siendo {@code cierre_turno_secuencia_uq}: los dos calculan la misma
      * secuencia y uno recibe {@code 23505} (V32).

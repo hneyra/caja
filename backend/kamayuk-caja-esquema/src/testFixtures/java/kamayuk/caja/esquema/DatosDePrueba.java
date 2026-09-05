@@ -25,9 +25,9 @@ import java.time.LocalDate;
  *
  * <h2>Quien escribe cada cosa</h2>
  *
- * <p>El alta de una municipalidad la hace {@code sgtm_owner}: es implantacion, y la politica de
+ * <p>El alta de una municipalidad la hace {@code kamayuk_owner}: es implantacion, y la politica de
  * {@code municipalidad} solo deja escribir al dueno (V6). Todo lo demas lo escribe {@code
- * sgtm_app}, con su contexto de tenant fijado — que es como lo escribe la aplicacion.
+ * kamayuk_app}, con su contexto de tenant fijado — que es como lo escribe la aplicacion.
  */
 public final class DatosDePrueba {
 

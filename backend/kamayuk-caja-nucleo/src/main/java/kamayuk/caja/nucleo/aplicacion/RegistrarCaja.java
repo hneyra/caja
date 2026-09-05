@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <h2>El hueco que cierra</h2>
  *
  * <p>Hasta aquí <b>nada creaba una {@code caja} ni un {@code area} fuera de las fixtures de
- * prueba</b>. Las dos tablas existen desde {@code V3}, {@code sgtm_app} puede escribirlas desde
+ * prueba</b>. Las dos tablas existen desde {@code V3}, {@code kamayuk_app} puede escribirlas desde
  * {@code V7}, {@link AbrirCaja} sabe abrir el turno de un cajero en una de ellas… y en una
  * instalación recién implantada no había ninguna: la primera cobranza del día fallaba con {@code
  * CajaInexistente} y no había forma de arreglarlo desde dentro del sistema. Lo destapó la siembra

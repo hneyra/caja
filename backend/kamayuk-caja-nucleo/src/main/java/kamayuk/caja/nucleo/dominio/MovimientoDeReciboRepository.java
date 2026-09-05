@@ -8,7 +8,7 @@ import java.util.Optional;
  * filtra la politica RLS.
  *
  * <p><b>No hay {@code actualizar} ni {@code borrar}</b>, y no es un olvido: V30 le concede a {@code
- * sgtm_app} solo {@code SELECT} e {@code INSERT}. Lo que le pasa a un recibo se agrega.
+ * kamayuk_app} solo {@code SELECT} e {@code INSERT}. Lo que le pasa a un recibo se agrega.
  */
 public interface MovimientoDeReciboRepository {
 

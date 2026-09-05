@@ -31,11 +31,11 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <h2>El recibo no se toca</h2>
  *
- * <p>V29 le retiro a {@code sgtm_app} el privilegio de {@code UPDATE} sobre {@code recibo}, y V30
- * retiro las columnas de anulacion que V3 le habia puesto —decian {@code EMITIDO} para siempre—.
- * Anular es <b>agregar</b> una fila a {@code recibo_movimiento}, igual que un pase a coactiva se
- * agrega a {@code valor_movimiento} (V28). El numero del recibo, su desglose y su total siguen
- * exactamente donde estaban: el contribuyente tiene ese papel en la mano.
+ * <p>V29 le retiro a {@code kamayuk_app} el privilegio de {@code UPDATE} sobre {@code recibo}, y
+ * V30 retiro las columnas de anulacion que V3 le habia puesto —decian {@code EMITIDO} para
+ * siempre—. Anular es <b>agregar</b> una fila a {@code recibo_movimiento}, igual que un pase a
+ * coactiva se agrega a {@code valor_movimiento} (V28). El numero del recibo, su desglose y su total
+ * siguen exactamente donde estaban: el contribuyente tiene ese papel en la mano.
  *
  * <h2>El mismo dia, y solo el mismo dia</h2>
  *

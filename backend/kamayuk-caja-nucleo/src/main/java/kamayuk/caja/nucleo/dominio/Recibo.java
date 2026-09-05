@@ -13,11 +13,11 @@ import org.jspecify.annotations.Nullable;
  *
  * <h2>No se edita</h2>
  *
- * <p>V29 le retira a {@code sgtm_app} el privilegio de {@code UPDATE} sobre {@code recibo} y sobre
- * {@code recibo_detalle}, y el escaner de fuentes rechaza cualquier {@code UPDATE recibo SET} antes
- * de que llegue a ejecutarse. No es purismo: un recibo es un documento con numeracion correlativa
- * que el contribuyente se lleva impreso, y corregirlo en el sitio deja al papel y a la base
- * diciendo cosas distintas sin que nada lo delate. La anulacion (#34) se registrara como un
+ * <p>V29 le retira a {@code kamayuk_app} el privilegio de {@code UPDATE} sobre {@code recibo} y
+ * sobre {@code recibo_detalle}, y el escaner de fuentes rechaza cualquier {@code UPDATE recibo SET}
+ * antes de que llegue a ejecutarse. No es purismo: un recibo es un documento con numeracion
+ * correlativa que el contribuyente se lleva impreso, y corregirlo en el sitio deja al papel y a la
+ * base diciendo cosas distintas sin que nada lo delate. La anulacion (#34) se registrara como un
  * movimiento que se <b>agrega</b>, igual que {@code valor_movimiento} en V28.
  *
  * <h2>Toda cifra con su fecha</h2>

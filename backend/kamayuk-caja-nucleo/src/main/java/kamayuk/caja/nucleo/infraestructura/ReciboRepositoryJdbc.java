@@ -34,7 +34,7 @@ import org.springframework.stereotype.Repository;
  * Los recibos contra PostgreSQL (V3, V29).
  *
  * <p><b>Solo inserta.</b> No hay aqui ni un {@code UPDATE recibo} ni un {@code DELETE}: V29 le
- * retira a {@code sgtm_app} el privilegio de actualizar y V7 nunca le dio el de borrar, y el
+ * retira a {@code kamayuk_app} el privilegio de actualizar y V7 nunca le dio el de borrar, y el
  * escaner de fuentes rechaza esas dos cadenas antes de que lleguen a ejecutarse (regla 4, RNF-051).
  * Un recibo equivocado se anula con un movimiento que se agrega (#34).
  */

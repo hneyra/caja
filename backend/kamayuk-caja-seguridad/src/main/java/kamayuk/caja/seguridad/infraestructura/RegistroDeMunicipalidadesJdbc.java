@@ -11,15 +11,15 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * La unica clase de {@code caja} que se conecta como {@code sgtm_owner}, y por eso conviene mirarla
- * con atencion.
+ * La unica clase de {@code caja} que se conecta como {@code kamayuk_owner}, y por eso conviene
+ * mirarla con atencion.
  *
  * <h2>Por que no usa el pool de la aplicacion</h2>
  *
- * <p>Porque no puede: el pool es {@code sgtm_app}, y {@code municipalidad} solo la escribe {@code
- * sgtm_owner} —el baseline le da una politica {@code FOR ALL TO sgtm_owner} y lo explica: dar de
- * alta una municipalidad es una operacion de implantacion—. La conexion se abre para una sentencia
- * y se cierra; no queda en ningun pool ni la puede tomar nadie mas.
+ * <p>Porque no puede: el pool es {@code kamayuk_app}, y {@code municipalidad} solo la escribe
+ * {@code kamayuk_owner} —el baseline le da una politica {@code FOR ALL TO kamayuk_owner} y lo
+ * explica: dar de alta una municipalidad es una operacion de implantacion—. La conexion se abre
+ * para una sentencia y se cierra; no queda en ningun pool ni la puede tomar nadie mas.
  *
  * <h2>Las tres condiciones que la mantienen encerrada</h2>
  *
@@ -47,7 +47,7 @@ public class RegistroDeMunicipalidadesJdbc {
 
     public RegistroDeMunicipalidadesJdbc(
             @Value("${kamayuk.implantacion.url}") String url,
-            @Value("${kamayuk.implantacion.owner-usuario:sgtm_owner}") String usuario,
+            @Value("${kamayuk.implantacion.owner-usuario:kamayuk_owner}") String usuario,
             @Value("${kamayuk.implantacion.owner-clave}") String clave) {
         this.url = url;
         this.usuario = usuario;

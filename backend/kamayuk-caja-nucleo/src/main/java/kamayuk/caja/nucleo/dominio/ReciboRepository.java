@@ -7,8 +7,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Los recibos. <b>Solo se agregan</b>: no hay {@code actualizar} ni {@code borrar}, y no es un
- * olvido —V29 le retira a {@code sgtm_app} el privilegio de {@code UPDATE} y {@code DELETE} nunca
- * lo tuvo (V7)—.
+ * olvido —V29 le retira a {@code kamayuk_app} el privilegio de {@code UPDATE} y {@code DELETE}
+ * nunca lo tuvo (V7)—.
  */
 public interface ReciboRepository {
 

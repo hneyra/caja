@@ -22,12 +22,12 @@ import java.util.Map;
  *   <li>con la conexion de superusuario, crea los TRES roles de este sistema y les asigna su clave.
  *       Son tres y no cuatro: `rol_carga_parametros` es de `normativa` y aqui no recibe un solo
  *       `GRANT` (P5D);
- *   <li>migra con Flyway conectado como {@code sgtm_owner}, que es el unico rol con DDL;
+ *   <li>migra con Flyway conectado como {@code kamayuk_owner}, que es el unico rol con DDL;
  *   <li>a partir de ahi entrega conexiones por rol.
  * </ol>
  *
- * <p>El orden importa: las politicas del baseline nombran a {@code sgtm_owner} y a {@code
- * sgtm_app}, asi que los roles tienen que existir antes de la primera migracion.
+ * <p>El orden importa: las politicas del baseline nombran a {@code kamayuk_owner} y a {@code
+ * kamayuk_app}, asi que los roles tienen que existir antes de la primera migracion.
  *
  * <p><b>Los roles son del CLUSTER, no de la base</b> (INF-01 §4.1), y eso decide como esta escrito
  * el provisionamiento. Cada corrida crea su propia base —eso las aisla— pero las tres filas de
@@ -50,9 +50,9 @@ import java.util.Map;
  */
 public final class BaseDeDatosDePrueba implements AutoCloseable {
 
-    public static final String OWNER = "sgtm_owner";
-    public static final String APP = "sgtm_app";
-    public static final String READONLY = "sgtm_readonly";
+    public static final String OWNER = "kamayuk_owner";
+    public static final String APP = "kamayuk_app";
+    public static final String READONLY = "kamayuk_readonly";
 
     /** Los tres roles de este sistema, en el orden en que los crea {@code crear-roles.sql}. */
     static final String[] ROLES = {OWNER, APP, READONLY};

@@ -26,9 +26,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>Corre en el perfil {@code batch}, igual que {@code ImplantarMunicipalidad} y {@code
  * CargarCatalogoVial}, y por la misma razón: es un proceso de arranque de vida corta, sin servidor
- * web, que hace su trabajo y termina. No necesita las credenciales de {@code sgtm_owner} —{@code
- * area} y {@code caja} son tablas de tenant que {@code sgtm_app} ya escribe desde {@code V7}—, así
- * que la municipalidad tiene que existir de antemano: este proceso no la crea.
+ * web, que hace su trabajo y termina. No necesita las credenciales de {@code kamayuk_owner} —{@code
+ * area} y {@code caja} son tablas de tenant que {@code kamayuk_app} ya escribe desde {@code V7}—,
+ * así que la municipalidad tiene que existir de antemano: este proceso no la crea.
  *
  * <p><b>Y no exige {@code es_demostracion}</b>, a diferencia de los seis pasos que siembran
  * personas y predios inventados. Una ventanilla no es un dato inventado: es la configuración con la

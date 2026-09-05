@@ -28,7 +28,7 @@ import org.springframework.stereotype.Repository;
  * Los cierres de turno contra PostgreSQL (V32).
  *
  * <p><b>Solo inserta.</b> No hay aqui ni un {@code UPDATE cierre_turno} ni un {@code DELETE}: V32
- * le concede a {@code sgtm_app} solo {@code SELECT} e {@code INSERT}, y el escaner de fuentes
+ * le concede a {@code kamayuk_app} solo {@code SELECT} e {@code INSERT}, y el escaner de fuentes
  * rechaza esas dos cadenas antes de que lleguen a ejecutarse (regla 4, RNF-051).
  *
  * <p><b>El doble cierre lo rechaza la restriccion unica, no un {@code if}.</b> Se inserta con la

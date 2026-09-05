@@ -76,7 +76,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * #34 — Duplicado y anulacion contra PostgreSQL de verdad, conectado como {@code sgtm_app}.
+ * #34 — Duplicado y anulacion contra PostgreSQL de verdad, conectado como {@code kamayuk_app}.
  *
  * <h2>Que cambio con P5D</h2>
  *
@@ -460,7 +460,7 @@ class ReciboJdbcTest {
         }
 
         @Test
-        @DisplayName("sgtm_app no puede actualizar un movimiento (V30)")
+        @DisplayName("kamayuk_app no puede actualizar un movimiento (V30)")
         void noSePuedeActualizarUnMovimiento() {
             Recibo cobrado = cobrar(sembrarOrden("PRIV-1", Dinero.de("10.00")));
             MovimientoDeRecibo anulacion = anular(cobrado, PAGO).anulacion();
