@@ -76,7 +76,7 @@ import org.springframework.web.bind.annotation.RestController;
  * hacen ruidoso.
  *
  * <p><b>Lo que esta prueba NO dice, y conviene tenerlo escrito:</b> el {@code
- * sgtm.portal.oidc.emisor} lo pone ella con {@link DynamicPropertySource}, y {@code caja} no lo
+ * kamayuk.portal.oidc.emisor} lo pone ella con {@link DynamicPropertySource}, y {@code caja} no lo
  * configura en ningun ambiente. En produccion, por tanto, la cadena del portal toma su rama de «sin
  * emisor: negarlo todo». Si algun dia se decide que este sistema no tiene portal, lo que se retira
  * es la cadena de {@code src/main} y esta clase se va con ella; mientras la cadena este, esta clase
@@ -113,7 +113,7 @@ class CadenaDelPortalTest {
     static void configurar(DynamicPropertyRegistry propiedades) {
         propiedades.add(
                 "spring.security.oauth2.resourceserver.jwt.issuer-uri", deFuncionarios::emisor);
-        propiedades.add("sgtm.portal.oidc.emisor", delCiudadano::emisor);
+        propiedades.add("kamayuk.portal.oidc.emisor", delCiudadano::emisor);
     }
 
     @AfterAll

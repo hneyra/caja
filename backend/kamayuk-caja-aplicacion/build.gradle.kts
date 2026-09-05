@@ -106,7 +106,7 @@ tasks.test {
 // java-library, y cual de los dos acaba en el contenedor dependeria del orden
 // alfabetico.
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
-    archiveFileName.set("sgtm.jar")
+    archiveFileName.set("caja.jar")
 }
 
 // La prueba de arranque va en su PROPIA tarea, y no es una manía de organización.

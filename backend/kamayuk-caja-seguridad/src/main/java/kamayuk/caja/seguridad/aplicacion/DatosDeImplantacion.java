@@ -11,11 +11,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * de {@code sgtm_owner} esta entre ellas, y un argumento queda en el historial del proceso y en los
  * registros del orquestador.
  *
- * <p><b>El prefijo es {@code kamayuk.implantacion} y no {@code sgtm.implantacion}</b>: el de {@code
- * rentas} es del monolito y sigue ahi; este nace con el nombre del producto de hoy, y que sean
- * distintos hace imposible que un descuido apunte al Job de implantacion de {@code caja} con las
- * variables del de {@code rentas} — que es exactamente la clase de error que dejaria una
- * municipalidad implantada en la base equivocada.
+ * <p><b>El prefijo es {@code kamayuk.implantacion}, y desde R-A/B lo es en los cuatro</b>. Hasta
+ * entonces {@code rentas} leia {@code sgtm.implantacion} —era el monolito— y este nacio con el
+ * nombre del producto; esa asimetria es la que dejo el Job de implantacion de {@code rentas}
+ * arrancando, no haciendo nada y saliendo con codigo 0 desde C-14, porque su descriptor ponia las
+ * variables con el prefijo de sus hermanos y {@code @ConditionalOnProperty} no registraba el
+ * runner. Lo que impide ahora que un descuido apunte este Job con las variables de otro sistema no
+ * es que el nombre difiera —no difiere—, sino la guarda de {@code infrastructure} que compara
+ * <b>cada</b> descriptor con <b>su</b> Java, y que cada sistema tenga su propio Job, su propio
+ * espacio de nombres y su propia base.
  *
  * <h2>Por que no la registra un {@code @ConfigurationPropertiesScan}</h2>
  *

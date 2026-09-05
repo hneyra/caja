@@ -45,7 +45,7 @@ import type {
   PanelDeclarado,
   ReglaDeAlerta,
   VariableDeEntorno,
-} from "@sgtm/infra-contrato";
+} from "@kamayuk/infra-contrato";
 
 const SISTEMA = "caja";
 
@@ -88,10 +88,10 @@ const RECURSOS_DE_ARRANQUE = {
 /** La conexion de la aplicacion: `sgtm_app` y solo `sgtm_app` (ARQ-03 §4). */
 function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
   return [
-    { name: "SGTM_DB_URL", value: urlDeLaBase(e) },
-    { name: "SGTM_DB_USUARIO", value: "sgtm_app" },
+    { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
+    { name: "KAMAYUK_DB_USUARIO", value: "sgtm_app" },
     {
-      name: "SGTM_DB_CLAVE",
+      name: "KAMAYUK_DB_CLAVE",
       valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
     },
   ];
@@ -100,9 +100,9 @@ function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[
 /**
  * El contenedor del migrador: **la imagen del migrador, no la de la aplicacion** (C-14, punto 1).
  *
- * Lee `SGTM_DB_OWNER_USUARIO` y `SGTM_DB_OWNER_CLAVE` —lo dice el `main` de
+ * Lee `KAMAYUK_DB_OWNER_USUARIO` y `KAMAYUK_DB_OWNER_CLAVE` —lo dice el `main` de
  * `kamayuk.caja.esquema.Migrador`, que rechaza argumentos a proposito para que una
- * clave no quede en el historial del proceso—, y **no** `SGTM_DB_USUARIO`, que es lo que este
+ * clave no quede en el historial del proceso—, y **no** `KAMAYUK_DB_USUARIO`, que es lo que este
  * descriptor ponia hasta C-14 sobre la imagen de la aplicacion: aquello arrancaba el proceso web
  * con las credenciales de `sgtm_owner` y con `spring.flyway.enabled: false`, o sea DDL al alcance
  * de un servidor HTTP y ninguna migracion aplicada.
@@ -112,11 +112,11 @@ function contenedorDelMigrador(e: EntornoDelDescriptor): Contenedor {
     name: "migrador",
     image: e.imagenDe(MIGRADOR),
     env: [
-      { name: "SGTM_DB_URL", value: urlDeLaBase(e) },
+      { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
       // Migrar es lo unico que corre como `sgtm_owner`: es el unico rol con DDL.
-      { name: "SGTM_DB_OWNER_USUARIO", value: "sgtm_owner" },
+      { name: "KAMAYUK_DB_OWNER_USUARIO", value: "sgtm_owner" },
       {
-        name: "SGTM_DB_OWNER_CLAVE",
+        name: "KAMAYUK_DB_OWNER_CLAVE",
         valueFrom: { secretKeyRef: { name: e.secretoDe("owner"), key: "clave" } },
       },
     ],
@@ -231,22 +231,22 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                 image: e.imagenDe(SISTEMA),
                 env: [
                   { name: "SPRING_PROFILES_ACTIVE", value: perfil },
-                  { name: "SGTM_DB_URL", value: urlDeLaBase(e) },
-                  { name: "SGTM_DB_USUARIO", value: "sgtm_app" },
+                  { name: "KAMAYUK_DB_URL", value: urlDeLaBase(e) },
+                  { name: "KAMAYUK_DB_USUARIO", value: "sgtm_app" },
                   {
-                    name: "SGTM_DB_CLAVE",
+                    name: "KAMAYUK_DB_CLAVE",
                     valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
                   },
                   // Sin el emisor la aplicacion se niega a arrancar, y es deliberado: un backend
                   // que atiende sin poder validar un token responde a la sonda, se declara sano y
                   // no atiende a nadie (ADR-0005).
-                  { name: "SGTM_OIDC_EMISOR", value: e.plataforma.emisor },
+                  { name: "KAMAYUK_OIDC_EMISOR", value: e.plataforma.emisor },
                   // El JWKS por la red INTERNA, cruzando el namespace de la plataforma (C-14).
                   // Hasta aqui este descriptor apuntaba las dos al nombre publico: el backend
                   // habria salido al ingreso para volver a entrar, y con la politica de egreso
                   // declarada —que nombra el pod de identidad, no internet— no habria salido en
                   // absoluto. Todo token invalido, por un motivo que no se parece a su causa.
-                  { name: "SGTM_OIDC_JWKS", value: e.plataforma.jwks },
+                  { name: "KAMAYUK_OIDC_JWKS", value: e.plataforma.jwks },
                   // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
                   // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
                   // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un

@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Profile("batch")
-@ConditionalOnProperty("sgtm.carga-cajas.archivo")
+@ConditionalOnProperty("kamayuk.carga-cajas.archivo")
 @EnableConfigurationProperties(DatosDeCargaCajas.class)
 public class CargarCajas implements ApplicationRunner {
 
