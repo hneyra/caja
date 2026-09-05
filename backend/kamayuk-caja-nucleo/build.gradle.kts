@@ -12,8 +12,8 @@
 // servir para cobrar un puesto de mercado — que es la razon por la que se separo.
 
 plugins {
-    id("sgtm.modulo")
-    id("sgtm.pruebas-postgres")
+    id("kamayuk.modulo")
+    id("kamayuk.pruebas-postgres")
 }
 
 dependencies {
