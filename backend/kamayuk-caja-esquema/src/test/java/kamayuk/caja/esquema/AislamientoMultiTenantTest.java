@@ -46,12 +46,18 @@ class AislamientoMultiTenantTest {
      * pruebas no tienen ninguna premisa ajena que escribir. Que esta lista sea corta es la
      * propiedad, no la casualidad.
      *
-     * <p>{@code pg_stat_statements_info} solo aparece si alguien instalo esa extension en el
-     * cluster de pruebas; se nombra para que una maquina que la tenga no ponga la prueba en rojo
-     * por algo que no es del esquema.
+     * <p><b>{@code pg_stat_statements_info} salio de aqui en C-11</b>, y conviene decir por que en
+     * vez de dejar la entrada. Se puso «para que una maquina que tenga esa extension no ponga la
+     * prueba en rojo», y no podia pasar por dos motivos independientes: la base de cada corrida se
+     * crea con {@code TEMPLATE template0}, que no hereda ninguna extension del cluster anfitrion, y
+     * ademas {@code pg_stat_statements_info} es una VISTA, mientras que el censo de esta prueba
+     * mira {@code relkind IN ('r','p')}. O sea que la entrada no eximia nada en ninguna maquina.
+     *
+     * <p>La encontro {@link CoberturaEstructural#ningunaExencionSobra()}, que es justo la direccion
+     * que faltaba: sin ella una exencion defensiva se queda para siempre y la lista deja de decir
+     * lo que exime.
      */
-    private static final Set<String> TABLAS_EXENTAS =
-            Set.of("flyway_schema_history", "pg_stat_statements_info");
+    private static final Set<String> TABLAS_EXENTAS = Set.of("flyway_schema_history");
 
     /**
      * Catalogos: no llevan {@code municipalidad_id NOT NULL}, pero si RLS con politica propia
@@ -145,6 +151,35 @@ class AislamientoMultiTenantTest {
                                     + " NOT NULL, o entra a la lista de catalogos, o entra a la de"
                                     + " exentas con justificacion en el PR (ARQ-03 §7)")
                     .allSatisfy(tabla -> assertThat(clasificadas).contains(tabla));
+        }
+
+        @Test
+        @DisplayName("EL REVERSO: ninguna entrada de TABLAS_EXENTAS sobra")
+        void ningunaExencionSobra() throws SQLException {
+            // La lista tiene dos direcciones y solo una la medía nadie. `todaTablaEstaClasificada`
+            // exige que toda tabla este en alguna lista; sin esta, una entrada que ya no exime
+            // nada se queda dentro para siempre y la lista deja de decir lo que exime.
+            //
+            // Y no es hipotetico: `spatial_ref_sys` la instala PostGIS, y hasta C-11 la base de
+            // prueba la heredaba de `template1` por el camino de Testcontainers. La salida comoda
+            // ante ese rojo era anadirla aqui en los tres sistemas que NO crean PostGIS —lo que
+            // habria dejado a local y a CI midiendo bases distintas—. Con esta guarda, esa salida
+            // ya no esta: en un sistema que no crea la extension, la tabla no existe y la entrada
+            // se rechaza nombrandola.
+            List<String> existentes =
+                    consultarTextos(
+                            "SELECT c.relname FROM pg_class c"
+                                    + " JOIN pg_namespace n ON n.oid = c.relnamespace"
+                                    + " WHERE n.nspname = 'public' AND c.relkind IN ('r','p')"
+                                    + " ORDER BY 1");
+
+            assertThat(TABLAS_EXENTAS)
+                    .as(
+                            "una exencion que ya no exime nada es peor que ninguna: dice que hay"
+                                    + " una tabla sin RLS donde no hay ninguna tabla. Si la tabla se"
+                                    + " fue, la entrada se va con ella; si nunca estuvo, la entrada"
+                                    + " esta tapando un rojo que hay que arreglar en otro sitio")
+                    .allSatisfy(exenta -> assertThat(existentes).contains(exenta));
         }
 
         @Test
