@@ -37,15 +37,120 @@
 import type {
   BaseDeDatosDeclarada,
   ClaveDeclarada,
+  Contenedor,
   DescriptorDeSistema,
   EntornoDelDescriptor,
   Manifiesto,
   NetworkPolicy,
   PanelDeclarado,
   ReglaDeAlerta,
+  VariableDeEntorno,
 } from "@sgtm/infra-contrato";
 
 const SISTEMA = "caja";
+
+/** La imagen del migrador: el otro objetivo del mismo `Dockerfile` (C-14, punto 1). */
+const MIGRADOR = `${SISTEMA}-migrador`;
+
+/** Su base, en el motor de la plataforma. Una por sistema (ADR-0029, ADR-0032). */
+const URL_DE_LA_BASE = `jdbc:postgresql://postgres:5432/${SISTEMA}`;
+
+/**
+ * Lo que piden los Jobs de un solo uso —migrar e implantar— y los procesos por lotes.
+ *
+ * Mismos `limits` que el perfil web y `requests` mas bajos, que es el reparto que
+ * `RECURSOS.arranque` del monolito documenta desde el 2026-08-26: el `request` es lo que el
+ * planificador **reserva y bloquea**, y estos Jobs corren a la vez que todos los `Deployment`
+ * durante un `pulumi up`. Con el nodo justo, un `request` alto no es lentitud: es que no entran,
+ * y como llevan la clase `lote` —la mas baja del cluster— no pueden desalojar a nadie para
+ * hacerlo. Nadie cede y el despliegue se cuelga (`capacidad.ts`, issue #252).
+ */
+const RECURSOS_DE_ARRANQUE = {
+  requests: { cpu: "50m", memory: "256Mi" },
+  limits: { cpu: "1", memory: "1Gi" },
+};
+
+/** La conexion de la aplicacion: `sgtm_app` y solo `sgtm_app` (ARQ-03 §4). */
+function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
+  return [
+    { name: "SGTM_DB_URL", value: URL_DE_LA_BASE },
+    { name: "SGTM_DB_USUARIO", value: "sgtm_app" },
+    {
+      name: "SGTM_DB_CLAVE",
+      valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
+    },
+  ];
+}
+
+/**
+ * El contenedor del migrador: **la imagen del migrador, no la de la aplicacion** (C-14, punto 1).
+ *
+ * Lee `SGTM_DB_OWNER_USUARIO` y `SGTM_DB_OWNER_CLAVE` —lo dice el `main` de
+ * `kamayuk.caja.esquema.Migrador`, que rechaza argumentos a proposito para que una
+ * clave no quede en el historial del proceso—, y **no** `SGTM_DB_USUARIO`, que es lo que este
+ * descriptor ponia hasta C-14 sobre la imagen de la aplicacion: aquello arrancaba el proceso web
+ * con las credenciales de `sgtm_owner` y con `spring.flyway.enabled: false`, o sea DDL al alcance
+ * de un servidor HTTP y ninguna migracion aplicada.
+ */
+function contenedorDelMigrador(e: EntornoDelDescriptor): Contenedor {
+  return {
+    name: "migrador",
+    image: e.imagenDe(MIGRADOR),
+    env: [
+      { name: "SGTM_DB_URL", value: URL_DE_LA_BASE },
+      // Migrar es lo unico que corre como `sgtm_owner`: es el unico rol con DDL.
+      { name: "SGTM_DB_OWNER_USUARIO", value: "sgtm_owner" },
+      {
+        name: "SGTM_DB_OWNER_CLAVE",
+        valueFrom: { secretKeyRef: { name: e.secretoDe("owner"), key: "clave" } },
+      },
+    ],
+    resources: RECURSOS_DE_ARRANQUE,
+    securityContext: SEGURIDAD,
+  };
+}
+
+/**
+ * Las dos de ADR-0026 §4, que en `caja` van en el bloque COMUN del `application.yaml`.
+ *
+ * Y por eso las necesita **todo** proceso de este sistema, no solo el perfil `web`: sin ellas
+ * Spring no puede resolver el marcador y el contexto muere antes de hacer nada. Lo destapo C-14
+ * al extender `variables-sin-omision` del `Deployment` a todo pod que corra la imagen de la
+ * aplicacion: el Job de implantacion de `caja` **no habria levantado**, y el sintoma habria sido
+ * un despliegue colgado esperando una municipalidad que nadie implanto.
+ */
+function operacionDeLaCaja(e: EntornoDelDescriptor): VariableDeEntorno[] {
+  return [
+    { name: "KAMAYUK_CAJA_RESPONSABLE", value: e.operacion.responsable },
+    { name: "KAMAYUK_CAJA_CANAL", value: e.operacion.canal },
+  ];
+}
+
+/** Las propiedades de `DatosDeImplantacion`, tal como Spring las lee del entorno. */
+function variablesDeImplantacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
+  const i = e.implantacion;
+  return [
+    { name: "SPRING_PROFILES_ACTIVE", value: "batch" },
+    ...credencialesDeLaAplicacion(e),
+    ...operacionDeLaCaja(e),
+    { name: "KAMAYUK_IMPLANTACION_UBIGEO", value: i.ubigeo },
+    { name: "KAMAYUK_IMPLANTACION_NOMBRE", value: i.nombre },
+    { name: "KAMAYUK_IMPLANTACION_TIPO", value: i.tipo },
+    // No crea ninguna contrasena: la credencial vive en Keycloak, y esta cuenta tiene que ser
+    // la misma que exista alli.
+    { name: "KAMAYUK_IMPLANTACION_ADMINISTRADOR", value: i.administrador },
+    { name: "KAMAYUK_IMPLANTACION_NOMBREDELADMINISTRADOR", value: i.nombreDelAdministrador },
+    { name: "KAMAYUK_IMPLANTACION_ESDEMOSTRACION", value: String(i.esDemostracion) },
+    { name: "KAMAYUK_IMPLANTACION_URL", value: URL_DE_LA_BASE },
+    // OWNERCLAVE sin guion bajo: en una variable de entorno el `_` se traduce a punto, asi que
+    // `KAMAYUK_IMPLANTACION_OWNER_CLAVE` seria `kamayuk.implantacion.owner.clave` y no
+    // `owner-clave`. Es la misma nota que lleva el Job del monolito, y por el mismo motivo.
+    {
+      name: "KAMAYUK_IMPLANTACION_OWNERCLAVE",
+      valueFrom: { secretKeyRef: { name: e.secretoDe("owner"), key: "clave" } },
+    },
+  ];
+}
 
 /** Lo que pide y lo que puede gastar. Sin esto, el planificador no reserva nada. */
 const RECURSOS = {
@@ -111,7 +216,7 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                 image: e.imagenDe(SISTEMA),
                 env: [
                   { name: "SPRING_PROFILES_ACTIVE", value: perfil },
-                  { name: "SGTM_DB_URL", value: `jdbc:postgresql://postgres:5432/${SISTEMA}` },
+                  { name: "SGTM_DB_URL", value: URL_DE_LA_BASE },
                   { name: "SGTM_DB_USUARIO", value: "sgtm_app" },
                   {
                     name: "SGTM_DB_CLAVE",
@@ -120,8 +225,13 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                   // Sin el emisor la aplicacion se niega a arrancar, y es deliberado: un backend
                   // que atiende sin poder validar un token responde a la sonda, se declara sano y
                   // no atiende a nadie (ADR-0005).
-                  { name: "SGTM_OIDC_EMISOR", value: `https://${e.dominio}/keycloak/realms/sgtm` },
-                  { name: "SGTM_OIDC_JWKS", value: `https://${e.dominio}/keycloak/realms/sgtm/protocol/openid-connect/certs` },
+                  { name: "SGTM_OIDC_EMISOR", value: e.plataforma.emisor },
+                  // El JWKS por la red INTERNA, cruzando el namespace de la plataforma (C-14).
+                  // Hasta aqui este descriptor apuntaba las dos al nombre publico: el backend
+                  // habria salido al ingreso para volver a entrar, y con la politica de egreso
+                  // declarada —que nombra el pod de identidad, no internet— no habria salido en
+                  // absoluto. Todo token invalido, por un motivo que no se parece a su causa.
+                  { name: "SGTM_OIDC_JWKS", value: e.plataforma.jwks },
                   // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
                   // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
                   // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
@@ -142,8 +252,7 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                   // repositorio. Con `e.operacion` el dato viaja como cualquier otro, y
                   // `checkInvariants` rechaza ademas el relleno —«pendiente», «TBD»—, que
                   // satisfaria la guarda de la aplicacion y la vaciaria de sentido.
-                  { name: "KAMAYUK_CAJA_RESPONSABLE", value: e.operacion.responsable },
-                  { name: "KAMAYUK_CAJA_CANAL", value: e.operacion.canal },
+                  ...operacionDeLaCaja(e),
                 ],
                 ...(atiendeHttp ? { ports: [{ name: "http", containerPort: 8080 }] } : {}),
                 resources: RECURSOS,
@@ -174,7 +283,9 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
 export const caja: DescriptorDeSistema = {
   sistema: SISTEMA,
   prefijo: SISTEMA,
-  imagenes: [SISTEMA],
+  // DOS imagenes, y son dos objetivos del mismo `Dockerfile` (C-14, punto 1): las
+  // credenciales de `sgtm_owner` existen durante la migracion y desaparecen con ella.
+  imagenes: [SISTEMA, MIGRADOR],
 
   /**
    * Su base y sus roles. **Solo la suya**: pedir privilegios sobre la de otro sistema es una
@@ -201,9 +312,16 @@ export const caja: DescriptorDeSistema = {
 
   despliegue: (e) => [...despliegueDelPerfil(e, "web", true)],
 
-  /** Su Job de migracion. Cada base tiene sus migraciones y su prueba de aislamiento. */
+  /**
+   * Su Job de migracion. Cada base tiene sus migraciones y su prueba de aislamiento.
+   *
+   * **El nombre lleva la version**, y no es cosmetico: un `Job` de Kubernetes es INMUTABLE —su
+   * plantilla de pod no se puede modificar—, asi que un nombre fijo hace fallar el `pulumi up` de
+   * la version siguiente al intentar actualizarlo, porque la imagen lleva la etiqueta dentro. El
+   * monolito lo resolvio asi desde el issue #150; este descriptor nacio sin ello.
+   */
   migracion(e): Manifiesto[] {
-    const nombre = `kamayuk-${SISTEMA}-migracion`;
+    const nombre = e.nombreConVersion(`kamayuk-${SISTEMA}-migracion`);
     const etiquetas = { ...e.etiquetas, componente: SISTEMA };
     return [
       {
@@ -218,20 +336,56 @@ export const caja: DescriptorDeSistema = {
             spec: {
               restartPolicy: "Never",
               priorityClassName: e.prioridadDe("lote"),
+              containers: [contenedorDelMigrador(e)],
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  /**
+   * Su Job de implantacion: la fila de `municipalidad` en SU base, y la copia local de usuarios,
+   * grupos y accesos (C-7 §2.3, C-14 punto 4).
+   *
+   * ## Por que el migrador va de contenedor de inicializacion
+   *
+   * Un `Deployment` no sabe esperar a un `Job` y Kubernetes no tiene `dependsOn`. El monolito lo
+   * resuelve con un contenedor que consulta la base con `psql` hasta ver `flyway_schema_history`;
+   * aqui esa salida no existe, porque un descriptor solo puede nombrar SUS imagenes —la
+   * prohibicion (b)— y la del motor no es suya.
+   *
+   * Lo que se hace es mas fuerte que esperar: se **asegura** que el esquema esta, corriendo el
+   * migrador, que es idempotente y devuelve cero cuando no falta nada. Si el Job de migracion aun
+   * no termino, Flyway toma su propio candado y uno de los dos espera al otro; cuando este
+   * contenedor sale con exito **el esquema ESTA**, que es lo que la espera del monolito solo
+   * puede suponer.
+   */
+  implantacion(e): Manifiesto[] {
+    const nombre = e.nombreConVersion(`kamayuk-${SISTEMA}-implantacion`);
+    const etiquetas = { ...e.etiquetas, componente: SISTEMA };
+    return [
+      {
+        apiVersion: "batch/v1",
+        kind: "Job",
+        metadata: { name: nombre, namespace: e.namespace, labels: etiquetas },
+        spec: {
+          backoffLimit: 3,
+          ttlSecondsAfterFinished: 86400,
+          template: {
+            metadata: { labels: { ...etiquetas, app: nombre } },
+            spec: {
+              restartPolicy: "Never",
+              priorityClassName: e.prioridadDe("lote"),
+              initContainers: [contenedorDelMigrador(e)],
               containers: [
                 {
-                  name: "migrador",
+                  name: "implantacion",
+                  // La MISMA imagen que la aplicacion, con el perfil `batch` (ADR-0003: un
+                  // artefacto, dos perfiles). No abre puerto ninguno.
                   image: e.imagenDe(SISTEMA),
-                  env: [
-                    { name: "SGTM_DB_URL", value: `jdbc:postgresql://postgres:5432/${SISTEMA}` },
-                    // Migrar es lo unico que corre como `sgtm_owner`: es el unico rol con DDL.
-                    { name: "SGTM_DB_USUARIO", value: "sgtm_owner" },
-                    {
-                      name: "SGTM_DB_CLAVE",
-                      valueFrom: { secretKeyRef: { name: e.secretoDe("owner"), key: "clave" } },
-                    },
-                  ],
-                  resources: RECURSOS,
+                  env: variablesDeImplantacion(e),
+                  resources: RECURSOS_DE_ARRANQUE,
                   securityContext: SEGURIDAD,
                 },
               ],
@@ -241,6 +395,20 @@ export const caja: DescriptorDeSistema = {
       },
     ];
   },
+
+  /**
+   * Sus procesos por lotes con ventana. **Ninguno**, y es una afirmacion, no una casilla.
+   *
+   * El unico proceso periodico que `caja` tiene escrito es el publicador de su buzon, y es un
+   * `@Scheduled` que **no se registra**: en los cuatro backends no hay ni un
+   * `@EnableScheduling` (P6 §4.4). Declararle aqui un `CronJob` seria decir que corre algo
+   * que no existe todavia como proceso invocable; lo que hace falta primero es convertirlo
+   * en un `ApplicationRunner` del perfil `batch`, como hizo C-8 con el emisor de `catastro`.
+   *
+   * Una lista vacia no es lo mismo que un `CronJob` suspendido: lo primero dice «este sistema no
+   * corre nada de madrugada» y lo segundo «corre esto, y hoy no puede».
+   */
+  lotes: (): Manifiesto[] => [],
 
   /** Sus rutas, **bajo su prefijo**. Reclamar el de otro no falla: se lo queda. */
   ingreso(e): Manifiesto[] {
@@ -288,17 +456,46 @@ export const caja: DescriptorDeSistema = {
           egress: [
             // Su motor. Los cuatro lo necesitan; cada uno a SU base.
             {
-              to: [{ podSelector: { matchLabels: { componente: "postgres" } } }],
+              to: [
+                {
+                  // El `namespaceSelector` NO es un adorno: desde ADR-0031 cada sistema tiene su
+                  // namespace, y un `podSelector` a secas selecciona pods del MISMO. Sin el, esta
+                  // regla no abre nada y el sintoma es trafico denegado con una politica que dice
+                  // permitirlo (C-14, punto 3).
+                  namespaceSelector: {
+                    matchLabels: { "kubernetes.io/metadata.name": e.plataforma.namespace },
+                  },
+                  podSelector: { matchLabels: { componente: "postgres" } },
+                },
+              ],
               ports: [{ protocol: "TCP", port: 5432 }],
             },
             // La identidad: valida los tokens que recibe.
             {
-              to: [{ podSelector: { matchLabels: { componente: "identidad" } } }],
+              to: [
+                {
+                  // El `namespaceSelector` NO es un adorno: desde ADR-0031 cada sistema tiene su
+                  // namespace, y un `podSelector` a secas selecciona pods del MISMO. Sin el, esta
+                  // regla no abre nada y el sintoma es trafico denegado con una politica que dice
+                  // permitirlo (C-14, punto 3).
+                  namespaceSelector: {
+                    matchLabels: { "kubernetes.io/metadata.name": e.plataforma.namespace },
+                  },
+                  podSelector: { matchLabels: { componente: "identidad" } },
+                },
+              ],
               ports: [{ protocol: "TCP", port: 8080 }],
             },
             // rentas: el `PagoRegistrado` que publica al cobrar, para que rentas impute (ADR-0026 §3)
             {
-              to: [{ podSelector: { matchLabels: { componente: "rentas" } } }],
+              to: [
+                {
+                  namespaceSelector: {
+                    matchLabels: { "kubernetes.io/metadata.name": e.namespaceDe("rentas") },
+                  },
+                  podSelector: { matchLabels: { componente: "rentas" } },
+                },
+              ],
               ports: [{ protocol: "TCP", port: 8080 }],
             },
           ],
