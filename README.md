@@ -17,7 +17,7 @@ tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
 | `docs/30-arquitectura/adr/` | **Existe**, con 0 ADR propio(s) y su indice ⚠ ver la nota de abajo |
 | `backend/` — dos modulos y **cero clases de negocio** | **Existe desde P3**: `kamayuk-esquema` con su prueba de aislamiento (9 pruebas) y `kamayuk-verificaciones` con las barreras (79). El **negocio** llega en la etapa 5 |
 | `docs/40-datos/baselines/V1__baseline.sql` — su esquema | **NO esta aqui todavia.** Generado y verificado, vive en [`sgtm/docs/40-datos/baselines/caja/`](https://github.com/hneyra/sgtm/blob/migracion-a-microservicios/docs/40-datos/baselines/caja/V1__baseline.sql) hasta que la extraccion lo traiga |
-| Su frontend (`caja-web`, ADR-0030 §1) | **NO existe** |
+| Su frontend (`caja-web`, ADR-0030 §1) | **Existe desde #3, y es el andamio**: `frontend/` con React 19 + Vite, `yarn verificar` (ESLint con sus muestras, tipos y Vitest) y `yarn build` en verde. **Ninguna pantalla todavia**, y **ninguna imagen** |
 | La imagen `ghcr.io/hneyra/kamayuk-caja` | **NO existe.** El `Deployment` del descriptor la nombra igual: es correcto, y en esta etapa no se despliega nada |
 
 ## Por donde entrar
