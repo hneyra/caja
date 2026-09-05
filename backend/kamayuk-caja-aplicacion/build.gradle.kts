@@ -26,7 +26,7 @@ dependencies {
     // El unico contexto acotado de este sistema. UNO, y sin puertos de entrada hacia otros
     // sistemas: la caja no le pregunta nada a nadie para cobrar. Lo unico que sale de aqui es el
     // buzon, y sale despues del COMMIT (ADR-0026 §3).
-    implementation(project(":kamayuk-caja-caja"))
+    implementation(project(":kamayuk-caja-nucleo"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.modulith:spring-modulith-starter-core")

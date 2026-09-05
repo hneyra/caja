@@ -51,8 +51,12 @@ class ModulosTest {
                         "carga",
                         "documentos",
                         "web",
-                        // El unico contexto acotado de este sistema, y el unico que va a haber.
-                        "caja");
+                        // El unico contexto acotado de este sistema, y el unico que va a haber. Se
+                        // llama `nucleo` desde R-N: «kamayuk-caja-caja» repetia el nombre del
+                        // sistema y la direccion pidio quitarlo. El identificador que Modulith
+                        // detecta es el ULTIMO segmento del paquete, asi que renombrar el paquete
+                        // lo renombra aqui — y esta lista es lo que lo puso en rojo al hacerlo.
+                        "nucleo");
     }
 
     @Test

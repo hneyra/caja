@@ -292,7 +292,7 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
                 "kamayuk.caja.compartido",
                 "kamayuk.caja.plataforma.tenant",
                 "kamayuk.caja.dominio",
-                "kamayuk.caja.caja.dominio");
+                "kamayuk.caja.nucleo.dominio");
     }
 
     /**
@@ -320,8 +320,8 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
     @Override
     public Set<String> escriturasSinUsuarioQueObserve() {
         return Set.of(
-                ".caja.aplicacion.EntregarEventos.entregarUno("
-                        + "kamayuk.caja.caja.dominio.EventoDePago)");
+                ".nucleo.aplicacion.EntregarEventos.entregarUno("
+                        + "kamayuk.caja.nucleo.dominio.EventoDePago)");
     }
 
     /**

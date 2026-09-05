@@ -51,9 +51,11 @@ include("kamayuk-caja-esquema")
 // Plataforma: lleva el contexto de tenant hasta la transaccion (ARQ-03 §2).
 include("kamayuk-caja-plataforma")
 
-// El contexto acotado. Se llama igual que el sistema porque `caja` es las dos cosas: el
-// repositorio y el unico contexto que contiene, igual que `kamayuk-catastro-catastro`.
-include("kamayuk-caja-caja")
+// El contexto acotado: `caja` es las dos cosas, el repositorio y el unico contexto que contiene,
+// igual que `kamayuk-catastro-nucleo`. Por eso se llamaba `kamayuk-caja-caja`, y por eso se llama
+// `nucleo` desde R-N (2026-09-05): la direccion pidio quitar la repeticion. El patron
+// `kamayuk-<sistema>-<contexto>` queda intacto; lo que cambia es el nombre del contexto.
+include("kamayuk-caja-nucleo")
 
 // La copia local de usuarios, grupos y permisos, y su siembra (D-N5). No es un contexto
 // acotado: es el lector que autoriza y el sembrador que implanta. Las pantallas de

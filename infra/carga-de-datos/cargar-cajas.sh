@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Da de alta las ventanillas (cajas) de una municipalidad contra un ambiente real (#430),
-# corriendo el proceso batch CargarCajas (kamayuk-caja-caja) como un Job de
+# corriendo el proceso batch CargarCajas (kamayuk-caja-nucleo) como un Job de
 # un solo uso.
 #
 # No pasa por Pulumi a proposito: es una carga de datos puntual -una vez por

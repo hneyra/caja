@@ -107,6 +107,8 @@ no declara `implementation(project(...))` de ningún otro contexto, y `CajaContr
 solo puerto hacia otro sistema. No es que la ventanilla tolere que `rentas` esté caído: es que **no
 le pregunta nada**.
 
+> **R-N (2026-09-05) renombró los tres.** `kamayuk-rentas-rentas`, `kamayuk-catastro-catastro` y `kamayuk-caja-caja` son hoy `kamayuk-<sistema>-nucleo`, con su paquete `kamayuk.<sistema>.nucleo`. Lo de arriba se deja como se escribió —es lo que se decidió entonces— y el porqué del cambio está en `infrastructure/docs/00-gobierno/R-N-los-tres-modulos-repetidos.md`.
+
 ---
 
 ## 4. Criterio 3 — un pago inyectado dos veces, un solo asiento

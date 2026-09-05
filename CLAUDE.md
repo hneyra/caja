@@ -18,7 +18,7 @@ el resumen.
 | Pieza | Estado |
 |---|---|
 | `backend/kamayuk-caja-esquema` | **`V1__baseline.sql`** (23 tablas) y **`V2__ordenes_de_cobro_y_outbox.sql`**. El baseline se corrigió al traerlo: le sobraban **ocho funciones y cinco dominios** de otros sistemas, y una de las ocho hacía morir la migración sobre una base sin `unaccent` |
-| `backend/kamayuk-caja-caja` | El contexto acotado entero: orden de cobro, ventanilla, recibo, turno, cierre, arqueo, tasas y **el buzón de salida** |
+| `backend/kamayuk-caja-nucleo` | El contexto acotado entero: orden de cobro, ventanilla, recibo, turno, cierre, arqueo, tasas y **el buzón de salida** |
 | `backend/kamayuk-caja-{dominio-compartido, plataforma}` | Copias de las de `rentas`, con el paquete renombrado. Ver el hueco de las cuatro copias |
 | `backend/kamayuk-caja-aplicacion` | Ensambla y aloja las barreras |
 | `infrastructure/` — el descriptor | `yarn verificar` en verde. **Le falta nombrar al responsable de la conciliación**, y con eso el pod no levanta: es un hueco declarado, no un olvido |
@@ -39,7 +39,7 @@ levanta en cualquier sitio, y la caja tiene que poder correr en el motor más si
   `tributo`, y `PeticionDeOrdenDeCobro` tampoco. **Ésa es la definición práctica de la frontera**: el
   día que uno de los dos gane ese campo, la caja habrá dejado de servir para cobrar un puesto de
   mercado.
-- **No le pregunta nada a nadie para cobrar.** `kamayuk-caja-caja` no declara
+- **No le pregunta nada a nadie para cobrar.** `kamayuk-caja-nucleo` no declara
   `implementation(project(...))` de ningún otro contexto y `CajaController` no inyecta un solo puerto
   hacia otro sistema. Es lo que hace cierto que la ventanilla cobre con `rentas` apagado.
 - **No decide D-17 ni D-20.** Ver abajo.
@@ -53,7 +53,7 @@ backend/                        Gradle. Java 25, Spring Boot 4
   kamayuk-caja-dominio-compartido/  objetos de valor y contexto de tenant
   kamayuk-caja-esquema/             el baseline, V2, el migrador y la prueba de aislamiento
   kamayuk-caja-plataforma/          del token al SET LOCAL, auditoría, documentos, borde HTTP
-  kamayuk-caja-caja/                EL contexto acotado. Se llama igual que el sistema
+  kamayuk-caja-nucleo/              EL contexto acotado. Se llamaba `caja` (R-N)
   kamayuk-caja-aplicacion/          ensambla y aloja las barreras
 infrastructure/                 el descriptor de despliegue en TypeScript, con yarn
 docs/                           los ADR que enlaza, hallazgos de RLS, P5D y la guía de desarrollo
@@ -63,9 +63,13 @@ El backend **no compila sin `infrastructure` clonado al lado**: las barreras se 
 *composite build* desde `../../infrastructure/librerias-backend`. `settings.gradle.kts` lo
 comprueba antes y falla diciendo qué `git clone` falta.
 
-Los paquetes son `kamayuk.caja.*` y el contexto acotado es `kamayuk.caja.caja.*` — redundante, y es
-lo que la consistencia produce: en `normativa` el contexto es `kamayuk.normativa.parametros`, y aquí
-el sistema y su único contexto se llaman igual, como en `catastro`. Los **roles de base de datos
+Los paquetes son `kamayuk.caja.*` y el contexto acotado es `kamayuk.caja.nucleo.*`. **Se llamaba
+`kamayuk.caja.caja` hasta R-N (2026-09-05)**: el patrón `kamayuk-<sistema>-<contexto>` produce el
+nombre repetido allí donde el sistema tiene un solo contexto y se llama igual que él —pasaba en
+`caja`, en `catastro` y en `rentas`—, y la dirección pidió quitarlo. El contexto pasa a llamarse
+`nucleo` y el patrón queda intacto; `normativa` no cambia porque su contexto ya se llama
+`parametros`. El porqué y lo que costó están en
+`infrastructure/docs/00-gobierno/R-N-los-tres-modulos-repetidos.md`. Los **roles de base de datos
 siguen llamándose `sgtm_owner`, `sgtm_app` y `sgtm_readonly`**, y es deliberado: son del **clúster**,
 que los cuatro sistemas comparten.
 
