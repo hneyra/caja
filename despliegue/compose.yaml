@@ -1,0 +1,198 @@
+# ============================================================================
+#  CAJA, LEVANTADO CONTRA LA PLATAFORMA (ADR-0031 §4, C-18)
+#
+#  Solo lo de este sistema: su migrador, su implantacion y su backend. NO trae
+#  PostgreSQL ni Keycloak — los usa, y los levanta el compose de la plataforma,
+#  que vive en el clon hermano `infrastructure`:
+#
+#      docker compose -f ../infrastructure/despliegue/plataforma.compose.yaml up -d --wait
+#      docker compose -f despliegue/compose.yaml up --build --wait
+#
+#  ESTE ARCHIVO Y EL DESCRIPTOR TIENEN QUE DECIR LO MISMO. Es la trampa que
+#  ADR-0011 anoto —«dos formas de levantar el sistema, que se separen, que una
+#  variable nueva entre en el cluster y no en el compose»— y con cuatro sistemas
+#  se multiplica por cuatro. Lo que lo sujeta es una guarda de `infrastructure`,
+#  `infra/verificaciones/compose-de-los-sistemas.test.ts`, que lee este archivo y
+#  `infrastructure/src/descriptor.ts` y compara las dos mitades: los nombres de
+#  las variables de entorno de cada proceso, la base a la que apunta cada uno, el
+#  rol con que se conecta, el prefijo de la ruta y los dos objetivos del
+#  Dockerfile. No se copia una lista a mano: se derivan las dos y se comparan.
+#
+#  AQUI NO HAY FRONTEND, y no es un olvido. Este repositorio no tiene todavia
+#  `frontend/`: ADR-0030 §1 decide que habra uno por sistema y hoy no existe
+#  ninguno de los cuatro. El `README.md` de `infrastructure/despliegue/` decia
+#  que este compose traia «su backend y su frontend»; se corrigio a lo que hay.
+# ============================================================================
+
+name: kamayuk-caja
+
+services:
+  # ── El migrador, que corre y termina ────────────────────────────────────────
+  #
+  # La imagen del MIGRADOR, no la de la aplicacion (C-14, punto 1): son dos
+  # objetivos del mismo `Dockerfile` y estan separados porque las credenciales de
+  # `sgtm_owner` —el unico rol con DDL— existen durante la migracion y desaparecen
+  # con ella. Meterlas en la imagen de la aplicacion le daria DDL sobre el padron
+  # a un proceso de larga vida expuesto en HTTP (ARQ-03 §4).
+  #
+  # Lee `SGTM_DB_OWNER_USUARIO` y `SGTM_DB_OWNER_CLAVE`, y NO `SGTM_DB_USUARIO`:
+  # lo dice el `main` de `kamayuk.caja.esquema.Migrador`, que rechaza
+  # argumentos a proposito para que una clave no quede en el historial del proceso.
+  caja-migraciones:
+    build:
+      # El contexto es la RAIZ del repositorio, no `backend/`: el `.dockerignore`
+      # que lo acota vive alli y desde `backend/` no se aplica.
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: migrador
+    image: kamayuk-caja-migrador:compose
+    environment:
+      # `base` es el servicio del compose de la plataforma, no `postgres`. En el
+      # cluster es otro nombre y lo entrega el entorno (C-17, punto 1): el
+      # descriptor pide `e.plataforma.motor` en vez de escribirlo. Lo que si es de
+      # este sistema —y por eso coincide en los dos— es el nombre de SU base.
+      SGTM_DB_URL: jdbc:postgresql://base:5432/caja
+      SGTM_DB_OWNER_USUARIO: sgtm_owner
+      SGTM_DB_OWNER_CLAVE: ${SGTM_CLAVE_OWNER:?falta SGTM_CLAVE_OWNER, sale del .env de la plataforma}
+    # Corre y termina. Si se reinicia vuelve a comprobar el ambiente y no aplica
+    # nada: el migrador es idempotente y tiene su prueba que lo demuestra.
+    restart: "no"
+
+  # ── La implantacion: la fila de `municipalidad` en SU base ───────────────────
+  #
+  # La MISMA imagen que la aplicacion con el perfil `batch` (ADR-0003: un
+  # artefacto, dos perfiles), asi que no abre ningun puerto y termina al acabar.
+  #
+  # En el cluster el migrador va de `initContainer` de este Job, porque un
+  # `Deployment` no sabe esperar a un `Job` y Kubernetes no tiene `dependsOn`.
+  # Aqui `depends_on: service_completed_successfully` es exactamente esa espera, y
+  # por eso el orden se expresa como dependencia y no repitiendo el migrador.
+  caja-implantacion:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: aplicacion
+    image: kamayuk-caja:compose
+    depends_on:
+      caja-migraciones:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: batch
+      SGTM_DB_URL: jdbc:postgresql://base:5432/caja
+      # `sgtm_app` y solo `sgtm_app`: sin DDL, sin BYPASSRLS, sin DELETE y
+      # propietario de nada.
+      SGTM_DB_USUARIO: sgtm_app
+      SGTM_DB_CLAVE: ${SGTM_CLAVE_APP:?falta SGTM_CLAVE_APP, sale del .env de la plataforma}
+      # Las dos de ADR-0026 §4 van en el bloque COMUN del `application.yaml`, asi
+      # que las necesita TODO proceso de este sistema y no solo el perfil `web`:
+      # sin ellas Spring no puede resolver el marcador y el contexto muere antes
+      # de hacer nada. Lo destapo C-14 midiendo el Job de implantacion, que no
+      # habria levantado — y el sintoma habria sido un despliegue colgado
+      # esperando una municipalidad que nadie implanto.
+      KAMAYUK_CAJA_RESPONSABLE: ${SGTM_RESPONSABLE_DE_OPERACION:?falta SGTM_RESPONSABLE_DE_OPERACION en el .env de la plataforma}
+      KAMAYUK_CAJA_CANAL: ${SGTM_CANAL_DE_OPERACION:?falta SGTM_CANAL_DE_OPERACION en el .env de la plataforma}
+      # El prefijo es `kamayuk.implantacion` y no `sgtm.implantacion`, a proposito:
+      # el del monolito es el segundo y tener nombres distintos hace imposible que
+      # un descuido apunte la implantacion de `caja` con las variables de otro.
+      KAMAYUK_IMPLANTACION_UBIGEO: ${SGTM_UBIGEO:?falta SGTM_UBIGEO en el .env de la plataforma}
+      KAMAYUK_IMPLANTACION_NOMBRE: ${SGTM_MUNICIPALIDAD:?falta SGTM_MUNICIPALIDAD en el .env de la plataforma}
+      KAMAYUK_IMPLANTACION_TIPO: ${SGTM_TIPO_DE_MUNICIPALIDAD:-DISTRITAL}
+      # La cuenta TIENE que ser la misma que el usuario de Keycloak: es lo unico
+      # que une la fila de `usuario` con la identidad del token (ADR-0005).
+      KAMAYUK_IMPLANTACION_ADMINISTRADOR: ${SGTM_ADMINISTRADOR:?falta SGTM_ADMINISTRADOR (ver identidad/datos-de-implantacion.sh)}
+      KAMAYUK_IMPLANTACION_NOMBREDELADMINISTRADOR: ${SGTM_NOMBRE_DEL_ADMINISTRADOR:-Administrador del sistema}
+      # Por omision `true`, al reves que en el codigo: aqui se levanta una marcha
+      # blanca, y mientras D-02a siga abierta toda cifra sale de parametros que
+      # nadie ha firmado. Solo se aplica al ALTA.
+      KAMAYUK_IMPLANTACION_ESDEMOSTRACION: ${SGTM_ES_DEMOSTRACION:-true}
+      KAMAYUK_IMPLANTACION_URL: jdbc:postgresql://base:5432/caja
+      # OWNERCLAVE sin guion bajo: en una variable de entorno el `_` se traduce a
+      # punto, asi que `KAMAYUK_IMPLANTACION_OWNER_CLAVE` seria
+      # `kamayuk.implantacion.owner.clave` y no `owner-clave`.
+      KAMAYUK_IMPLANTACION_OWNERCLAVE: ${SGTM_CLAVE_OWNER:?falta SGTM_CLAVE_OWNER, sale del .env de la plataforma}
+    restart: "no"
+
+  # ── El backend ──────────────────────────────────────────────────────────────
+  #
+  # EL SERVICIO SE LLAMA COMO EL SISTEMA, y no `aplicacion`. No es estilo: los
+  # cuatro composes comparten la red `kamayuk-plataforma`, y Compose le da a cada
+  # servicio un alias de red con su nombre — cuatro servicios llamados
+  # `aplicacion` dejarian ese alias resolviendo a uno cualquiera de los cuatro.
+  # Ademas es el nombre que la propia aplicacion da por hecho: el valor por
+  # omision de `kamayuk.caja.origenes` es `http://rentas:8080/rentas/api/v1`.
+  caja:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: aplicacion
+    image: kamayuk-caja:compose
+    depends_on:
+      caja-implantacion:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: web
+      SGTM_DB_URL: jdbc:postgresql://base:5432/caja
+      SGTM_DB_USUARIO: sgtm_app
+      SGTM_DB_CLAVE: ${SGTM_CLAVE_APP:?falta SGTM_CLAVE_APP, sale del .env de la plataforma}
+      # Sin el emisor la aplicacion se NIEGA a arrancar, y es deliberado: un
+      # backend que atiende sin poder validar un token responde a la sonda, se
+      # declara sano y no atiende a nadie (ADR-0005).
+      #
+      # Es el MISMO realm que los otros tres: un login para los cuatro
+      # (ADR-0030 §3).
+      SGTM_OIDC_EMISOR: ${SGTM_OIDC_EMISOR:-http://localhost:8180}/realms/sgtm
+      # El emisor es una identidad, no una direccion de red. El navegador llega a
+      # Keycloak por su nombre publico y este contenedor por el interno de la red
+      # del compose; usar el publico para las dos cosas haria que el backend
+      # buscara el JWKS en si mismo y todo token seria invalido por un motivo que
+      # no se parece a su causa.
+      SGTM_OIDC_JWKS: http://identidad:8080/realms/sgtm/protocol/openid-connect/certs
+      # A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
+      # nombre de sistema y no una direccion unica: la caja no sabe cuantos
+      # sistemas hay, y el dia que aparezca `mercados` tiene que ser una linea
+      # aqui y no un despliegue de la caja.
+      #
+      # `rentas` es el nombre del SERVICIO del compose de ese sistema — por eso
+      # los cuatro backends se llaman como su sistema y no `aplicacion`.
+      # Entrecomillado: el valor lleva dos puntos dentro y YAML lo leeria como un
+      # mapa.
+      KAMAYUK_CAJA_ORIGENES: "{rentas: 'http://rentas:8080/rentas/api/v1'}"
+      # QUIEN recibe el aviso cuando hay dinero cobrado sin registrar
+      # (ADR-0026 §4). La aplicacion NO ARRANCA sin las dos —lo comprueba
+      # `ResponsableDeLaConciliacion` al construirse—, y eso es deliberado: una
+      # alerta sin destinatario acaba en un panel que nadie mira.
+      KAMAYUK_CAJA_RESPONSABLE: ${SGTM_RESPONSABLE_DE_OPERACION:?falta SGTM_RESPONSABLE_DE_OPERACION en el .env de la plataforma}
+      KAMAYUK_CAJA_CANAL: ${SGTM_CANAL_DE_OPERACION:?falta SGTM_CANAL_DE_OPERACION en el .env de la plataforma}
+    labels:
+      # Su prefijo, y SOLO el suyo. Reclamar el de otro no falla: se lo queda, y
+      # las peticiones dejan de llegar a su dueno. Es la misma prohibicion (a) que
+      # `descriptor/auditoria.ts` aplica en el cluster.
+      - traefik.enable=true
+      - traefik.http.routers.caja.rule=PathPrefix(`/caja`)
+      - traefik.http.services.caja.loadbalancer.server.port=8080
+    healthcheck:
+      # `/actuator/health` y no `/actuator/health/liveness`: aqui esta sonda
+      # alimenta `depends_on: service_healthy`, o sea «esta listo para atender», y
+      # el grupo entero incluye el indicador de la base. En el cluster son tres
+      # sondas distintas y la de VIDA es la del grupo `liveness` a proposito
+      # (C-17, punto 2): matar el proceso no devuelve la base.
+      #
+      # Las tres rutas —esta y las dos del descriptor— tienen que estar entre las
+      # que `SeguridadWeb` permite sin token, y eso lo comprueba
+      # `sondas-contra-la-cadena` leyendo el Java. Con la cadena anterior a C-17
+      # esto contestaba 401 y `curl --fail` dejaba el contenedor `unhealthy` para
+      # siempre, con la aplicacion sana.
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+
+# La red de la plataforma, QUE YA EXISTE. `external: true` es lo que impide que
+# este compose cree una segunda con el mismo nombre y deje a los servicios sin
+# verse: el sintoma seria «Connection refused» a `base`, que se lee como que el
+# motor no esta levantado.
+networks:
+  default:
+    name: kamayuk-plataforma
+    external: true
