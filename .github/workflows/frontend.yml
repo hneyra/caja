@@ -1,0 +1,65 @@
+name: Frontend
+
+# `caja-web`: el andamio de la interfaz de ventanilla.
+#
+# POR QUE ESTE FLUJO NO CLONA `infrastructure`
+# El de `infraestructura.yml` si tiene que hacerlo: el descriptor declara `@kamayuk/infra-contrato`
+# como `link:` a un repositorio hermano, y sin ese hermano en el disco yarn no resuelve. Aqui no
+# hay `link:`, no hay *composite build* y no hay una sola dependencia de red en la aplicacion, asi
+# que este trabajo se basta con lo que hay en el arbol. Es lo mismo que compra la regla de ESLint
+# que prohibe `fetch`: mientras esta interfaz no hable con nadie, verificarla no necesita a nadie.
+#
+# QUE SE EJECUTA, Y EN QUE ORDEN
+# `yarn verificar` encadena lint, tipos y pruebas —las tres, y en ese orden, porque el error mas
+# barato de leer tiene que salir primero—, y `yarn build` demuestra ademas que el artefacto que se
+# desplegaria se construye. Que `yarn verificar` pase no implica que `vite build` pase: `tsc` y
+# Rollup no fallan por lo mismo.
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+
+# Sin permisos de escritura: este trabajo lee y verifica, no publica nada.
+permissions:
+  contents: read
+
+# Un `push` nuevo cancela la corrida anterior de la misma rama. En `main` no se cancela: cada
+# commit de `main` tiene que dejar su propio veredicto.
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verificar:
+    name: caja-web verifica y construye
+    runs-on: ubuntu-latest
+    # Un colgado no consume cuota sin limite: la leccion de `observabilidad-alertas`.
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # La version sale de `frontend/.nvmrc` y no de un literal aqui: con el literal, CI y quien
+      # clona el repositorio son dos numeros que pueden separarse sin que nada lo diga.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      # `--frozen-lockfile`: si el `package.json` y el `yarn.lock` no cuadran, esto falla aqui en
+      # vez de instalar en silencio una version distinta de la que se probo en local.
+      - name: Instalar
+        run: yarn install --frozen-lockfile
+
+      - name: Lint, tipos y pruebas
+        run: yarn verificar
+
+      - name: Construir el artefacto de produccion
+        run: yarn build
