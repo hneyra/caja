@@ -16,9 +16,11 @@ hueco desde P5D hasta C-7, **y por eso se cerró en vez de descubrirse en un des
 que nadie escribió no se distingue de un descuido, y un rojo que nadie predijo se lee como un
 fallo.
 
-> **Nada de lo de abajo es opinión.** Cada afirmación lleva el comando que la produjo. Y una de las
-> tres que se me encargó escribir **resultó ser falsa al medirla**; está corregida abajo, con la
-> medida delante.
+> **Nada de lo de abajo es opinión.** Cada afirmación lleva el comando que la produjo. Y **las tres
+> que se encargó escribir tenían algo que no cuadraba al medirlas**: la primera es directamente
+> falsa —lo que rompe no es lo que decía—, la segunda nombra dos archivos donde son tres y da por
+> nuevos dos rojos que ya estaban vivos desde #17, y la tercera nombra el archivo que *lee* los
+> clientes en vez del que los *declara*. Las tres quedan corregidas abajo, con la medida delante.
 
 ---
 
