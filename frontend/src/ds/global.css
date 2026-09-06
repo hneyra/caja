@@ -46,6 +46,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
 [data-tramo]::placeholder { color: var(--borde-campo); letter-spacing: .2em }
 [data-sticky] th { position: sticky; top: 0; z-index: 2 }
 
+/* —— Los `style-hover` de la barra global (lineas 130, 148 y 163) ——
+   `PORTAR.md` los traduce a una clase porque un estilo en linea no puede
+   expresar `:hover`. Llevan `!important` porque el estilo base SI es en linea
+   —que es la doctrina— y un estilo en linea gana a una clase: sin el, la regla
+   se escribiria y no se veria nunca. */
+.hov-barra:hover { background: rgba(255,255,255,.18) !important }
+.hov-sesion:hover { background: rgba(255,255,255,.14) !important }
+
 /* —— Los cortes responsive del producto (lineas 33-38) —— */
 @media (max-width: 1240px) { [data-lista] { flex: 0 0 320px !important; width: 320px !important } }
 @media (max-width: 900px) {
