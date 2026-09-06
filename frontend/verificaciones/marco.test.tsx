@@ -389,6 +389,33 @@ describe("la fila del titulo", () => {
   });
 });
 
+describe("navegar cierra lo que el artboard cierra", () => {
+  /**
+   * `ir` apaga el lanzador y la paleta (linea 1345), y eso vale para las tres puertas de
+   * entrada. La paleta no tiene dialogo todavia —es del issue siguiente—, pero su estado si es
+   * observable: `data-paleta` en la raiz.
+   */
+  const paleta = (contenedor: HTMLElement) =>
+    (contenedor.firstElementChild as HTMLElement).getAttribute("data-paleta");
+
+  it("pulsar una pestana la cierra", () => {
+    const { container } = render(<App />);
+    abrir("Tesorería", "predios");
+    fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
+    expect(paleta(container)).toBe("abierta");
+    fireEvent.click(pestana("panel"));
+    expect(paleta(container)).toBe("cerrada");
+  });
+
+  it("y pulsar «Cobrar» tambien", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
+    expect(paleta(container)).toBe("abierta");
+    fireEvent.click(screen.getByRole("button", { name: "Cobrar" }));
+    expect(paleta(container)).toBe("cerrada");
+  });
+});
+
 describe("los rotulos, como funciones puras", () => {
   it("el titulo de cada seccion y el de una ajena", () => {
     expect(tituloDe(null)).toBe(TITULO_SIN_PESTANAS);

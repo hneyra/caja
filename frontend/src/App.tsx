@@ -110,10 +110,22 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
    * en un `data-` para que la prueba del arbol pueda seguir midiendolo.
    */
   const [nodo, fijarNodo] = useState<number | null>(null);
-  const alIr = (clave: string, extra?: DestinoDelArbol) => {
-    fijarNodo(extra?.nodo ?? null);
+
+  /**
+   * Ir a un destino: lo abre si no estaba, lo activa y **cierra el lanzador y la paleta**.
+   *
+   * Los dos cierres son del artboard (`ir`, linea 1345) y valen para las tres puertas de
+   * entrada —el arbol, la barra de pestanas y el boton «Cobrar»—, que es por lo que estan aqui
+   * y no en cada una: olvidar uno no rompe nada visible hasta que dos capas se dibujan a la vez.
+   */
+  const irA = (clave: string) => {
     fijarAbierto((x) => ({ ...x, lanzador: false, paleta: false }));
     pestanas.ir(clave);
+  };
+
+  const alIr = (clave: string, extra?: DestinoDelArbol) => {
+    fijarNodo(extra?.nodo ?? null);
+    irA(clave);
   };
 
   const visibles = pestanasDe(pestanas.abiertas, pestanas.activa, pestanas.sucias);
@@ -186,7 +198,7 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
         >
           <BarraDePestanas
             pestanas={visibles}
-            alIr={(clave) => pestanas.ir(clave)}
+            alIr={irA}
             alCerrar={(clave) => pestanas.pedirCierre(clave)}
           />
 
@@ -196,7 +208,7 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
               subtitulo={subtituloDe(activa)}
               hayAccion={activa !== null && esSeccionPropia(activa)}
               alCobrar={() => {
-                pestanas.ir("predios");
+                irA("predios");
                 avisar(MENSAJE_DE_COBRO_NUEVO);
               }}
             />
