@@ -87,7 +87,7 @@ Chromium y un servidor levantado. Se lanzan contra `yarn dev` o contra el `dist/
 | Comando | Que mide |
 |---|---|
 | `yarn paleta` | La paleta de comandos con solo el teclado: abre, mueve, filtra, elige y cierra |
-| `yarn pegajosa` | Que la cabecera de las tablas de consulta se queda quieta al desplazar |
+| `yarn pegajosa` | Que la cabecera de las tablas de consulta se queda quieta **y pegada al borde** al desplazar, con la medida hecha en el marco del contenedor para que moverse la pagina no la descuadre (#35) |
 | `yarn mirar` | Las cuatro secciones: cortes, arbol, teclado y papel, con capturas y PDF |
 | `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada |
 

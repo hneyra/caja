@@ -78,6 +78,11 @@ jobs:
   # que alli la declaracion puede estar entera y la cabecera irse con la tabla sin que nada lo
   # diga. `pegajosa.mjs` desplaza de verdad y mira donde queda cada cosa.
   #
+  # Desde #35 mide en el marco del CONTENEDOR y no en el del viewport, afirma la diferencia
+  # de `scrollTop` y no el absoluto, y espera a que la tipografia este puesta: asi se le caia
+  # al azar cuando la webfont llegaba entre las dos medidas, y un arnes que se reintenta por
+  # costumbre no vigila nada. Ademas se autocomprueba en cada corrida, como `cero-red.mjs`.
+  #
   # Desde #15 corren aqui los otros dos, y por la misma razon. `mirar.mjs` mide lo que un
   # emulador de DOM no puede ni plantear: *disposicion* —que la lista mida 320 px, que el arbol
   # empuje el contenido exactamente 252 px— y el medio `print`, que jsdom y happy-dom no emulan,

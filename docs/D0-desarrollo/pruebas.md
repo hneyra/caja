@@ -184,10 +184,13 @@ las cuatro secciones, miradas · capturas y PDF en .capturas/
 la envoltura aguanta: los cortes, el arbol que empuja, el teclado y el papel
 ```
 
-### `yarn pegajosa` puede salir rojo la PRIMERA vez, y no es del repositorio
+### `yarn pegajosa` salía rojo al azar hasta #35, y ya no: lo que se midió
 
-Medido aquí, y conviene tenerlo escrito porque cuesta una tarde. En la **primera** corrida sobre
-una caché de navegador fría:
+Conviene tenerlo escrito porque cuesta una tarde, y porque lo que este apartado decía antes —«si
+sale rojo, repítelo antes de creértelo»— es justo el hábito que había que quitar: un arnés que se
+reintenta por costumbre no vigila nada el día que la cabecera deje de pegarse de verdad.
+
+Lo que salía en la **primera** corrida sobre una caché de navegador fría:
 
 ```
 #cajas: desplazado 62 px · cabecera y=240.84375→243.84375 · primera celda y=272.34375→215.34375
@@ -196,19 +199,41 @@ la cabecera no se queda:
   - #cajas: el cuerpo no se movió lo que se desplazó — la primera celda subió 57 px de 62
 ```
 
-Las **tres siguientes**, sin tocar una línea, salen verdes y con otras cifras:
+**La causa es la tipografía, y se reproduce a voluntad.** `index.html` carga Source Sans 3 de
+Google Fonts; retrasando esas dos peticiones 200 ms con un `page.route`, el arnés de antes de #35
+da ese mismo rojo **todas las veces**, con los mismos tres números — el 62, el +3 y el 57. Los tres
+síntomas que el issue contaba por separado son **uno solo**: la webfont llega entre las dos medidas,
+la página se recompone, el anclaje de desplazamiento de Chromium empuja el contenedor a
+`scrollTop = 2` y las alturas de fila cambian.
+
+Lo que el arnés hace hoy, y por qué cada pieza está:
+
+| Pieza | Qué mata |
+|---|---|
+| Se afirma la **diferencia** de `scrollTop`, no el absoluto | El contenedor pre-desplazado: `2 → 62` es un delta de 60 |
+| Se mide la distancia al **borde del contenedor**, y las dos posiciones en la **misma** evaluación | Que la página se mueva bajo la medida, y que dos `boundingBox()` seguidos sean dos instantes |
+| Se espera a `load`, a `document.fonts.ready` y a que la huella se repita en tres marcos | Que se mida una maqueta que todavía va a cambiar |
+| Si aun así cambia entre las dos medidas, se **descarta el intento** y se repite | El rojo que miente: acusar a `position: sticky` de lo que hizo la tipografía |
+
+Salida real, sobre el `dist/` servido:
 
 ```
-#cajas: desplazado 60 px · cabecera y=243.84375→243.84375 · primera celda y=277.34375→217.34375
-la cabecera de las dos tablas se queda quieta al desplazar
+#cajas · «arqueo» · sin estorbos: scrollTop 0→60 (delta 60) · cabecera a 0.0→0.0 px del borde ·
+  celda sube 60.0 px · tipografía puesta (loaded), quieta tras 3 marcos y 0.0 px
+#cajas · «arqueo» · contenedor a 2 px y página empujada 3 px: … · la página se movió 3.0 px en el
+  viewport y la medida no
+#cajas · «arqueo» · la maqueta creciendo 3 px entre las dos medidas: la maqueta se movió entre las
+  dos medidas (la celda pasó de 33.5 a 36.5 px dentro del contenido); intento 1 descartado
+#cajas: las 3 pasadas coinciden — delta 60, cabecera a 0.0 px del borde, celda +60.0 px
 ```
 
-**La causa es la tipografía.** `index.html` carga Source Sans 3 de Google Fonts, y el arnés navega
-con `waitUntil: "domcontentloaded"` y mide el `boundingBox()` de la cabecera acto seguido: con la
-red fría, la fuente llega **entre las dos medidas** y desplaza la maqueta 3 px. Lo que el arnés
-anota entonces como «la cabecera se fue» es la diferencia entre dos maquetas distintas, no un
-`position: sticky` que falle — comprobado dejando pasar un par de `await` antes de medir, con lo
-que la Δ vuelve a `0.00` en los tres altos de ventana probados (420, 600 y 900 px).
+Esas tres pasadas por pantalla son **la autocomprobación**, y corren en cada ejecución: la segunda y
+la tercera ponen a propósito los estorbos del fallo —el contenedor a 2 px, la página empujada 3, la
+maqueta creciendo 3 entre las dos medidas—, comprueban que **han surtido efecto** y exigen que el
+veredicto no cambie. Si la maqueta se mueve y el arnés no lo descarta, lo dice con esa palabra: «la
+guarda … está **CIEGA**, y con ella este verde no significa nada».
 
-No se arregla aquí porque el arnés es de otro issue, pero **queda dicho**: si sale rojo, repítelo
-antes de creértelo.
+**Un rojo de `pegajosa` ya no se repite: se lee.** Veinte corridas seguidas contra el `dist/`
+servido salen en verde, y en una de las veinte la espera absorbió 8 px de maqueta moviéndose —lo
+dice la propia línea, «quieta tras 3 marcos y 8.0 px»—, que es la corrida que antes habría salido
+roja.
