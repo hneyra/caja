@@ -86,7 +86,6 @@ const ANILLO = "rgb(82, 189, 239)";
 /** El anillo de los campos (`--anillo-campo`, línea 25) y su borde. */
 const ANILLO_DE_CAMPO = "rgb(211, 235, 250)";
 
-
 const fallos = [];
 const dicho = [];
 /** Apunta un fallo con su medida dentro: un fallo sin cifra no se puede leer. */
@@ -332,7 +331,6 @@ for (const ancho of [1400, 1000]) {
         outline: `${s.outlineWidth} ${s.outlineStyle} ${s.outlineColor}`,
         offset: s.outlineOffset,
         sombra: s.boxShadow,
-        borde: s.borderColor,
       };
     }, i);
     if (parada === null) break;
@@ -381,7 +379,7 @@ for (const ancho of [1400, 1000]) {
   const campos = paradas.filter(esCampo).length;
   contar(
     `Tab recorre ${paradas.length} controles y vuelve al documento; ${paradas.length - campos} con el ` +
-      `anillo ${ANILLO} y ${campos} campos con el suyo; 0 inalcanzables`,
+      `anillo ${ANILLO} y ${campos} campos con el suyo; ${inalcanzables.length} inalcanzables`,
   );
   await contexto.close();
 }
