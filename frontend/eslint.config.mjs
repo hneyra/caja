@@ -21,9 +21,18 @@ import tseslint from "typescript-eslint";
 /**
  * Nombres de campo que llevan dinero. Sobre ellos no se declara `number` ni se convierte a
  * `number`: un importe es texto de punta a punta (regla 1 de CLAUDE.md, RNF-055).
+ *
+ * `valor` entra en la lista con #5, y entra **sabiendo** que `src/datos/recibos-del-turno.ts`
+ * declara uno: la alternativa era dejarlo fuera del selector, y una excepcion que se consigue no
+ * mirando no es una excepcion, es un hueco. Declarado esta, con su `eslint-disable` y su motivo
+ * escrito al lado, y ademas en la lista de `verificaciones/importes-de-datos.test.ts`.
+ *
+ * La misma cadena la lee ese escaner —**del texto de este archivo**, para que no haya dos listas—
+ * y con ella mira lo que un selector de AST no puede ver: un `deudaTotal: 3455.24` suelto dentro de
+ * un objeto de datos, que no declara ningun tipo.
  */
 const CAMPOS_DE_DINERO =
-  "monto|importe|saldo|deuda|total|insoluto|interes|recargo|vuelto|recibido|efectivo|pagado";
+  "monto|importe|saldo|deuda|total|insoluto|interes|recargo|vuelto|recibido|efectivo|pagado|valor";
 
 /** Tildes y enie: prohibidas en identificadores. Checkstyle hace lo mismo en el backend. */
 const LETRAS_ACENTUADAS = "áéíóúÁÉÍÓÚñÑüÜ";
