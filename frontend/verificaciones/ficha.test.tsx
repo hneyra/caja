@@ -48,7 +48,7 @@ import {
   REIMPRIMIR,
   VER_LA_CUENTA_CORRIENTE,
 } from "../src/pantallas/FichaDelRecibo";
-import { COBRAR, COBRO_PENDIENTE, ELIJA_UN_RECIBO } from "../src/pantallas/Recibos";
+import { COBRAR, ELIJA_UN_RECIBO } from "../src/pantallas/Recibos";
 import "../src/ds/global.css";
 
 afterEach(cleanup);
@@ -181,14 +181,19 @@ describe("criterio 1 · abrir el recibo enseña las cinco pestanas y su cabecera
     expect(screen.getByText(ELIJA_UN_RECIBO)).toBeDefined();
   });
 
-  it("y en un cobro nuevo tampoco: eso es #13, y queda su marcador", () => {
+  it("y en un cobro nuevo hay ficha, pero **no la de un recibo**: eso es #13", () => {
+    // Desde #13 el cobro nuevo dibuja la misma plantilla, asi que «no hay ficha» dejaria de ser
+    // cierto. Lo que sigue separandolos es el `data-nuevo` y las acciones de la cabecera: un
+    // borrador no se puede anular ni reimprimir, porque todavia no existe.
     abrirRecibos();
     fireEvent.click(screen.getAllByRole("button", { name: COBRAR })[0] as HTMLElement);
-    expect(pantalla().querySelector("[data-ficha]")).toBeNull();
-    expect(
-      pantalla().querySelector("[data-cobro-pendiente]")?.getAttribute("data-cobro-pendiente"),
-    ).toBe(COBRO_NUEVO);
-    expect(screen.getByText(COBRO_PENDIENTE)).toBeDefined();
+    expect(ficha().getAttribute("data-nuevo")).toBe("1");
+    expect(pantalla().querySelector("[data-ir-recibo]")).toBeNull();
+    expect(accion(ANULAR_EL_RECIBO)).toBeNull();
+    expect(accion(REIMPRIMIR)).toBeNull();
+    expect(document.querySelector("[data-ir-recibo]")?.getAttribute("data-ir-recibo")).toBe(
+      COBRO_NUEVO,
+    );
   });
 });
 

@@ -10,8 +10,10 @@ import {
 } from "@/datos";
 import type { OrdenDeLaLista, Recibo } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
-import { COBRO_NUEVO } from "@/marco/destino";
+import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import type { PropsDePantalla } from "@/marco/MarcadorDeSeccion";
+import { MENSAJE_DE_COBRO_NUEVO } from "@/marco/rotulos";
+import { BORRADOR_DESCARTADO, reciboEmitido } from "@/pantallas/CobroNuevo";
 import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";
 
 /**
@@ -53,10 +55,31 @@ import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";
  * <h2>Los tres estados de la mitad derecha</h2>
  *
  * Son los del artboard, y se excluyen: **sin nada elegido** el «Elija un recibo de la lista»
- * (599-607); con un recibo elegido, {@link FichaDelRecibo} (609-771); y con un cobro empezado,
- * el marcador de {@link COBRO_PENDIENTE}, que es lo unico que sigue sin portar y llega con #13.
- * El artboard dibuja los dos ultimos con la misma plantilla —`hayFicha` es `nuevo || sel !==
- * undefined`, linea 1892— y aqui se separan porque solo una de las dos mitades esta escrita.
+ * (599-607); con un recibo elegido, {@link FichaDelRecibo} con ese recibo; y con un cobro
+ * empezado, la misma {@link FichaDelRecibo} con un cobro. Los dos ultimos son la misma plantilla
+ * en el artboard (`hayFicha` es `nuevo || sel !== undefined`, linea 1892) y desde #13 tambien
+ * aqui.
+ *
+ * <h2>Lo que esta pantalla recuerda de un cobro, y por que no lo recuerda la ficha</h2>
+ *
+ * Dos cosas: en que seccion se esta (`paso`) y si ya se intento emitir (`intento`). Las dos son
+ * estado global en el artboard (linea 1221) y aqui viven en esta pantalla por el mismo motivo:
+ * la ficha se desmonta cuando el cobro se emite o se descarta, asi que guardarlas dentro seria
+ * guardarlas en algo que desaparece justo cuando hacen falta.
+ *
+ * <h2>Un defecto del port de #12, medido, que este issue NO arregla entero</h2>
+ *
+ * `abrir(cod)` en el artboard (linea 2081) hace **dos** cosas ademas de elegir el recibo: pone
+ * `paso: 0` y `vals: {}`. #12 no porto ninguna de las dos y escribio que el artboard tampoco las
+ * hacia; ejecutando su logica en Node, el estado que `abrir` deja es
+ * `{"predio":"0003-0041180","paso":0,"vals":{},"intento":false}`, o sea que si las hace.
+ *
+ * Aqui se repone **la mitad de `vals`** y no la de `paso`. El motivo de reponer una: hasta este
+ * issue ninguna pantalla escribia en el mapa de campos, de modo que la fuga no se veia; desde que
+ * la barra guarda la caja y el documento, abrir un recibo despues de un cobro le ensenaria en
+ * «Caja» y en «Documento» los del cobro. El motivo de no reponer la otra: que la seccion elegida
+ * sobreviva al cambiar de recibo es un criterio de #12 con su prueba escrita, y cambiarlo es una
+ * decision suya y no de este issue. Queda dicho para que se decida, no para que se descubra.
  */
 
 /** El texto del campo de busqueda (linea 549). */
@@ -79,19 +102,6 @@ export const COBRAR = "Cobrar";
 export const ELIJA_UN_RECIBO = "Elija un recibo de la lista";
 export const DONDE_SE_ABRE =
   "El recibo se abre aquí al lado, sin salir de la lista. También puede cobrar uno nuevo.";
-
-/**
- * El marcador **del cobro nuevo**, que no es del artboard: es de este port y se va con #13.
- *
- * Desde #12 la ficha de un recibo existente esta portada, asi que lo unico que queda con un
- * marcador es el cobro que todavia no existe: su barra de caja y documento, su validacion
- * bloqueante y el resumen «Lo que se va a registrar». Se escribe por lo mismo que
- * `MarcadorDeSeccion`: una mitad de pantalla en blanco es la forma silenciosa de fallar que
- * `PORTAR.md` avisa.
- */
-export const COBRO_PENDIENTE =
-  "El cobro nuevo se porta en el issue siguiente. La lista y la ficha de un recibo ya " +
-  "funcionan: se busca, se filtra, se ordena y se abre el recibo elegido.";
 
 /** El conteo de la barra gris: «5 de 52» (linea 1878). */
 export const conteoDe = (cuantas: number) => `${cuantas} de ${TOTAL_DEL_TURNO}`;
@@ -198,6 +208,7 @@ export function Recibos({
   irA,
   fijarCampo,
   valorDeCampo,
+  limpiarCampos,
   avisar,
 }: PropsDePantalla) {
   const [consulta, fijarConsulta] = useState("");
@@ -212,6 +223,35 @@ export function Recibos({
    * segunda desviacion distinta de la que esta pantalla ya declara arriba.
    */
   const [paso, fijarPaso] = useState(0);
+
+  /**
+   * Si ya se intento emitir: el `state.intento` del artboard (linea 1221).
+   *
+   * Solo lo enciende «Cobrar y emitir el recibo» cuando **no** se puede (linea 2021), y es lo
+   * unico que hace visible el estilo de error de los campos obligatorios vacios. Vive aqui y no
+   * en la ficha por lo mismo que `paso`.
+   */
+  const [intento, fijarIntento] = useState(false);
+
+  /**
+   * Cada navegacion reinicia el intento, y una a un cobro nuevo reinicia ademas la seccion.
+   *
+   * Es el mismo patron de dos `useState` que el chip de abajo, y con la misma razon: hace falta
+   * ajustar estado propio cuando cambia una prop. Lo que se compara es **el objeto `destino`**,
+   * no su contenido: `irA` lo reemplaza entero en cada navegacion (ver `marco/destino.ts`), asi
+   * que una identidad distinta significa exactamente «se ha navegado». Comparando `destino.recibo`
+   * en su lugar, pulsar «Cobrar» estando ya en un cobro nuevo no reiniciaria nada, y el artboard
+   * si lo reinicia: su `nuevo()` escribe `paso: 0` (linea 2075) sea cual sea el estado anterior.
+   *
+   * `paso` se reinicia **solo** cuando se empieza un cobro. Abrir un recibo de la lista lo
+   * conserva, que es lo que #12 decidio y lo que su prueba afirma; ver la cabecera del modulo.
+   */
+  const [ultimoDestino, fijarUltimoDestino] = useState(destino);
+  if (destino !== ultimoDestino) {
+    fijarUltimoDestino(destino);
+    fijarIntento(false);
+    if (destino.recibo === COBRO_NUEVO) fijarPaso(0);
+  }
 
   /**
    * El chip, que es de esta pantalla **y** lo puede fijar un destino.
@@ -238,8 +278,68 @@ export function Recibos({
   const elegido = esNuevo ? undefined : RECIBOS.find((r) => r.cod === destino.recibo);
   const sinSeleccion = !esNuevo && elegido === undefined;
 
-  /** Abrir un recibo es el `abrir(cod)` de la linea 2080, con el marco haciendo de `setState`. */
-  const abrir = (cod: string) => irA(SECCION_DE_RECIBOS, { recibo: cod });
+  /**
+   * Abrir un recibo es el `abrir(cod)` de la linea 2080, con el marco haciendo de `setState`.
+   *
+   * Tira lo escrito, que es la mitad de ese `abrir` que #12 no porto: sin ello el recibo que se
+   * abre despues de un cobro ensenaria la caja y el documento del cobro en sus dos campos de solo
+   * lectura. La otra mitad —`paso: 0`— sigue sin portarse a proposito; ver la cabecera del modulo.
+   */
+  const abrir = (cod: string) => {
+    limpiarCampos();
+    irA(SECCION_DE_RECIBOS, { recibo: cod });
+  };
+
+  /**
+   * Empezar un cobro desde el vacio de la lista: el `nuevaFicha` de la linea 579.
+   *
+   * Es el mismo `nuevo()` (2073-2079) que el «Cobrar» de la fila del titulo y el de la paleta,
+   * y **con su toast**, que es el hueco que #11 dejo declarado: entonces una pantalla no tenia
+   * con que avisar, y desde #12 lo tiene.
+   */
+  const cobrarNuevo = () => {
+    limpiarCampos();
+    irA(SECCION_DE_RECIBOS, { recibo: COBRO_NUEVO });
+    avisar(MENSAJE_DE_COBRO_NUEVO);
+  };
+
+  /**
+   * «Descartar»: el `predio: null, vals: {}, intento: false` de la linea 1914.
+   *
+   * Suelta la ficha —la mitad derecha vuelve al «Elija un recibo de la lista»—, tira lo escrito y
+   * apaga el intento. **No reinicia la seccion**, tambien como el artboard: medido, tras descartar
+   * desde la tercera seccion `paso` sigue valiendo 2.
+   *
+   * Su `limpiarCampos()` es del artboard y **no se puede observar**, medido: quitarlo deja las
+   * 2 769 pruebas en verde. El motivo es que, descartado el borrador, la mitad derecha no dibuja
+   * ningun campo, y las **dos** unicas salidas de ese estado vuelven a tirar lo escrito —empezar
+   * otro cobro (`cobrarNuevo`) y abrir un recibo (`abrir`)—. Se porta igualmente porque es lo que
+   * la linea 1914 escribe, y queda dicho aqui para que no se cuente como cubierto: lo que cubre
+   * la prueba del criterio 10 es **la pareja**, no esta mitad.
+   */
+  const descartar = () => {
+    limpiarCampos();
+    irA(SECCION_DE_RECIBOS, SIN_EXTRAS);
+    avisar(BORRADOR_DESCARTADO);
+  };
+
+  /**
+   * Emitir: el `adelante` de la linea 2022.
+   *
+   * Deja **elegido el codigo que se acaba de emitir** y vuelve a la primera seccion. Y aqui el
+   * artboard hace algo que hay que decir en voz alta: ese codigo no es ninguno de los cinco
+   * recibos del turno, asi que `sel` queda `undefined` y la mitad derecha se va al «Elija un
+   * recibo de la lista». Se porta tal cual —medido: `hayFicha` pasa a `false` y `sinSeleccion` a
+   * `true`—, porque la alternativa seria inventarle al recibo emitido un juego de datos que el
+   * diseno no trae. Lo que el cajero ve es el toast con su numero, que es lo que el criterio pide.
+   *
+   * Lo escrito **no** se tira, que es lo que hace el artboard: su emision no lleva `vals: {}`.
+   */
+  const emitir = (codigo: string) => {
+    irA(SECCION_DE_RECIBOS, { recibo: codigo });
+    fijarPaso(0);
+    avisar(reciboEmitido(codigo));
+  };
 
   return (
     <div
@@ -440,13 +540,11 @@ export function Recibos({
               >
                 {DONDE_MIRAR}
               </p>
-              {/* El `nuevaFicha` de la linea 579: el mismo destino que el «Cobrar» de la fila
-                  del titulo. Lo que abre —el formulario de cobro— es de #13; hoy deja el
-                  destino puesto y nada mas. El toast se queda con el, porque una pantalla no
-                  tiene con que avisar: eso es del marco. */}
+              {/* El `nuevaFicha` de la linea 579: el mismo `nuevo()` que el «Cobrar» de la
+                  fila del titulo y el de la paleta, con su toast. */}
               <button
                 type="button"
-                onClick={() => abrir(COBRO_NUEVO)}
+                onClick={cobrarNuevo}
                 style={{
                   marginTop: 14,
                   border: 0,
@@ -583,26 +681,19 @@ export function Recibos({
         )}
 
         {esNuevo && (
-          <div
-            data-cobro-pendiente={COBRO_NUEVO}
-            style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}
-          >
-            <div
-              style={{
-                maxWidth: 480,
-                background: "#fff",
-                border: "1px dashed var(--linea)",
-                borderRadius: "var(--radio-8)",
-                padding: "16px 18px",
-                fontSize: 13.5,
-                lineHeight: 1.6,
-                color: "var(--tinta-3)",
-                textWrap: "pretty",
-              }}
-            >
-              {COBRO_PENDIENTE}
-            </div>
-          </div>
+          <FichaDelRecibo
+            cobro={{
+              intento,
+              alIntentar: () => fijarIntento(true),
+              alEmitir: emitir,
+              alDescartar: descartar,
+            }}
+            paso={paso}
+            alIrAPaso={fijarPaso}
+            fijarCampo={fijarCampo}
+            valorDeCampo={valorDeCampo}
+            avisar={avisar}
+          />
         )}
 
         {elegido !== undefined && (

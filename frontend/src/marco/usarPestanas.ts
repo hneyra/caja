@@ -109,6 +109,19 @@ export interface Pestanas extends EstadoDePestanas {
   readonly fijarCampo: (clave: string, valor: string) => void;
   /** El valor de un campo, o `porOmision` si nadie lo ha tocado. Es el `val(k, d)` de la 1358. */
   readonly valorDeCampo: (clave: string, porOmision: string) => string;
+  /**
+   * Tira lo escrito en todos los campos: el `vals: {}` del artboard.
+   *
+   * Lo hacen sus tres transiciones que cambian **que** se esta editando: `nuevo()` (linea 2075),
+   * `abrir(cod)` (2081) y «Descartar» (1914). El motivo es el mismo en las tres: el mapa de
+   * campos es **uno solo** para toda la aplicacion —lo es tambien en el artboard—, asi que lo
+   * escrito en un recibo se leeria en el siguiente. Con la ficha de un recibo existente eso no se
+   * veia, porque hasta #13 ninguna pantalla escribia en el mapa.
+   *
+   * **No toca `sucias`**, igual que el artboard: descartar un borrador no deshace que la pestana
+   * tenga cambios sin guardar, y el aviso al cerrarla sigue saliendo.
+   */
+  readonly limpiarCampos: () => void;
 }
 
 export function usarPestanas(): Pestanas {
@@ -140,6 +153,8 @@ export function usarPestanas(): Pestanas {
     (clave: string, porOmision: string) => estado.vals[clave] ?? porOmision,
     [estado.vals],
   );
+
+  const limpiarCampos = useCallback(() => fijar((s) => ({ ...s, vals: {} })), []);
 
   /**
    * El hash, en un solo efecto: **se lee al arrancar y se escribe despues**.
@@ -187,5 +202,6 @@ export function usarPestanas(): Pestanas {
     cancelarCierre,
     fijarCampo,
     valorDeCampo,
+    limpiarCampos,
   };
 }

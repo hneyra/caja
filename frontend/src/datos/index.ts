@@ -14,6 +14,7 @@
  * | `cajas.ts` | `PROGRAMAS`, `CAJAS_CERRADAS` | 967-973 |
  * | `recibo.ts` | `PASOS` | 978-1043 |
  * | `valores-del-recibo.ts` | la rama `else` de `datos()` | 1379-1392 |
+ * | `cobro-nuevo.ts` | la rama `if (this.esNuevo())` de `datos()` | 1368-1378 |
  * | `recibos-del-turno.ts` | `PREDIOS`, y los `chips`, `ordenes` y el «de 52» de la lista | 1047-1063, 1869-1878 |
  * | `arqueo.ts` | `NODOS`, `DETERMINACIONES` | 1066-1137 |
  * | `tarifario.ts` | `VAL` | 1139-1168 |
@@ -76,6 +77,17 @@ export type { Campo, Paso, TablaDeCuotas, TipoDeCampo } from "./recibo";
 export { PASOS } from "./recibo";
 
 export { MARCADO, SIN_MARCAR, VALORES_DEL_RECIBO } from "./valores-del-recibo";
+
+export {
+  CAJA_POR_OMISION,
+  CAJERO,
+  nombreCortoDe,
+  SIN_DATO,
+  TURNO_DE_MANANA,
+  TURNO_DE_TARDE,
+  turnoDe,
+  valoresDelCobroNuevo,
+} from "./cobro-nuevo";
 
 export type { OrdenDeLaLista, Recibo } from "./recibos-del-turno";
 export {
