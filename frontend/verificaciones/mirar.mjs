@@ -57,13 +57,22 @@
  * recorrido exige el anillo en **todas** las paradas más el anillo de campo en los campos: quien
  * borre cualquiera de las dos ve rojo.
  *
- * Necesita la aplicación servida. `CAJA_BASE` dice dónde (por omisión, el puerto de `yarn dev`).
+ * Necesita la aplicación servida **bajo `/caja`**, que es el `base` que `vite.config.ts`
+ * declara. `CAJA_BASE` dice dónde, prefijo incluido (por omisión, el puerto de `yarn dev`).
  * Las capturas van a `CAJA_CAPTURAS` (por omisión `.capturas/`).
  */
 import { chromium } from "playwright-core";
 import { mkdir, writeFile } from "node:fs/promises";
 
-const BASE = process.env.CAJA_BASE ?? "http://localhost:5181";
+/*
+ * Donde esta servida la aplicacion, **con su prefijo**.
+ *
+ * `vite.config.ts` declara `base: "/caja/"`, asi que ni `yarn dev` ni `vite preview` sirven nada
+ * en la raiz: los dos contestan `302` a `/caja/` y todo cuelga de ahi. Por omision se apunta al
+ * `yarn dev` de este repositorio; en CI, `CAJA_BASE` trae el puerto de `vite preview` con el
+ * mismo prefijo. La barra final se quita para que las rutas de abajo no salgan con dos.
+ */
+const BASE = (process.env.CAJA_BASE ?? "http://localhost:5181/caja").replace(/\/+$/, "");
 const SALIDA = process.env.CAJA_CAPTURAS ?? ".capturas";
 
 /** Las cuatro secciones propias, por el slug con el que se escriben en la URL. */

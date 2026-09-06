@@ -90,6 +90,13 @@ jobs:
   # `cero-red.mjs` cuenta las peticiones que salen del navegador: `eslint.config.mjs` ya prohibe
   # `fetch` en `src/`, pero una dependencia que llame a su propio servidor no escribe ningun
   # `fetch` alli.
+  #
+  # Desde #37 corre aqui un quinto, `prefijo.mjs`, y es el unico que no necesita navegador: mira
+  # el `dist/` construido y le hace peticiones al servidor. La suite no puede: `yarn verificar`
+  # no construye, y lo que este issue arregla —un literal de JavaScript que Vite no reescribe—
+  # solo se ve en el artefacto. Medido: con `base` declarado y el literal puesto, el codigo
+  # compilaba, el `index.html` decia `/caja/escudo-catacaos.png` y el paquete seguia diciendo
+  # `/escudo-catacaos.png`.
   navegador:
     name: Los arneses de navegador
     runs-on: ubuntu-latest
@@ -119,6 +126,10 @@ jobs:
       - name: Instalar Chromium
         run: npx playwright-core install --with-deps chromium
 
+      # Desde #37 la aplicacion se sirve BAJO `/caja`: `vite.config.ts` declara `base: "/caja/"`
+      # y `vite preview` responde `302` a `/caja/` para cualquier peticion a la raiz —medido—,
+      # asi que la espera se hace ya sobre el prefijo. Aqui no se afirma nada mas: quien dice si
+      # la interfaz es alcanzable bajo `/caja` es `yarn prefijo`, que compara tipos y cuerpos.
       - name: Construir y servir
         run: |
           yarn build
@@ -127,25 +138,30 @@ jobs:
           # lineas, y en un flujo bloqueante cada descarga es una forma nueva de ponerse rojo
           # por algo que no se esta midiendo.
           for i in $(seq 1 60); do
-            curl -sf -o /dev/null http://localhost:5182/ && break
+            curl -sf -o /dev/null http://localhost:5182/caja/ && break
             sleep 1
           done
-          curl -sf -o /dev/null http://localhost:5182/
+          curl -sf -o /dev/null http://localhost:5182/caja/
+
+      # El PRIMERO: si la aplicacion no es alcanzable bajo su prefijo, los otros cuatro fallarian
+      # todos por lo mismo y ninguno lo diria con ese nombre.
+      - name: La interfaz es alcanzable bajo `/caja`
+        run: CAJA_BASE=http://localhost:5182/caja yarn prefijo
 
       - name: La paleta, sola con el teclado
-        run: CAJA_BASE=http://localhost:5182 yarn paleta
+        run: CAJA_BASE=http://localhost:5182/caja yarn paleta
 
       - name: La cabecera de las tablas se queda al desplazar
-        run: CAJA_BASE=http://localhost:5182 yarn pegajosa
+        run: CAJA_BASE=http://localhost:5182/caja yarn pegajosa
 
       - name: Las cuatro secciones, los cortes, el teclado y el papel
-        run: CAJA_BASE=http://localhost:5182 yarn mirar
+        run: CAJA_BASE=http://localhost:5182/caja yarn mirar
 
       # Se ejecuta el ULTIMO a proposito: es el unico que necesita salida a internet para que la
       # tipografia de Google llegue, y sin ella no falla —lo dice y sigue—, pero conviene que los
       # otros tres ya hayan dado su veredicto antes de depender de un tercero.
       - name: La aplicacion no habla con nadie
-        run: CAJA_BASE=http://localhost:5182 yarn cero-red
+        run: CAJA_BASE=http://localhost:5182/caja yarn cero-red
 
       # Las capturas y los PDF de `mirar`, para poder MIRAR lo que la corrida dibujo sin tener
       # que reproducirla. `if: always()` porque lo que mas se quiere ver es la corrida que fallo.

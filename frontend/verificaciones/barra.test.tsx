@@ -91,13 +91,24 @@ describe("la hamburguesa", () => {
 });
 
 describe("el escudo y la entidad", () => {
-  it("el escudo se pide a `/escudo-catacaos.png`", () => {
+  it("el escudo cuelga del prefijo con el que la aplicacion esta servida", () => {
     // Que esa ruta la SIRVA alguien, y con un PNG de verdad, lo mide `escudo-servido.test.ts`
-    // contra un servidor de Vite levantado en la prueba. Aqui solo se mira que se pida.
+    // contra un servidor de Vite levantado en la prueba. Aqui solo se mira que se pida, y de
+    // donde sale la parte de delante.
     render(<App />);
-    expect(screen.getByAltText("Escudo de la municipalidad").getAttribute("src")).toBe(
-      "/escudo-catacaos.png",
-    );
+    const src = screen.getByAltText("Escudo de la municipalidad").getAttribute("src");
+
+    // La mitad que dice de donde sale: del `base` de Vite y no de un literal. Vitest lee el
+    // mismo `vite.config.ts` que se despliega, asi que `import.meta.env.BASE_URL` vale aqui lo
+    // que valdra alli — medido: sin declarar `base` daba `"/"`, con `base: "/caja/"` da
+    // `"/caja/"`.
+    expect(src).toBe(`${import.meta.env.BASE_URL}escudo-catacaos.png`);
+
+    // Y la mitad que la anterior no puede dar, porque se cumpliria sola con cualquier base: que
+    // el prefijo es el del despliegue. Un `src="/caja/escudo-catacaos.png"` escrito a mano
+    // pasaria las dos —y por eso existe el tercer angulo, el escaner de
+    // `rutas-absolutas.test.ts`, que marca esa forma tambien—.
+    expect(src).toBe("/caja/escudo-catacaos.png");
   });
 
   it("la entidad por omision es la del despliegue piloto", () => {

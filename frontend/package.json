@@ -15,6 +15,7 @@
     "paleta": "node verificaciones/paleta.mjs",
     "pegajosa": "node verificaciones/pegajosa.mjs",
     "mirar": "node verificaciones/mirar.mjs",
+    "prefijo": "node verificaciones/prefijo.mjs",
     "cero-red": "node verificaciones/cero-red.mjs"
   },
   "dependencies": {

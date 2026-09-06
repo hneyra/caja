@@ -77,11 +77,20 @@
  *     algo;
  *   - y que las tres pasadas den **el mismo veredicto y las mismas cifras**.
  *
- * Necesita la aplicación servida. `CAJA_BASE` dice dónde (por omisión, el puerto de `yarn dev`).
+ * Necesita la aplicación servida **bajo `/caja`**, que es el `base` que `vite.config.ts`
+ * declara. `CAJA_BASE` dice dónde, prefijo incluido (por omisión, el puerto de `yarn dev`).
  */
 import { chromium } from "playwright-core";
 
-const BASE = process.env.CAJA_BASE ?? "http://localhost:5181";
+/*
+ * Donde esta servida la aplicacion, **con su prefijo**.
+ *
+ * `vite.config.ts` declara `base: "/caja/"`, asi que ni `yarn dev` ni `vite preview` sirven nada
+ * en la raiz: los dos contestan `302` a `/caja/` y todo cuelga de ahi. Por omision se apunta al
+ * `yarn dev` de este repositorio; en CI, `CAJA_BASE` trae el puerto de `vite preview` con el
+ * mismo prefijo. La barra final se quita para que las rutas de abajo no salgan con dos.
+ */
+const BASE = (process.env.CAJA_BASE ?? "http://localhost:5181/caja").replace(/\/+$/, "");
 /** Cuánto se desplaza. Menos que el alto del cuerpo de la tabla, para que haya sitio. */
 const DESPLAZAMIENTO = 60;
 /** En píxeles. La disposición trae fracciones (`243.84375`), así que nada se compara por igualdad. */

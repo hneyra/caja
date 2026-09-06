@@ -42,7 +42,7 @@ cd backend && ./gradlew verificarArquitectura
 cd ../infrastructure && yarn install && yarn verificar
 
 # 4 · La pantalla. Lo más barato que hay, y lo único que se puede MIRAR hoy
-cd ../frontend && yarn install && yarn dev      # http://localhost:5181
+cd ../frontend && yarn install && yarn dev      # http://localhost:5181/caja/
 ```
 
 **Lo más rápido para ver algo funcionando es el punto 4, y no necesita nada de lo anterior**: ni
@@ -69,10 +69,11 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | Todo, más el formato | `./gradlew build` | `backend/` |
 | Arreglar el formato | `./gradlew spotlessApply` | `backend/` |
 | Verificar el descriptor | `yarn verificar` | `infrastructure/` |
-| **Ver la pantalla** | `yarn dev` → <http://localhost:5181> | `frontend/` |
+| **Ver la pantalla** | `yarn dev` → <http://localhost:5181/caja/> | `frontend/` |
 | **Verificar la pantalla** | `yarn verificar` (ESLint, tipos y Vitest) | `frontend/` |
 | **Construir el artefacto de la pantalla** | `yarn build` → `frontend/dist/` | `frontend/` |
 | Los cuatro arneses de navegador | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | `frontend/`, con `yarn dev` levantado |
+| Que la interfaz sea alcanzable bajo `/caja` | `yarn prefijo` | `frontend/`, con el `dist/` servido (`yarn build && yarn preview`) — **no vale contra `yarn dev`**, y lo dice |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
 | Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml up -d --build --wait` | la raíz |
 | Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |

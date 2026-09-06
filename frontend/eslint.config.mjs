@@ -37,6 +37,15 @@ const CAMPOS_DE_DINERO =
 /** Tildes y enie: prohibidas en identificadores. Checkstyle hace lo mismo en el backend. */
 const LETRAS_ACENTUADAS = "áéíóúÁÉÍÓÚñÑüÜ";
 
+/**
+ * Extensiones de recurso: lo que un navegador pide por su cuenta despues de cargar la pagina.
+ *
+ * Sirven para reconocer una ruta absoluta a la raiz del dominio escrita a mano. Sin extension no
+ * se marca nada: `"/caja/api/v1/pagos"` no es un recurso servido por este nginx, y marcarlo
+ * pondria rojo el dia que haya backend por un motivo que no es este.
+ */
+const RECURSOS = "png|jpe?g|gif|svg|webp|avif|ico|woff2?|css|js|mjs|json";
+
 /** El texto que delata cada prohibicion. La prueba busca exactamente estos. */
 const MENSAJES = {
   tilde:
@@ -49,6 +58,10 @@ const MENSAJES = {
     "Esta interfaz no habla con nadie: sin fetch y sin XMLHttpRequest. " +
     "Los datos salen de src/datos/, y el día que haya backend será una decisión con su ADR, " +
     "no un fetch suelto dentro de una pantalla.",
+  ruta:
+    "Un recurso no se pide a la raíz del dominio: se cuelga de `import.meta.env.BASE_URL`. " +
+    "Vite reescribe el base en el index.html y en los recursos importados, pero NO dentro de " +
+    "un literal de JavaScript, así que esta petición se iría fuera de /caja y sería un 404.",
 };
 
 export default tseslint.config(
@@ -123,6 +136,18 @@ export default tseslint.config(
         {
           selector: "MemberExpression[property.name='sendBeacon']",
           message: MENSAJES.red,
+        },
+
+        // —— La interfaz se sirve bajo `/caja`: ningun recurso a la raiz del dominio ——
+        // Caza `"/escudo-catacaos.png"` y tambien `"/caja/escudo-catacaos.png"`: escribir el
+        // prefijo a mano es la misma ruta absoluta, y ademas duplica el `base` de Vite.
+        //
+        // Mira **literales de cadena**, que es donde estaba el defecto. Lo que un selector de
+        // AST no puede ver —un literal de plantilla, o un `url(/x.png)` en el CSS de `src/ds/`,
+        // que ESLint ni linta— lo mira `verificaciones/rutas-absolutas.test.ts` sobre el texto.
+        {
+          selector: `Literal[value=/^\\/[^\\s"'\`]*\\.(?:${RECURSOS})$/]`,
+          message: MENSAJES.ruta,
         },
       ],
     },

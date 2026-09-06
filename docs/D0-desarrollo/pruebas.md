@@ -113,7 +113,7 @@ Es la mitad del trabajo, y la que se anota en `CLAUDE.md`. La forma que funciona
 4. Si la rotura pasa en **verde**, eso es el hallazgo: la verificación no medía lo que parecía.
    Se escribe, no se descarta.
 
-## 7. La pantalla: `yarn verificar` y los cuatro arneses
+## 7. La pantalla: `yarn verificar` y los cinco arneses
 
 ```bash
 cd frontend
@@ -131,46 +131,80 @@ $ eslint .
 $ tsc --noEmit
 $ vitest run
 …
- Test Files  20 passed (20)
-      Tests  634 passed (634)
-   Duration  86.76s
+ Test Files  21 passed (21)
+      Tests  648 passed (648)
+   Duration  81.23s
 ```
 
-**Lee el paréntesis.** Vitest imprime `Test Files 20 passed (20)`: el número de fuera es lo que
+**Lee el paréntesis.** Vitest imprime `Test Files 21 passed (21)`: el número de fuera es lo que
 pasó y el de dentro, lo que había. Con dos archivos que no cargan, escribe `2 passed (4)` —«2 de
 4» y aun así la palabra *passed*—, y ese caso ya se vio en #4.
 
 Y **`yarn verificar` en verde no implica que `yarn build` lo esté**: `tsc --noEmit` y Rollup no
 fallan por lo mismo. Por eso `frontend.yml` ejecuta los dos.
 
-### Los cuatro arneses, y por qué no están en `yarn verificar`
+### Los cinco arneses, y por qué no están en `yarn verificar`
 
-Miden lo que jsdom y happy-dom **no pueden decir**: esos dos calculan una cascada, no colocan nada.
-Allí «la lista mide 320 px» es una declaración leída y no un ancho medido, y `@media print` no
-existe. Así que hace falta un Chromium de verdad — y eso es lo que los deja fuera de la cadena que
-corre en cada cambio.
+Cuatro miden lo que jsdom y happy-dom **no pueden decir**: esos dos calculan una cascada, no
+colocan nada. Allí «la lista mide 320 px» es una declaración leída y no un ancho medido, y
+`@media print` no existe. Así que hace falta un Chromium de verdad — y eso es lo que los deja fuera
+de la cadena que corre en cada cambio.
+
+El quinto, `yarn prefijo`, no necesita navegador y está fuera por otra razón: mide el **`dist/`**
+—que `yarn verificar` no construye— y lo que un servidor **contesta**. Es la capa donde apareció el
+defecto de #37: con `base` declarado y el escudo escrito como literal de JavaScript, el código
+compilaba, el `index.html` pedía `/caja/escudo-catacaos.png` y el paquete seguía diciendo
+`/escudo-catacaos.png`.
+
+**La aplicación se sirve bajo `/caja`**, no en la raíz (`base: "/caja/"`, #37), así que `CAJA_BASE`
+lleva el prefijo dentro. Por omisión los cinco apuntan a `http://localhost:5181/caja`.
 
 ```bash
 # En una terminal
-cd frontend && yarn dev
+cd frontend && yarn dev        # http://localhost:5181/caja/ — `/` contesta 302 hacia ahí
 
 # En otra
 cd frontend
 yarn paleta      # la paleta de comandos con solo el teclado
 yarn pegajosa    # la cabecera de las tablas se queda quieta al desplazar
 yarn mirar       # las cuatro secciones: cortes, arbol, teclado y papel
-yarn cero-red    # ni una peticion fuera de sus propios recursos
+yarn cero-red    # ni una peticion fuera de sus propios recursos, y todas bajo `/caja`
+```
+
+**`yarn prefijo` es el único que NO vale contra `yarn dev`**, y no falla en silencio: compara el
+`dist/` del disco con lo que el servidor entrega, y el servidor de desarrollo no conoce los nombres
+con huella —contestaría su `index.html` a todos ellos—. Se le apunta al artefacto servido, y si se
+le apunta al otro lo dice con esas palabras en vez de acusar al servidor de un defecto que no
+tiene:
+
+```bash
+cd frontend
+yarn build
+npx vite preview --port 5182 --strictPort &
+CAJA_BASE=http://localhost:5182/caja yarn prefijo
 ```
 
 También valen contra el artefacto: `yarn build && yarn preview`, con `CAJA_BASE` apuntando a ese
-puerto. Salidas reales:
+puerto **y al prefijo** — `CAJA_BASE=http://localhost:5182/caja`. Salidas reales, medidas contra
+el `dist/` servido con `vite preview` (sobre `yarn dev` las cifras de `cero-red` son otras: el
+servidor de desarrollo pide cada módulo por separado y abre el WebSocket de su recarga en
+caliente, que el arnés nombra y deja pasar sólo ahí):
 
 ```
 $ yarn paleta
 la paleta se opera sólo con el teclado: abre, mueve, filtra, elige y cierra
 
+$ yarn prefijo
+la interfaz bajo `/caja`, medida en el artefacto y en el servidor
+  · `index.html`: 3 recursos propios, todos bajo `/caja`
+  · paquete (index-DGWPq6eb.js): 0 rutas absolutas fuera de `/caja`
+  · /caja/recibos → 200 text/html 1383 B (una recarga en una ruta profunda)
+  · /escudo-catacaos.png (raíz del dominio) → 404 text/plain
+el `dist/` no pide nada a la raíz del dominio, y `/caja/` sirve la aplicación con su tipo
+
 $ yarn cero-red
-270 peticiones propias · 10 a la tipografia declarada · 5 de conexion · 0 a terceros sin declarar
+20 peticiones propias · 10 a la tipografia declarada · 0 de conexion · 0 a terceros sin declarar
+  todas las propias cuelgan de `/caja`: si
   recorrido (10 pasos): #panel · #recibos · #cajas · #tarifario · la paleta con una consulta ·
     el lanzador de modulos · el menu de sesion · una ficha de recibo con sus cinco secciones ·
     escribir en un campo · un cobro nuevo con su documento

@@ -47,12 +47,23 @@
  *      `fetch` vivo dentro de una pantalla. Lo que hay que afirmar es que la regla que decide
  *      funciona. Es la única forma de que un cero signifique algo.
  *
- * Necesita la aplicación servida. `CAJA_BASE` dice dónde (por omisión, el puerto de `yarn dev`).
+ * Necesita la aplicación servida **bajo `/caja`**, que es el `base` que `vite.config.ts`
+ * declara. `CAJA_BASE` dice dónde, prefijo incluido (por omisión, el puerto de `yarn dev`).
  */
 import { chromium } from "playwright-core";
 
-const BASE = process.env.CAJA_BASE ?? "http://localhost:5181";
+/*
+ * Donde esta servida la aplicacion, **con su prefijo**.
+ *
+ * `vite.config.ts` declara `base: "/caja/"`, asi que ni `yarn dev` ni `vite preview` sirven nada
+ * en la raiz: los dos contestan `302` a `/caja/` y todo cuelga de ahi. Por omision se apunta al
+ * `yarn dev` de este repositorio; en CI, `CAJA_BASE` trae el puerto de `vite preview` con el
+ * mismo prefijo. La barra final se quita para que las rutas de abajo no salgan con dos.
+ */
+const BASE = (process.env.CAJA_BASE ?? "http://localhost:5181/caja").replace(/\/+$/, "");
 const ORIGEN = new URL(BASE).origin;
+/** El prefijo solo: `/caja`. Todo lo que la aplicacion pida a su propio origen cuelga de aqui. */
+const PREFIJO = new URL(BASE).pathname.replace(/\/+$/, "");
 
 /** Los dos únicos anfitriones ajenos admitidos, y por qué. Ver la nota de la cabecera. */
 const TIPOGRAFIA = {
@@ -237,6 +248,29 @@ for (const imprescindible of imprescindibles) {
 if (recorrido.propias < 4) {
   fallos.push(`solo ${recorrido.propias} peticiones propias en todo el recorrido: no se ha medido nada`);
 }
+
+// ── Y todas cuelgan del prefijo ────────────────────────────────────────────
+// Es la afirmacion de #37, y la unica que dice «la interfaz es alcanzable bajo /caja» sin
+// depender de que el servidor de turno conteste 404 a lo demas. Detras de Traefik, una peticion
+// a `/escudo-catacaos.png` no es un 404 de este nginx: es una ruta que `PathPrefix(/caja)` no
+// casa y que llega a otro sitio o a ninguno — un modo de fallo que en local no se reproduce.
+//
+// Se mide sobre las peticiones que el NAVEGADOR emite, que es donde el defecto aparecia: Vite
+// reescribe el `base` en el `index.html` y en los recursos importados, pero no dentro de un
+// literal de JavaScript, asi que un `src="/escudo-catacaos.png"` sale de aqui y no del HTML.
+const fueraDelPrefijo = propias
+  .map((l) => l.split(/\s+/).slice(1).join(" "))
+  .filter((url) => {
+    const ruta = new URL(url).pathname;
+    return ruta !== PREFIJO && !ruta.startsWith(PREFIJO + "/");
+  });
+if (fueraDelPrefijo.length) {
+  fallos.push(
+    `${fueraDelPrefijo.length} peticiones propias se salen de \`${PREFIJO}\`, o sea que la ` +
+      `aplicacion NO es alcanzable bajo su prefijo:\n      ` +
+      [...new Set(fueraDelPrefijo)].join("\n      "),
+  );
+}
 if (noHecho.length) {
   fallos.push(
     `${noHecho.length} pasos del recorrido no se pudieron hacer, asi que ese camino no se midio:\n      ` +
@@ -267,6 +301,7 @@ console.log(
     `${conectadas.length} de conexion · ${ajenas.length} a terceros sin declarar`,
 );
 console.log(`  recursos propios: ${[...tipos].sort().join(", ")}`);
+console.log(`  todas las propias cuelgan de \`${PREFIJO}\`: ${fueraDelPrefijo.length ? "NO" : "si"}`);
 console.log(`  recorrido (${hecho.length} pasos): ${hecho.join(" · ")}`);
 for (const [anfitrion, porque] of Object.entries(TIPOGRAFIA)) {
   const cuantas = deTipografia.filter((l) => l.includes(anfitrion)).length;
