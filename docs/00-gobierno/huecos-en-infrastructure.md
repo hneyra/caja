@@ -74,8 +74,14 @@ descriptor de `caja`, 31 pruebas—, y eso es lo que su CI exige. Lo de arriba e
 > y **2 `error TS2307: Cannot find module '@kamayuk/infra-contrato'`**. La causa la nombra el
 > `TS2307`, que además sale el primero — y aun así el hallazgo es el reparto: son dos líneas que
 > dicen la verdad enterradas bajo cuarenta y ocho que hablan de parámetros sin tipo, y cualquiera
-> lee las últimas. Se arregla rehaciendo el enlace a la ruta **absoluta** del clon:
-> `ln -sfn "$(cd ../../infrastructure/infra/contrato && pwd)" infrastructure/node_modules/@kamayuk/infra-contrato`.
+> lee las últimas. Se arregla rehaciendo el enlace a la ruta **absoluta** del clon —y la ruta
+> relativa no sirve precisamente porque el árbol de trabajo no está donde el clon:
+>
+> ```bash
+> # <CLON> es el directorio del clon de `caja`, no el del arbol de trabajo
+> ln -sfn "$(cd <CLON>/../infrastructure/infra/contrato && pwd)" \
+>         infrastructure/node_modules/@kamayuk/infra-contrato
+> ```
 
 ---
 
