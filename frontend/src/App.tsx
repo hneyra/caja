@@ -303,6 +303,7 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
               irA={irA}
               fijarCampo={pestanas.fijarCampo}
               valorDeCampo={pestanas.valorDeCampo}
+              avisar={avisar}
             />
           )}
         </main>

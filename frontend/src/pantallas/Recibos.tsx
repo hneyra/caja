@@ -12,6 +12,7 @@ import type { OrdenDeLaLista, Recibo } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
 import { COBRO_NUEVO } from "@/marco/destino";
 import type { PropsDePantalla } from "@/marco/MarcadorDeSeccion";
+import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";
 
 /**
  * `#recibos` — la lista de los recibos del turno, y el hueco de la ficha a su derecha.
@@ -49,11 +50,13 @@ import type { PropsDePantalla } from "@/marco/MarcadorDeSeccion";
  * y vuelve limpia. Se deja asi a proposito —el marco no es el sitio donde guardar el filtro de
  * una pantalla— y queda dicho para que no se descubra como un defecto.
  *
- * <h2>La ficha no entra en este issue</h2>
+ * <h2>Los tres estados de la mitad derecha</h2>
  *
- * La mitad derecha dibuja **solo** el estado vacio del artboard. Con un recibo elegido queda el
- * marcador de {@link FICHA_PENDIENTE}, por lo mismo que `MarcadorDeSeccion` existe: una mitad de
- * pantalla en blanco es la forma silenciosa de fallar que `PORTAR.md` avisa.
+ * Son los del artboard, y se excluyen: **sin nada elegido** el «Elija un recibo de la lista»
+ * (599-607); con un recibo elegido, {@link FichaDelRecibo} (609-771); y con un cobro empezado,
+ * el marcador de {@link COBRO_PENDIENTE}, que es lo unico que sigue sin portar y llega con #13.
+ * El artboard dibuja los dos ultimos con la misma plantilla —`hayFicha` es `nuevo || sel !==
+ * undefined`, linea 1892— y aqui se separan porque solo una de las dos mitades esta escrita.
  */
 
 /** El texto del campo de busqueda (linea 549). */
@@ -78,15 +81,17 @@ export const DONDE_SE_ABRE =
   "El recibo se abre aquí al lado, sin salir de la lista. También puede cobrar uno nuevo.";
 
 /**
- * El marcador de la ficha, que **no es del artboard**: es de este port y se va con #12.
+ * El marcador **del cobro nuevo**, que no es del artboard: es de este port y se va con #13.
  *
- * Se escribe por lo mismo que `MarcadorDeSeccion`: con un recibo elegido, la mitad derecha se
- * quedaria en blanco y una pantalla a medio portar que no da ningun error es justo el modo de
- * fallo que `PORTAR.md` avisa.
+ * Desde #12 la ficha de un recibo existente esta portada, asi que lo unico que queda con un
+ * marcador es el cobro que todavia no existe: su barra de caja y documento, su validacion
+ * bloqueante y el resumen «Lo que se va a registrar». Se escribe por lo mismo que
+ * `MarcadorDeSeccion`: una mitad de pantalla en blanco es la forma silenciosa de fallar que
+ * `PORTAR.md` avisa.
  */
-export const FICHA_PENDIENTE =
-  "La ficha del recibo se porta en el issue siguiente. La lista ya funciona: busca, filtra, " +
-  "ordena y recuerda cuál está elegido.";
+export const COBRO_PENDIENTE =
+  "El cobro nuevo se porta en el issue siguiente. La lista y la ficha de un recibo ya " +
+  "funcionan: se busca, se filtra, se ordena y se abre el recibo elegido.";
 
 /** El conteo de la barra gris: «5 de 52» (linea 1878). */
 export const conteoDe = (cuantas: number) => `${cuantas} de ${TOTAL_DEL_TURNO}`;
@@ -188,9 +193,25 @@ const filaDe = (elegida: boolean): CSSProperties => ({
   cursor: "pointer",
 });
 
-export function Recibos({ destino, irA }: PropsDePantalla) {
+export function Recibos({
+  destino,
+  irA,
+  fijarCampo,
+  valorDeCampo,
+  avisar,
+}: PropsDePantalla) {
   const [consulta, fijarConsulta] = useState("");
   const [orden, fijarOrden] = useState<OrdenDeLaLista>(ORDEN_NATURAL);
+
+  /**
+   * En que seccion de la ficha se esta: el `s.paso` del artboard (linea 1423).
+   *
+   * Vive **aqui y no en la ficha** para que sobreviva a soltar el recibo y elegir otro, que es
+   * lo que hace el artboard teniendolo en su estado global. Dentro de `FichaDelRecibo` se
+   * reiniciaria cada vez que la mitad derecha se queda sin nada elegido, y eso seria una
+   * segunda desviacion distinta de la que esta pantalla ya declara arriba.
+   */
+  const [paso, fijarPaso] = useState(0);
 
   /**
    * El chip, que es de esta pantalla **y** lo puede fijar un destino.
@@ -561,9 +582,9 @@ export function Recibos({ destino, irA }: PropsDePantalla) {
           </div>
         )}
 
-        {!sinSeleccion && (
+        {esNuevo && (
           <div
-            data-ficha-pendiente={esNuevo ? COBRO_NUEVO : (elegido?.cod ?? "")}
+            data-cobro-pendiente={COBRO_NUEVO}
             style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}
           >
             <div
@@ -579,9 +600,20 @@ export function Recibos({ destino, irA }: PropsDePantalla) {
                 textWrap: "pretty",
               }}
             >
-              {FICHA_PENDIENTE}
+              {COBRO_PENDIENTE}
             </div>
           </div>
+        )}
+
+        {elegido !== undefined && (
+          <FichaDelRecibo
+            recibo={elegido}
+            paso={paso}
+            alIrAPaso={fijarPaso}
+            fijarCampo={fijarCampo}
+            valorDeCampo={valorDeCampo}
+            avisar={avisar}
+          />
         )}
       </div>
     </div>

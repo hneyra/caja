@@ -13,6 +13,7 @@
  * | `navegacion.ts` | `MODULOS`, `ICO_SEC`, `MI_MODULO`, `ARBOL`, `HOJAS`, `SECS` | 942-962, 1171-1215 |
  * | `cajas.ts` | `PROGRAMAS`, `CAJAS_CERRADAS` | 967-973 |
  * | `recibo.ts` | `PASOS` | 978-1043 |
+ * | `valores-del-recibo.ts` | la rama `else` de `datos()` | 1379-1392 |
  * | `recibos-del-turno.ts` | `PREDIOS`, y los `chips`, `ordenes` y el «de 52» de la lista | 1047-1063, 1869-1878 |
  * | `arqueo.ts` | `NODOS`, `DETERMINACIONES` | 1066-1137 |
  * | `tarifario.ts` | `VAL` | 1139-1168 |
@@ -73,6 +74,8 @@ export { CAJAS, CAJAS_CERRADAS } from "./cajas";
 
 export type { Campo, Paso, TablaDeCuotas, TipoDeCampo } from "./recibo";
 export { PASOS } from "./recibo";
+
+export { MARCADO, SIN_MARCAR, VALORES_DEL_RECIBO } from "./valores-del-recibo";
 
 export type { OrdenDeLaLista, Recibo } from "./recibos-del-turno";
 export {
