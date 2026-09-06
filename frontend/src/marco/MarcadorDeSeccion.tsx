@@ -46,6 +46,15 @@ export interface PropsDePantalla {
   /** El valor de un campo, o `porOmision` si nadie lo ha tocado. Es el `val` de la 1358. */
   readonly valorDeCampo: (clave: string, porOmision: string) => string;
   /**
+   * Tira lo escrito en todos los campos: el `vals: {}` del artboard.
+   *
+   * Lo necesita quien cambia **de que ficha** se esta hablando. En `#recibos` son tres cosas:
+   * empezar un cobro nuevo, abrir un recibo de la lista y descartar el borrador. Sin esto, lo
+   * escrito en un cobro se leeria en el recibo que se abre despues, porque el mapa de campos es
+   * uno solo — y lo es tambien en el artboard.
+   */
+  readonly limpiarCampos: () => void;
+  /**
    * Sacar un toast. Es el `this.setState({ toast: … })` que el artboard escribe por todas partes.
    *
    * Entra con #12 y **cierra un hueco que #11 dejo declarado**: sin el, una pantalla no tenia

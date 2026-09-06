@@ -138,6 +138,25 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
     pestanas.ir(clave);
   };
 
+  /**
+   * El `nuevo()` del artboard (lineas 2073-2079): empieza un cobro y avisa.
+   *
+   * Hace las cuatro cosas que hace alli, y las cuatro importan: **tira lo escrito** —si no, un
+   * cobro nuevo abierto despues de editar un recibo heredaria sus campos—, deja el destino en
+   * {@link COBRO_NUEVO}, cierra el lanzador y la paleta (eso lo hace `irA`) y saca su toast. La
+   * seccion del formulario vuelve a la primera dentro de la pantalla, que es donde vive.
+   *
+   * Vive aqui y no en la pantalla porque hay **tres** puertas —el boton de la fila del titulo, la
+   * accion «Cobrar» de la paleta y el «Cobrar» del vacio de la lista— y las dos primeras estan en
+   * el marco. Que las tres hagan lo mismo es lo que impide que empezar un cobro signifique una
+   * cosa distinta segun por donde se entre.
+   */
+  const cobrarNuevo = () => {
+    pestanas.limpiarCampos();
+    irA("predios", { recibo: COBRO_NUEVO });
+    avisar(MENSAJE_DE_COBRO_NUEVO);
+  };
+
   const visibles = pestanasDe(pestanas.abiertas, pestanas.activa, pestanas.sucias);
   const activa = pestanas.activa;
   const hayPestanas = pestanas.abiertas.length > 0 && activa !== null;
@@ -227,6 +246,9 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
         <PaletaDeComandos
           alCerrar={() => fijarAbierto((x) => ({ ...x, paleta: false }))}
           alElegir={(resultado) => {
+            // Una accion que nombra un recibo —hoy solo «Cobrar»— empieza otra ficha, y eso en el
+            // artboard tira lo escrito (`vals: {}`, lineas 2075 y 2081). Ver `cobrarNuevo`.
+            if (resultado.destino?.recibo !== undefined) pestanas.limpiarCampos();
             irA(resultado.seccion, resultado.destino);
             if (resultado.aviso !== undefined) avisar(resultado.aviso);
           }}
@@ -268,13 +290,7 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
               titulo={tituloDe(activa)}
               subtitulo={subtituloDe(activa)}
               hayAccion={activa !== null && esSeccionPropia(activa)}
-              // El `nuevo()` del artboard (linea 2073): abre Recibos **con un cobro empezado**,
-              // que es lo mismo que hace la accion «Cobrar» de la paleta. Los dos pasan por
-              // aqui con el mismo destino para que no puedan separarse.
-              alCobrar={() => {
-                irA("predios", { recibo: COBRO_NUEVO });
-                avisar(MENSAJE_DE_COBRO_NUEVO);
-              }}
+              alCobrar={cobrarNuevo}
             />
           )}
 
@@ -303,6 +319,7 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
               irA={irA}
               fijarCampo={pestanas.fijarCampo}
               valorDeCampo={pestanas.valorDeCampo}
+              limpiarCampos={pestanas.limpiarCampos}
               avisar={avisar}
             />
           )}

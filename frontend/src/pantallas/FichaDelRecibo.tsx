@@ -1,40 +1,86 @@
 import type { CSSProperties } from "react";
-import { PASOS, VALORES_DEL_RECIBO } from "@/datos";
+import {
+  CAJA_POR_OMISION,
+  nombreCortoDe,
+  PASOS,
+  turnoDe,
+  valoresDelCobroNuevo,
+  VALORES_DEL_RECIBO,
+} from "@/datos";
 import type { Columna, Recibo, TablaDeCuotas } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
-import { CampoDeFicha } from "@/pantallas/CampoDeFicha";
+import { CampoDeFicha, faltan } from "@/pantallas/CampoDeFicha";
+import {
+  BarraDeCajaYContribuyente,
+  BORRADOR,
+  COBRAR_Y_EMITIR,
+  cobroAlDocumento,
+  COBRO_NUEVO_SIN_DOCUMENTO,
+  codigoDe,
+  CONTEXTO_DE_CAJA_CERRADA,
+  CONTEXTO_SIN_CONTRIBUYENTE,
+  contextoDeLaCaja,
+  DESCARTAR,
+  EL_RECIBO,
+  GUARDADO_EN_EL_BORRADOR,
+  GUARDAR_BORRADOR,
+  lineasDelResumen,
+  motivoDe,
+  NOTA_DE_LA_EMISION,
+  NOTA_DEL_BORRADOR,
+  puedeCobrar,
+  ResumenDelCobro,
+} from "@/pantallas/CobroNuevo";
 
 /**
- * La ficha de un recibo **existente**: su cabecera, sus cinco secciones y su barra inferior.
+ * La ficha: **la de un recibo existente y la de un cobro nuevo**, que son la misma plantilla.
  *
- * Portado de `TesoreriaV6.dc.html`: la plantilla de las lineas 609-621 (cabecera), 654-663
- * (pestanas), 665-708 (los campos, que dibuja {@link CampoDeFicha}), 710-741 (la tabla de
- * cuotas) y 767-771 (la barra inferior). La logica: `ficha` (1894-1923), `tabs` (1943-1955),
- * `paso` (1956-1968) y `atras` / `adelante` / `pasoNota` (2009-2031). Los estilos van **en linea
- * y con los valores del artboard**, que es la doctrina de `PORTAR.md`.
+ * Portado de `TesoreriaV6.dc.html`: la plantilla de las lineas 609-621 (cabecera), 623-652 (la
+ * barra de caja y contribuyente, solo en cobro nuevo), 654-663 (pestanas), 665-708 (los campos,
+ * que dibuja {@link CampoDeFicha}), 710-741 (la tabla de cuotas), 743-763 (el resumen «Lo que se
+ * va a registrar», solo en cobro nuevo) y 767-771 (la barra inferior). La logica: el calculo de
+ * las 1428-1448, `ficha` (1894-1923), `codigo` (1924-1942), `tabs` (1943-1955), `paso`
+ * (1956-1968), `cierre` (1969-2008) y `bloqueado` / `motivo` / `adelante` / `pasoNota`
+ * (2009-2031). Los estilos van **en linea y con los valores del artboard**, que es la doctrina de
+ * `PORTAR.md`.
  *
- * <h2>Lo que este componente NO dibuja, y no es un olvido</h2>
+ * <h2>Una sola plantilla para los dos casos, porque en el artboard tambien lo es</h2>
  *
- * El artboard mete en la misma rama la ficha de un recibo y el **cobro nuevo**: `hayFicha` es
- * `nuevo || sel !== undefined` (linea 1892). De esa rama quedan fuera aqui las tres piezas que
- * solo existen con `esNuevo`, que son de #13:
+ * `hayFicha` es `nuevo || sel !== undefined` (linea 1892): el artboard dibuja el recibo abierto y
+ * el cobro que todavia no existe con el mismo marcado, y lo que cambia es lo que la logica
+ * compone. Partirlo en dos componentes obligaria a repetir la cabecera, las cinco pestanas, la
+ * rejilla de campos, la tabla y la barra inferior, y entonces un arreglo en una de las dos mitades
+ * se quedaria sin hacer en la otra sin que nada lo dijera. Lo que **si** es propio del cobro nuevo
+ * —la barra de arriba y el resumen del final— vive aparte, en
+ * {@link import("./CobroNuevo").BarraDeCajaYContribuyente} y
+ * {@link import("./CobroNuevo").ResumenDelCobro}.
+ *
+ * Cual de los dos se dibuja lo decide el tipo: {@link FichaDelReciboProps} es la union de «trae un
+ * `recibo`» y «trae un `cobro`», de modo que no existe la forma de llamarla con los dos ni con
+ * ninguno.
+ *
+ * <h2>Las cuatro cosas que solo pasan en un cobro nuevo</h2>
  *
  * <ul>
- *   <li>La barra de **caja y contribuyente** (623-652) con su aviso bloqueante.</li>
- *   <li>El **contador de pendientes** de cada pestana, que el artboard condiciona a
- *       `nuevo && f > 0` (linea 1948). La cuenta se puede hacer igual —`faltan`, en
- *       `CampoDeFicha`— y da **2** en «Anulación» con estos valores; lo que no se dibuja es la
- *       pastilla.</li>
- *   <li>El resumen **«Lo que se va a registrar»** (743-763), que el artboard condiciona a
- *       `nuevo && paso >= PASOS.length - 1` (linea 1970).</li>
+ *   <li>La barra de **caja y contribuyente** (623-652), con su aviso, que **bloquea** cuando la
+ *       caja esta cerrada.</li>
+ *   <li>El **contador de pendientes** de cada pestana (`nuevo && f > 0`, linea 1948). En un recibo
+ *       existente la cuenta se puede hacer igual —da 2 en «Anulación»— y aun asi no se dibuja
+ *       ninguno.</li>
+ *   <li>El resumen **«Lo que se va a registrar»** en la ultima seccion (`nuevo && paso >=
+ *       PASOS.length - 1`, linea 1970).</li>
+ *   <li>La **tabla de cuotas vacia** (`vacia: nuevo`, linea 1964): no hay cuotas elegidas todavia,
+ *       y en su lugar se lee que el sistema imputa de lo mas antiguo a lo mas nuevo.</li>
  * </ul>
  *
  * <h2>Guardar es un toast, y eso es todo lo que hay</h2>
  *
- * No hay backend, asi que «Continuar» y «Guardar los cambios» hacen lo que hacen en el artboard:
- * avanzar y avisar. Lo que si es de verdad es **ensuciar la pestana**: escribir en un campo
- * llama al `fijarCampo` del marco —el `set(k, v)` de la linea 1352— y con eso aparecen el ` *`
- * de la pestana, el del arbol y el dialogo de cierre.
+ * No hay backend, asi que «Continuar», «Guardar los cambios» y «Cobrar y emitir el recibo» hacen
+ * lo que hacen en el artboard: avanzar, avisar y —en la emision— dejar el recibo elegido. Lo que
+ * si es de verdad es **ensuciar la pestana**: escribir en un campo llama al `fijarCampo` del marco
+ * —el `set(k, v)` de la linea 1352— y con eso aparecen el ` *` de la pestana, el del arbol y el
+ * dialogo de cierre. La caja y el documento de la barra pasan por ese mismo `fijarCampo`, con las
+ * claves `caja` y `docContrib`, que es lo que hace el artboard.
  */
 
 /** Las tres acciones de la cabecera (linea 1910), en su orden. */
@@ -86,9 +132,24 @@ export const ULTIMO_PASO = PASOS.length - 1;
 export const notaDelPaso = (paso: number) =>
   paso >= ULTIMO_PASO ? NOTA_DEL_ULTIMO_PASO : NOTA_DEL_PASO;
 
-/** El rotulo del boton de la derecha (linea 2013, rama de recibo existente). */
-export const rotuloDeAdelante = (paso: number) =>
-  paso >= ULTIMO_PASO ? GUARDAR_LOS_CAMBIOS : CONTINUAR;
+/**
+ * La nota de la barra inferior en un **borrador** (lineas 2028-2030, rama de cobro nuevo).
+ *
+ * En la ultima seccion **no es una frase fija**: si se puede cobrar dice lo que va a pasar, y si
+ * no, dice el motivo por el que no. Es la tercera vez que ese mismo motivo se lee en la pantalla
+ * —el pie del resumen, el `title` del boton y aqui—, y las tres estan en el artboard: el cajero
+ * tiene que poder ver por que no puede cobrar sin pasar el raton por encima de nada.
+ */
+export const notaDelBorrador = (paso: number, puede: boolean, motivo: string) => {
+  if (paso < ULTIMO_PASO) return NOTA_DEL_BORRADOR;
+  return puede ? NOTA_DE_LA_EMISION : motivo;
+};
+
+/** El rotulo del boton de la derecha (linea 2013): en la ultima seccion, uno de dos. */
+export const rotuloDeAdelante = (paso: number, nuevo = false) => {
+  if (paso < ULTIMO_PASO) return CONTINUAR;
+  return nuevo ? COBRAR_Y_EMITIR : GUARDAR_LOS_CAMBIOS;
+};
 
 /** El azul de la accion y de la pestana activa (linea 914). */
 const AZUL = "var(--azul)";
@@ -185,8 +246,23 @@ const celdaDe = (columna: Columna | undefined, primera: boolean): CSSProperties 
   return { padding: "11px 16px", fontSize: 13.5, color: "var(--tinta-2)" };
 };
 
-/** La tabla de cuotas del paso «Deuda a cobrar» (lineas 710-741). */
-function TablaDeCuotasDelPaso({ tabla }: { readonly tabla: TablaDeCuotas }) {
+/**
+ * La tabla de cuotas del paso «Deuda a cobrar» (lineas 710-741).
+ *
+ * `vacia` es el `paso.tabla.vacia` de la linea 1964, que el artboard hace valer `nuevo`: en un
+ * cobro que acaba de empezar **no hay ninguna cuota elegida**, y lo que se lee en su lugar es
+ * quien decide el orden de la imputacion. La cabecera y el pie **siguen dibujandose**, tambien en
+ * el artboard: son las seis columnas que van a llenarse y la regla del Codigo Tributario que las
+ * ordenara, y ninguna de las dos depende de que ya haya una cuota.
+ */
+function TablaDeCuotasDelPaso({
+  tabla,
+  vacia,
+}: {
+  readonly tabla: TablaDeCuotas;
+  readonly vacia: boolean;
+}) {
+  const filas = vacia ? [] : tabla.filas;
   return (
     <section
       data-tabla="cuotas"
@@ -243,7 +319,7 @@ function TablaDeCuotasDelPaso({ tabla }: { readonly tabla: TablaDeCuotas }) {
             </tr>
           </thead>
           <tbody>
-            {tabla.filas.map((fila, i) => (
+            {filas.map((fila, i) => (
               <tr
                 // Las cuotas no traen identificador propio —son tres listas de celdas— y su
                 // orden es el del dato, que no se reordena aqui. La posicion es la clave.
@@ -262,8 +338,23 @@ function TablaDeCuotasDelPaso({ tabla }: { readonly tabla: TablaDeCuotas }) {
         </table>
       </div>
 
-      {/* El `paso.tabla.vacia` de la linea 1964 es `nuevo`: en un recibo existente las tres
-          cuotas estan siempre, asi que el texto del vacio (737) es del cobro nuevo, o sea #13. */}
+      {/* El vacio de la linea 737. En un recibo existente las tres cuotas estan siempre, asi que
+          esto solo se ve en un cobro nuevo. */}
+      {vacia && (
+        <p
+          data-cuotas-vacias="1"
+          style={{
+            margin: 0,
+            padding: "22px 14px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--tinta-3)",
+            textWrap: "pretty",
+          }}
+        >
+          {tabla.vacioTexto}
+        </p>
+      )}
 
       <p
         style={{
@@ -283,9 +374,27 @@ function TablaDeCuotasDelPaso({ tabla }: { readonly tabla: TablaDeCuotas }) {
   );
 }
 
-export interface FichaDelReciboProps {
-  /** El recibo elegido. La cabecera sale de aqui; el cuerpo, de `VALORES_DEL_RECIBO`. */
-  readonly recibo: Recibo;
+/**
+ * Lo que **solo existe mientras se cobra**: el intento, la emision y el descarte.
+ *
+ * Los tres viven fuera de este componente —en la pantalla de Recibos— por lo mismo que el `paso`:
+ * en el artboard son estado global (`intento` y `predio`, linea 1221), y aqui la ficha se
+ * desmonta en cuanto el cobro se emite o se descarta, de modo que guardarlos dentro seria
+ * guardarlos en algo que va a desaparecer justo cuando se usan.
+ */
+export interface CobroEnCurso {
+  /** El `state.intento` de la linea 1404: si ya se intento emitir sin poder. */
+  readonly intento: boolean;
+  /** Lo que hace el boton cuando **no** se puede: encender el intento (linea 2021). */
+  readonly alIntentar: () => void;
+  /** Lo que hace cuando **si** se puede: emitir con ese codigo (linea 2022). */
+  readonly alEmitir: (codigo: string) => void;
+  /** «Descartar»: tira el borrador y suelta la ficha (linea 1914). */
+  readonly alDescartar: () => void;
+}
+
+/** Lo que la ficha necesita en los dos casos. */
+interface ComunDeLaFicha {
   /** En que seccion se esta. Es el `s.paso` del artboard, y vive en la pantalla que la aloja. */
   readonly paso: number;
   readonly alIrAPaso: (paso: number) => void;
@@ -296,53 +405,135 @@ export interface FichaDelReciboProps {
   readonly avisar: (texto: string) => void;
 }
 
+/**
+ * O trae un recibo, o trae un cobro: **nunca los dos y nunca ninguno**.
+ *
+ * Es la union la que lo garantiza, y no un comentario ni un `if` dentro: el artboard resuelve lo
+ * mismo con `sel = nuevo ? null : PREDIOS.find(…)` (linea 1426), donde el `null` y el objeto se
+ * excluyen por construccion.
+ */
+export type FichaDelReciboProps = ComunDeLaFicha &
+  (
+    | {
+        /** El recibo elegido. La cabecera sale de aqui; el cuerpo, de `VALORES_DEL_RECIBO`. */
+        readonly recibo: Recibo;
+        readonly cobro?: undefined;
+      }
+    | {
+        readonly recibo?: undefined;
+        /** El cobro en curso. La cabecera y el cuerpo salen de la caja y del documento. */
+        readonly cobro: CobroEnCurso;
+      }
+  );
+
+/** La clave con la que la barra guarda la caja elegida. Es un campo de «Operación» (linea 987). */
+export const CLAVE_DE_LA_CAJA = "caja";
+/** La clave con la que la barra guarda el documento. Tambien es un campo de «Operación». */
+export const CLAVE_DEL_DOCUMENTO = "docContrib";
+
 export function FichaDelRecibo({
   recibo,
+  cobro,
   paso,
   alIrAPaso,
   fijarCampo,
   valorDeCampo,
   avisar,
 }: FichaDelReciboProps) {
+  /** El `esNuevo()` de la linea 1359. */
+  const nuevo = cobro !== undefined;
+
   /** El `Math.min(s.paso, PASOS.length - 1)` de la linea 1423, por si el paso se sale. */
   const actual = Math.min(Math.max(paso, 0), ULTIMO_PASO);
   const pasoDef = PASOS[actual];
 
-  /** El `val(f.k, d[f.k])` de la linea 1396, con `d` ya resuelto a los valores del recibo. */
-  const valorDe = (clave: string) => valorDeCampo(clave, VALORES_DEL_RECIBO[clave] ?? "");
+  /**
+   * La caja y el documento, leidos del **mismo mapa de campos** que la seccion «Operación».
+   *
+   * No es un atajo: es lo que hace el artboard. Su barra escribe `this.set('caja', …)` y
+   * `this.set('docContrib', …)` (lineas 1926 y 1929), que son las mismas dos claves que dos de los
+   * campos de solo lectura de la primera seccion. La consecuencia es visible y se porta tal cual:
+   * en cuanto se elige una caja, el campo «Caja» de «Operación» pasa de decir `C-3` a decir el
+   * nombre entero —`'C-3 — abierta · turno mañana'`—, porque el valor guardado gana al de
+   * `datos()`. Medido ejecutando el artboard, no supuesto.
+   *
+   * El valor por omision de la caja es {@link CAJA_POR_OMISION} y **no** el `caja` de los datos,
+   * que es el nombre corto: son dos lecturas distintas de la misma clave con dos omisiones
+   * distintas, exactamente como en las lineas 1431 y 1370.
+   */
+  const caja = valorDeCampo(CLAVE_DE_LA_CAJA, CAJA_POR_OMISION);
+  const documento = valorDeCampo(CLAVE_DEL_DOCUMENTO, "");
+  const codigo = codigoDe(caja, documento);
+
+  /** El `d` de la linea 1424: los valores del recibo, o los que un cobro nuevo trae de partida. */
+  const valores = nuevo ? valoresDelCobroNuevo(caja, documento) : VALORES_DEL_RECIBO;
+
+  /** El `val(f.k, d[f.k])` de la linea 1396, con `d` ya resuelto. */
+  const valorDe = (clave: string) => valorDeCampo(clave, valores[clave] ?? "");
+
+  /** El `pendPorPaso` / `pendientes` de las lineas 1438-1439. */
+  const pendientesPorPaso = PASOS.map((p) => faltan(p, valorDe));
+  const pendientes = pendientesPorPaso.reduce((a, n) => a + n, 0);
+
+  /** El `puede` y el `motivo` de las lineas 1440-1446. En un recibo existente no bloquean nada. */
+  const puede = nuevo && puedeCobrar(codigo, pendientes);
+  const motivo = nuevo ? motivoDe(codigo, pendientes) : "";
 
   /**
-   * El `state.intento` de la linea 1404, que en un recibo existente **nadie enciende**.
+   * El `state.intento` de la linea 1404. En un recibo existente **nadie lo enciende**.
    *
-   * Lo enciende `adelante` cuando el cobro nuevo no puede emitir (linea 2021), y eso es #13. Se
-   * pasa explicito y no se omite para que el dia que llegue el cobro nuevo el estilo de error ya
-   * este escrito y probado en {@link CampoDeFicha}.
+   * Lo enciende un solo sitio del artboard: la emision de un cobro nuevo que no puede emitir
+   * (linea 2021). Por eso llega de fuera y no se declara aqui: es la pantalla la que lo recuerda
+   * entre pulsaciones.
    */
-  const intento = false;
+  const intento = cobro?.intento === true;
 
   const esUltimo = actual >= ULTIMO_PASO;
+
+  /** El `bloqueado` de la linea 2014: las **tres** condiciones, y solo en la ultima seccion. */
+  const bloqueado = nuevo && esUltimo && !puede;
 
   /** El `atras` de la linea 2012. No mira si esta apagado: en la primera seccion no mueve nada. */
   const atras = () => alIrAPaso(Math.max(actual - 1, 0));
 
-  /** El `adelante` de las lineas 2018-2027, sin la rama del cobro nuevo. */
+  /** El `adelante` de las lineas 2018-2027, con sus tres desenlaces. */
   const adelante = () => {
+    if (esUltimo && cobro !== undefined) {
+      // **La emision.** Si no se puede, no emite: enciende el intento —que es lo que pinta de rojo
+      // los obligatorios vacios— y saca el motivo. Es la unica forma de encender `IN_MAL`.
+      if (!puede) {
+        cobro.alIntentar();
+        avisar(motivo);
+        return;
+      }
+      cobro.alEmitir(codigo.completo);
+      return;
+    }
     if (esUltimo) {
       avisar(CAMBIOS_GUARDADOS_EN_EL_RECIBO);
       return;
     }
     alIrAPaso(actual + 1);
-    avisar(CAMBIOS_GUARDADOS);
+    avisar(nuevo ? GUARDADO_EN_EL_BORRADOR : CAMBIOS_GUARDADOS);
   };
 
-  /** Las tres acciones de la cabecera y lo que hace cada una (lineas 1908-1922). */
-  const acciones: readonly { readonly label: string; readonly primaria: boolean }[] = [
-    { label: VER_LA_CUENTA_CORRIENTE, primaria: false },
-    { label: REIMPRIMIR, primaria: false },
-    { label: ANULAR_EL_RECIBO, primaria: true },
-  ];
+  /** Las acciones de la cabecera (linea 1909): dos en un borrador, tres en un recibo. */
+  const acciones: readonly { readonly label: string; readonly primaria: boolean }[] = nuevo
+    ? [
+        { label: DESCARTAR, primaria: false },
+        { label: GUARDAR_BORRADOR, primaria: false },
+      ]
+    : [
+        { label: VER_LA_CUENTA_CORRIENTE, primaria: false },
+        { label: REIMPRIMIR, primaria: false },
+        { label: ANULAR_EL_RECIBO, primaria: true },
+      ];
 
   const alPulsarAccion = (label: string) => {
+    if (label === DESCARTAR) {
+      cobro?.alDescartar();
+      return;
+    }
     if (label === VER_LA_CUENTA_CORRIENTE) {
       avisar(AVISO_DE_LA_CUENTA_CORRIENTE);
       return;
@@ -352,14 +543,36 @@ export function FichaDelRecibo({
       avisar(AVISO_DE_LA_ANULACION);
       return;
     }
-    avisar(mensajeDeAccion(label, recibo.cod));
+    // La rama por descarte de la linea 1917: «Reimprimir» en un recibo y «Guardar borrador» en un
+    // cobro nuevo, que no tiene codigo todavia y por eso se nombra a si mismo «el recibo».
+    avisar(mensajeDeAccion(label, recibo?.cod ?? EL_RECIBO));
   };
+
+  /** El `ficha.codigo` / `titulo` / `contexto` / `estado` de las lineas 1895-1908. */
+  const codigoDeLaCabecera = nuevo ? codigo.completo : (recibo?.cod ?? "");
+  const titulo = nuevo
+    ? codigo.listo
+      ? cobroAlDocumento(codigo.documento)
+      : COBRO_NUEVO_SIN_DOCUMENTO
+    : (recibo?.titulo ?? "");
+  const contexto = nuevo
+    ? codigo.cerrada
+      ? CONTEXTO_DE_CAJA_CERRADA
+      : codigo.listo
+        ? contextoDeLaCaja(nombreCortoDe(codigo.caja))
+        : CONTEXTO_SIN_CONTRIBUYENTE
+    : recibo !== undefined
+      ? contextoDe(recibo)
+      : "";
+  const estado = nuevo ? BORRADOR : (recibo?.estado ?? "");
+  const tono: TonoDeInsignia = nuevo ? "warn" : (recibo?.tono ?? "info");
 
   return (
     <>
       {/* ——— La cabecera (609-621) ——— */}
       <div
-        data-ficha={recibo.cod}
+        data-ficha={codigoDeLaCabecera}
+        data-nuevo={nuevo ? "1" : "0"}
         style={{
           flex: "0 0 auto",
           padding: "12px 18px",
@@ -377,9 +590,11 @@ export function FichaDelRecibo({
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {recibo.cod}
+            {codigoDeLaCabecera}
           </span>
-          <span style={insignia(recibo.tono)}>{recibo.estado}</span>
+          <span data-estado-de-la-ficha={estado} style={insignia(tono)}>
+            {estado}
+          </span>
           <span style={{ flex: 1, minWidth: 20 }} />
           {acciones.map((accion) => (
             <button
@@ -403,7 +618,7 @@ export function FichaDelRecibo({
             textWrap: "pretty",
           }}
         >
-          {recibo.titulo}
+          {titulo}
         </p>
         <p
           style={{
@@ -414,9 +629,18 @@ export function FichaDelRecibo({
             textWrap: "pretty",
           }}
         >
-          {contextoDe(recibo)}
+          {contexto}
         </p>
       </div>
+
+      {/* ——— La barra de caja y contribuyente (623-652), solo en un cobro nuevo ——— */}
+      {nuevo && (
+        <BarraDeCajaYContribuyente
+          codigo={codigo}
+          alElegirCaja={(elegida) => fijarCampo(CLAVE_DE_LA_CAJA, elegida)}
+          alEscribirDocumento={(digitos) => fijarCampo(CLAVE_DEL_DOCUMENTO, digitos)}
+        />
+      )}
 
       {/* ——— Las cinco pestanas (654-663) ——— */}
       <div
@@ -441,9 +665,25 @@ export function FichaDelRecibo({
             style={pestanaDe(i === actual)}
           >
             <span>{p.label}</span>
-            {/* El contador de pendientes va aqui en el artboard (658-660) y **solo se dibuja en
-                cobro nuevo** (`nuevo && f > 0`, linea 1948). En un recibo existente no hay
-                ninguno, y no porque la cuenta de cero: `faltan` da 2 en «Anulación». */}
+            {/* El contador de pendientes (658-660). La condicion es `nuevo && f > 0` (linea 1948),
+                y las dos mitades cuentan: en un recibo existente no se dibuja **aunque la cuenta
+                no de cero** —da 2 en «Anulación»—, y en un cobro nuevo desaparece en cuanto la
+                seccion queda completa. */}
+            {nuevo && (pendientesPorPaso[i] ?? 0) > 0 && (
+              <span
+                data-pendientes={String(pendientesPorPaso[i])}
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: "var(--peso-fuerte)",
+                  borderRadius: "var(--radio-pastilla)",
+                  padding: "1px 6px",
+                  background: "var(--ins-warn-fondo)",
+                  color: "var(--ins-warn-tinta)",
+                }}
+              >
+                {String(pendientesPorPaso[i])}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -492,7 +732,18 @@ export function FichaDelRecibo({
             ))}
           </div>
 
-          {pasoDef?.tabla !== undefined && <TablaDeCuotasDelPaso tabla={pasoDef.tabla} />}
+          {pasoDef?.tabla !== undefined && (
+            <TablaDeCuotasDelPaso tabla={pasoDef.tabla} vacia={nuevo} />
+          )}
+
+          {/* ——— «Lo que se va a registrar» (743-763): solo en la ultima seccion de un cobro ——— */}
+          {nuevo && esUltimo && (
+            <ResumenDelCobro
+              lineas={lineasDelResumen(codigo, valorDe("medio"), turnoDe(caja))}
+              puede={puede}
+              motivo={motivo}
+            />
+          )}
         </div>
       </div>
 
@@ -537,16 +788,20 @@ export function FichaDelRecibo({
             textWrap: "pretty",
           }}
         >
-          {notaDelPaso(actual)}
+          {nuevo ? notaDelBorrador(actual, puede, motivo) : notaDelPaso(actual)}
         </p>
-        {/* `aria-disabled` y el `title` con el motivo son del cobro nuevo que no puede emitir
-            (lineas 2014-2015): en un recibo existente `bloqueado` es siempre `'false'` y el
-            motivo es la cadena vacia, asi que aqui no hay tooltip que poner. */}
+        {/* `aria-disabled`, el `title` con el motivo y la opacidad son del cobro nuevo que no
+            puede emitir (lineas 2014-2017), y **solo en la ultima seccion**: el artboard escribe
+            `nuevo && paso >= PASOS.length - 1 && !puede` en las tres. Antes de llegar ahi el
+            boton dice «Continuar» y no bloquea nada, que es lo correcto —avanzar de seccion no
+            cobra— y es tambien lo que hace que el bloqueo signifique algo cuando aparece. En un
+            recibo existente `bloqueado` es siempre `'false'` y el motivo la cadena vacia. */}
         <button
           type="button"
           className="hov-primario"
           onClick={adelante}
-          aria-disabled="false"
+          aria-disabled={bloqueado ? "true" : "false"}
+          title={bloqueado ? motivo : ""}
           style={{
             border: 0,
             borderRadius: "var(--radio-6)",
@@ -556,10 +811,12 @@ export function FichaDelRecibo({
             fontSize: 13.5,
             fontWeight: "var(--peso-medio)",
             cursor: "pointer",
-            opacity: 1,
+            // Cadenas y no numeros: el artboard escribe `.55` y `1` (linea 2016), y `0.55` seria
+            // el mismo color con otra grafia. Aqui se copia la que el diseno tiene.
+            opacity: bloqueado ? ".55" : "1",
           }}
         >
-          {rotuloDeAdelante(actual)}
+          {rotuloDeAdelante(actual, nuevo)}
         </button>
       </div>
     </>
