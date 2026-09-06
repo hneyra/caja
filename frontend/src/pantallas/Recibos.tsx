@@ -67,19 +67,18 @@ import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";
  * la ficha se desmonta cuando el cobro se emite o se descarta, asi que guardarlas dentro seria
  * guardarlas en algo que desaparece justo cuando hacen falta.
  *
- * <h2>Un defecto del port de #12, medido, que este issue NO arregla entero</h2>
+ * <h2>Un defecto del port de #12, medido y corregido aqui</h2>
  *
  * `abrir(cod)` en el artboard (linea 2081) hace **dos** cosas ademas de elegir el recibo: pone
- * `paso: 0` y `vals: {}`. #12 no porto ninguna de las dos y escribio que el artboard tampoco las
- * hacia; ejecutando su logica en Node, el estado que `abrir` deja es
- * `{"predio":"0003-0041180","paso":0,"vals":{},"intento":false}`, o sea que si las hace.
+ * `paso: 0` y `vals: {}`. #12 no porto ninguna de las dos, y ademas escribio —en el comentario de
+ * una prueba— que «el `paso` del artboard vive en su estado global y **nadie lo reinicia al
+ * cambiar de recibo**». Ejecutando su logica en Node, el estado que `abrir` deja es
+ * `{"predio":"0003-0041180","paso":0,"vals":{},"intento":false}`: lo reinicia.
  *
- * Aqui se repone **la mitad de `vals`** y no la de `paso`. El motivo de reponer una: hasta este
- * issue ninguna pantalla escribia en el mapa de campos, de modo que la fuga no se veia; desde que
- * la barra guarda la caja y el documento, abrir un recibo despues de un cobro le ensenaria en
- * «Caja» y en «Documento» los del cobro. El motivo de no reponer la otra: que la seccion elegida
- * sobreviva al cambiar de recibo es un criterio de #12 con su prueba escrita, y cambiarlo es una
- * decision suya y no de este issue. Queda dicho para que se decida, no para que se descubra.
+ * Aqui se reponen **las dos**, y la prueba que defendia lo contrario se retiro con su motivo. El
+ * porque de cada una esta al lado de {@link abrir}; el porque de retirar la prueba, en la fila de
+ * `CLAUDE.md`: una prueba que afirma como comportamiento del diseno lo contrario de lo que el
+ * diseno hace no protege nada, defiende un defecto.
  */
 
 /** El texto del campo de busqueda (linea 549). */
@@ -279,14 +278,21 @@ export function Recibos({
   const sinSeleccion = !esNuevo && elegido === undefined;
 
   /**
-   * Abrir un recibo es el `abrir(cod)` de la linea 2080, con el marco haciendo de `setState`.
+   * Abrir un recibo es el `abrir(cod)` de la linea 2081, **con sus dos mitades**.
    *
-   * Tira lo escrito, que es la mitad de ese `abrir` que #12 no porto: sin ello el recibo que se
-   * abre despues de un cobro ensenaria la caja y el documento del cobro en sus dos campos de solo
-   * lectura. La otra mitad —`paso: 0`— sigue sin portarse a proposito; ver la cabecera del modulo.
+   * `vals: {}` y `paso: 0`, que es lo que esa linea escribe. Ninguna de las dos es cosmetica:
+   *
+   * <ul>
+   *   <li>Sin **`vals: {}`**, el recibo que se abre despues de un cobro ensena la caja y el
+   *       documento del cobro en sus dos campos de solo lectura.</li>
+   *   <li>Sin **`paso: 0`**, se abre un recibo y se aterriza en «Anulación» porque es donde
+   *       dejo el anterior — la seccion que da de baja un cobro, y la unica de las cinco que no
+   *       se quiere encontrar por inercia.</li>
+   * </ul>
    */
   const abrir = (cod: string) => {
     limpiarCampos();
+    fijarPaso(0);
     irA(SECCION_DE_RECIBOS, { recibo: cod });
   };
 

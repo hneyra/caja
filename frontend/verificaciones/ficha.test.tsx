@@ -780,14 +780,49 @@ describe("los valores de la ficha salen de `src/datos/`, y estan completos", () 
   });
 });
 
-describe("la seccion elegida sobrevive a cambiar de recibo, como en el artboard", () => {
-  it("elegir otro recibo no devuelve la ficha a «Operación»", () => {
-    // El `paso` del artboard vive en su estado global (linea 1221) y nadie lo reinicia al
-    // cambiar de recibo. Aqui vive en la pantalla de Recibos por lo mismo.
+describe("abrir otro recibo devuelve la ficha a «Operación», como el artboard", () => {
+  // ESTE `describe` SUSTITUYE A UNO QUE AFIRMABA LO CONTRARIO, Y ES #13 QUIEN LO CAMBIA.
+  //
+  // #12 escribio aqui «la seccion elegida sobrevive a cambiar de recibo, como en el artboard»,
+  // con este comentario: «El `paso` del artboard vive en su estado global (linea 1221) y nadie lo
+  // reinicia al cambiar de recibo». **Es falso, y se mide**: su `abrir(cod)` (linea 2081) hace
+  // `this.setState({ dest: 'predios', predio: cod, paso: 0, vals: {}, intento: false, … })`, y
+  // ejecutando esa logica en Node el estado que deja es
+  // `{"predio":"0003-0041180","paso":0,"vals":{},"intento":false}`. O sea que lo reinicia.
+  //
+  // Se retira entera en vez de corregirle el comentario porque lo que estaba mal no era la prosa:
+  // era la asercion, que defendia como comportamiento del diseno justo lo que el diseno evita
+  // —abrir un recibo y aterrizar en «Anulación» porque es donde te dejo el anterior—.
+
+  it("ir a «Anulación» y abrir otro recibo deja la ficha en «Operación»", () => {
     abrirFicha();
     irA("anulacion");
+    expect(seccionActiva()).toEqual(["anulacion"]);
     fireEvent.click(pantalla().querySelector('[data-recibo="0003-0041182"]') as HTMLElement);
     expect(codigo().textContent).toBe("0003-0041182");
+    expect(seccionActiva()).toEqual(["operacion"]);
+  });
+
+  it("y cambiar de seccion **dentro** del mismo recibo sigue funcionando", () => {
+    // La pareja que separa las hipotesis: un `paso: 0` fijo —o un reinicio en cada dibujado—
+    // pasaria la prueba de arriba y dejaria la ficha clavada en «Operación», sin poder recorrer
+    // las otras cuatro secciones.
+    abrirFicha();
+    irA("pago");
+    expect(seccionActiva()).toEqual(["pago"]);
+    irA("anulacion");
     expect(seccionActiva()).toEqual(["anulacion"]);
+    fireEvent.click(botonDeLaBarra(ANTERIOR));
+    expect(seccionActiva()).toEqual(["recibo"]);
+  });
+
+  it("y abrir otro recibo tampoco hereda lo escrito en el anterior", () => {
+    // La otra mitad de la linea 2081, `vals: {}`. Va aqui al lado porque las dos se portaron a la
+    // vez y las dos se rompen igual de callado: la ficha se dibuja entera y con datos ajenos.
+    abrirFicha();
+    fireEvent.change(controlDe("obsOp"), { target: { value: "Atendido en ventanilla 2." } });
+    expect((controlDe("obsOp") as HTMLTextAreaElement).value).toBe("Atendido en ventanilla 2.");
+    fireEvent.click(pantalla().querySelector('[data-recibo="0003-0041182"]') as HTMLElement);
+    expect((controlDe("obsOp") as HTMLTextAreaElement).value).toBe("");
   });
 });
