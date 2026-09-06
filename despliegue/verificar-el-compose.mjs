@@ -114,8 +114,7 @@ console.log(`Compose: ${compose.join(' ')} (${version(compose)})`);
 console.log(`Archivo: ${COMPOSE}`);
 console.log('');
 
-const conObligatorias = elContratoConElEntorno();
-laFormaDelArchivo(resolver(conObligatorias));
+laFormaDelArchivo(resolver(elContratoConElEntorno()));
 
 console.log('');
 if (fallos.length > 0) {
@@ -134,55 +133,62 @@ console.log('despliegue/compose.yaml dice lo que dice que dice.');
 
 // ---------------------------------------------------------------------------
 
-/** Primera pasada: SIN las variables, para que el propio Compose diga cuales exige.
+/** El contrato con el `.env`, medido UNA PASADA POR VARIABLE.
 
-    Devuelve el entorno con las obligatorias puestas a un valor de relleno, que es lo que
-    la segunda pasada necesita. Los valores no importan —nada se levanta— pero tienen que
-    existir, porque `${X:?...}` es un error de resolucion y no un valor vacio. */
+    Se quita una sola y se comprueba que el archivo deja de resolver **nombrandola**. Que
+    no falte ninguna por el otro lado lo dice la pasada siguiente: con las siete puestas
+    tiene que resolver entero, asi que una octava obligatoria que apareciera saldria roja
+    alli, con su nombre dentro.
+
+    ## Por que una por una y no todas de golpe. Lo dijo CI, no un razonamiento
+
+    La primera version las quitaba las siete a la vez y leia del mensaje de error cuales
+    faltaban. **Verde en la maquina donde se escribio y ROJA en el runner**: aqui corre
+    `docker/compose v5.5.1`, que enumera las once interpolaciones fallidas, y
+    `ubuntu-latest` traia **2.38.2**, que aborta en la primera — asi que informaba de UNA
+    (`KAMAYUK_CLAVE_OWNER`) y las otras seis salian como «ya no la exige» sobre un archivo
+    correcto. Con una variable fuera cada vez, las dos versiones se comportan igual:
+    hay exactamente un error que informar.
+
+    Y por lo mismo no se busca el texto de Compose. Lo que se exige en la salida es el
+    **nombre de la variable**, que esta ahi porque lo escribe el propio `compose.yaml` en
+    su mensaje de `:?` — depender de la redaccion de la herramienta es justo lo que acaba
+    de fallar.
+
+    Devuelve el entorno con las siete puestas a un valor de relleno. Los valores no
+    importan —nada se levanta— pero tienen que existir, porque `${X:?...}` es un error de
+    resolucion y no un valor vacio. */
 function elContratoConElEntorno() {
+  // Ninguna `KAMAYUK_*` de la maquina de quien ejecuta puede decidir el resultado: si
+  // alguien tuviera exportada la variable que se esta quitando, la pasada no la veria
+  // faltar y la comprobacion pasaria por casualidad.
   const limpio = { ...process.env };
-  for (const nombre of OBLIGATORIAS) delete limpio[nombre];
-  // Y las que no estan en la lista tampoco pueden colarse desde la maquina de quien
-  // ejecuta: si alguien tiene exportada una variable nueva, la primera pasada no la
-  // veria faltar y la comprobacion pasaria por casualidad.
   for (const nombre of Object.keys(limpio)) {
     if (nombre.startsWith('KAMAYUK_')) delete limpio[nombre];
   }
 
-  const sinVariables = ejecutar(['config', '--quiet'], limpio);
-  if (sinVariables.codigo === 0) {
-    fallos.push(
-      'sin ninguna variable de entorno el archivo resuelve igual: ninguna es obligatoria.' +
-        ' Una clave con `:-` en vez de `:?` deja al proceso conectandose con la cadena vacia.',
+  const conTodas = { ...limpio };
+  for (const nombre of OBLIGATORIAS) conTodas[nombre] = 'valor-de-relleno';
+
+  for (const nombre of OBLIGATORIAS) {
+    const entorno = { ...conTodas };
+    delete entorno[nombre];
+    const corrida = ejecutar(['config', '--quiet'], entorno);
+    anotar(
+      corrida.codigo !== 0 && corrida.salida.includes(nombre),
+      `sin «${nombre}» el archivo NO resuelve`,
+      corrida.codigo === 0
+        ? 'resuelve igual, o sea que dejo de ser obligatoria: una clave con `:-` en vez de' +
+          ' `:?` deja al proceso conectandose con la cadena vacia'
+        : `fallo sin nombrarla: ${corrida.salida.trim().split('\n')[0]}`,
     );
   }
 
-  const pedidas = [
-    ...new Set(
-      [...sinVariables.salida.matchAll(/required variable ([A-Za-z_][A-Za-z0-9_]*) is missing/g)].map(
-        (coincidencia) => coincidencia[1],
-      ),
-    ),
-  ].sort();
-
-  const esperadas = [...OBLIGATORIAS].sort();
-  for (const nombre of pedidas.filter((n) => !esperadas.includes(n))) {
-    fallos.push(`exige la variable «${nombre}», que no esta en la lista de obligatorias.`);
-  }
-  for (const nombre of esperadas.filter((n) => !pedidas.includes(n))) {
-    fallos.push(`ya no exige la variable obligatoria «${nombre}».`);
-  }
-  anotar(
-    pedidas.length === esperadas.length && pedidas.every((n, i) => n === esperadas[i]),
-    `exige del .env de la plataforma exactamente ${esperadas.length} variables`,
-  );
-
-  const conValores = { ...limpio };
-  for (const nombre of OBLIGATORIAS) conValores[nombre] = 'valor-de-relleno';
-  return conValores;
+  return conTodas;
 }
 
-/** Segunda pasada: CON las variables. Aqui el archivo tiene que resolver entero. */
+/** Y con las siete puestas tiene que resolver entero. Es la otra mitad del contrato: si
+    alguien anadiera una octava obligatoria sin apuntarla arriba, esto sale rojo. */
 function resolver(entorno) {
   const resuelto = ejecutar(['config', '--format', 'json'], entorno);
   if (resuelto.codigo !== 0) {
@@ -192,7 +198,7 @@ function resolver(entorno) {
     console.error(resuelto.salida.trim());
     process.exit(1);
   }
-  anotar(true, 'resuelve con las variables obligatorias puestas');
+  anotar(true, `resuelve con esas ${OBLIGATORIAS.length} y ninguna mas`);
   return JSON.parse(resuelto.salida);
 }
 
