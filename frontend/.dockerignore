@@ -1,0 +1,35 @@
+# Lo que NO viaja al contexto de `frontend/Dockerfile`.
+#
+# Este archivo hace falta APARTE del `.dockerignore` de la raiz, y no es duplicacion: un
+# `.dockerignore` solo se aplica desde la raiz del contexto, y el contexto de esta imagen es
+# `frontend/`. El de la raiz, ademas, excluye `frontend/` entero — sirve a la imagen del backend,
+# cuyo contexto si es la raiz.
+#
+# Sin esto el contexto se lleva `node_modules/` y `dist/`, que son el 99 % de lo que hay aqui.
+# Y no es solo tiempo de subida: cada archivo del contexto entra en la huella de la capa, asi que
+# un `yarn install` local —que reescribe marcas de tiempo dentro de `node_modules/`— invalidaria
+# la cache y reconstruiria la imagen entera sin que ninguna fuente hubiera cambiado.
+
+# Se reinstala dentro, desde `package.json` + `yarn.lock`, con `--frozen-lockfile`. Copiarlo de
+# fuera seria ademas meter en la imagen los binarios compilados para la maquina de quien
+# construye, que no tienen por que ser los de la imagen base.
+node_modules
+
+# Se reconstruye dentro con `yarn build`. Copiarlo de fuera es lo que haria que la imagen
+# publicara el `dist/` de otro commit sin que nada lo dijera: `COPY . .` lo traeria y `vite build`
+# lo sobrescribiria... salvo que el `build` fallara antes, que es justo cuando importa.
+dist
+
+# La historia del repositorio no la necesita ninguna etapa. En este arbol `frontend/.git` no
+# existe —el `.git` esta en la raiz—, pero un `git worktree` o un clon parcial de `frontend/`
+# si lo pondrian aqui, y entonces entraria entero.
+.git
+
+# Residuos locales: el incremental de `tsc -b` y las capturas de los arneses de navegador. Los
+# dos estan en `frontend/.gitignore`, o sea que nunca son parte del arbol que CI verifica.
+*.tsbuildinfo
+.capturas
+
+# NO se excluye `verificaciones/`, y es una decision: `tsconfig.json` la declara en su `include`,
+# asi que `tsc -b` —la primera mitad de `yarn build`— la compila. Quitarla del contexto para
+# adelgazarlo dejaria la imagen construyendo con menos codigo del que CI verifica.
