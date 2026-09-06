@@ -6,17 +6,17 @@ import type { Destino } from "@/marco/destino";
 /**
  * El hueco de una de las cuatro pantallas propias, mientras la pantalla no esta portada.
  *
- * <h2>Por que hay una ranura y no un `switch`</h2>
+ * <h2>Por que el marco no sabe cual es cual</h2>
  *
- * Las cuatro pantallas se portan en issues posteriores, y el marco —pestanas, titulo, hash y
- * cierre— no tiene por que saber cual dibuja cada seccion. `App` recibe el componente que
- * pinta la seccion activa y lo llama con {@link PropsDePantalla}; hoy el que llega por omision
- * es este marcador, y manana seran las pantallas de verdad **sin tocar el marco**.
+ * El marco —pestanas, titulo, hash y cierre— no tiene por que saber que pantalla dibuja cada
+ * seccion. `App` recibe **el componente** que pinta la seccion activa y lo llama con
+ * {@link PropsDePantalla}; quien reparte es `pantallas/PantallaDeSeccion`, que desde #10 manda
+ * `panel` al Panel de Tesoreria y las otras tres aqui. Portar una mas no toca el marco.
  *
  * Esa ranura es tambien lo unico que hace observable `fijarCampo`, que es la forma —la del
  * artboard, su `set(k, v)` de la linea 1352— de ensuciar una pestana: una pantalla que edita un
- * campo lo llama y el marco pone el ` *`, el aviso de cerrar y el dialogo. Ninguna pantalla
- * tiene campos todavia, asi que hoy no lo llama nadie.
+ * campo lo llama y el marco pone el ` *`, el aviso de cerrar y el dialogo. Ninguna de las
+ * pantallas portadas tiene campos todavia, asi que hoy solo lo llaman las pruebas del marco.
  */
 
 /** Lo que el marco le da a la pantalla que dibuja la seccion activa. */
