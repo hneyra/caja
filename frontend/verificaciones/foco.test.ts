@@ -19,8 +19,11 @@
 // LO QUE ESTO NO PRUEBA
 // No prueba lo que un navegador **pinta**. Un emulador de DOM no dibuja; afirma lo que su
 // cascada calcula. Ver la regla de foco de verdad es trabajo del arnes de Playwright contra
-// Chromium, y llega con el issue de accesibilidad. Lo de aqui es lo mas fuerte que se puede
-// afirmar sin navegador, y conviene no confundirlo con mas.
+// Chromium: desde #15 existe y es `verificaciones/mirar.mjs`, que recorre la aplicacion con
+// `Tab` y lee el anillo de **cada** parada. Y esa espera valio la pena: lo primero que encontro
+// fue que el anillo del acento no llegaba a ningun campo, cosa que este archivo daba por buena
+// —ver la prueba que cambio de signo—. Lo de aqui es lo mas fuerte que se puede afirmar sin
+// navegador, y conviene no confundirlo con mas.
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 // Lo importa Vite con `css: true`, o sea resolviendo la cadena real de `@import`: lo que esta
@@ -43,10 +46,29 @@ describe("la regla de foco de los campos llega al elemento", () => {
     expect(getComputedStyle(campoEnfocado()).boxShadow).toBe(ANILLO);
   });
 
-  it("y ademas tine el borde de azul y se quita el `outline` del navegador", () => {
+  it("y ademas tine el borde de azul", () => {
+    expect(getComputedStyle(campoEnfocado()).borderColor).toBe("#005284");
+  });
+
+  /**
+   * **Esta asercion cambio de signo con #15, y es el cambio lo que hay que leer.**
+   *
+   * Decia `expect(estilo.outlineStyle).toBe("none")`, porque la linea 25 del artboard le quita
+   * al campo enfocado el `outline` del navegador. Lo que no se habia medido es que ese `outline:
+   * none` **tambien apagaba el anillo del acento**: `input:focus` vale (0,1,1) y `:focus-visible`
+   * a secas (0,1,0), asi que ganaba tambien con el foco del teclado — que es justo cuando el
+   * anillo tiene que verse. Medido en Chromium por `verificaciones/mirar.mjs`, que es el arnes
+   * que la cabecera de este archivo anunciaba «con el issue de accesibilidad».
+   *
+   * `global.css` le pone `!important` al anillo por eso, y con el la regla llega tambien aqui:
+   * happy-dom **si** aplica `:focus-visible` a un campo enfocado con `focus()` —medido, es lo
+   * que puso esta prueba en rojo—. El anillo propio del campo no se va: los dos conviven, que es
+   * lo que afirma la prueba de arriba.
+   */
+  it("y con el foco visible recibe ADEMAS el anillo del acento", () => {
     const estilo = getComputedStyle(campoEnfocado());
-    expect(estilo.borderColor).toBe("#005284");
-    expect(estilo.outlineStyle).toBe("none");
+    expect(estilo.outlineStyle).toBe("solid");
+    expect(estilo.outlineColor).toBe("#52BDEF");
   });
 
   it("un input SIN foco no recibe nada", () => {

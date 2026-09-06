@@ -33,7 +33,27 @@ input, select, textarea, button { font: inherit; color: inherit }
    acento (#52BDEF) y solo aparece cuando el navegador decide que el foco se ve;
    el de los campos es #D3EBFA y aparece siempre que el campo tiene el foco,
    venga del raton o del teclado. #D3EBFA no es --azul-suave. */
-:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px }
+/* El `!important` NO esta en el artboard, y es de #15. Sin el, **el anillo del acento no llega
+   a ningun campo** — medido en Chromium sobre esta misma aplicacion, no razonado:
+
+     · la linea de abajo le da a `input:focus` un `outline: none`, y (0,1,1) le gana a
+       `:focus-visible` a secas (0,1,0), asi que el anillo se apagaba tambien con el foco del
+       teclado, que es justo cuando tiene que verse;
+     · y tres campos del artboard llevan ademas `outline:none` **en linea** —el de la paleta
+       (80), el filtro del arbol (212) y la busqueda de recibos (549)—, que le gana a cualquier
+       regla de esta hoja que no sea `!important`.
+
+   Es el mismo argumento que ya obliga al `!important` de las clases `.hov-*` de mas abajo: el
+   estilo base va en linea porque esa es la doctrina del port, y una regla que un estilo en linea
+   apaga es una regla escrita que no se ve nunca. Lo que quedaba en su lugar tampoco bastaba: de
+   las dos senales que el artboard le da al campo enfocado, la del **borde** `#005284` tambien es
+   inerte por lo mismo —el filtro del arbol enfocado sale con `border-color: rgb(22, 35, 44)`, su
+   `currentColor`, y el `<select>` de orden con `rgb(214, 222, 228)`—, de modo que al campo
+   enfocado le quedaba **solo** el `#D3EBFA`, 1,2:1 sobre blanco.
+
+   No toca el raton: `:focus-visible` solo lo enciende el navegador cuando decide que el foco
+   tiene que verse. Pulsando, el campo sigue exactamente como lo dibuja el artboard. */
+:focus-visible { outline: 2px solid var(--acento) !important; outline-offset: 2px }
 input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shadow: 0 0 0 3px var(--anillo-campo); outline: none }
 
 ::placeholder { color: var(--tenue) }
@@ -94,3 +114,40 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
 
 /* Quien pide menos movimiento no recibe ninguno (linea 42). */
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important } }
+
+/* —— La impresion: A4 vertical, y solo el contenido ——
+   ESTO NO SALE DEL ARTBOARD, y conviene que se sepa: `TesoreriaV6.dc.html` no trae una sola
+   regla de impresion —su <style> son las lineas 15-43 y ahi no hay `@media print` ni `@page`—.
+   Lo que si sale del diseno es que es cromo y que es contenido; lo demas es una decision de
+   producto, y por eso lleva su motivo escrito.
+
+   `[data-cromo]` en vez de una lista de etiquetas (`header, aside, …`): quien anada manana una
+   quinta pieza de marco la marca, y si se le olvida lo dice el arnes. Con la lista de
+   etiquetas, la pieza nueva se imprimiria en silencio — que es el modo de fallo que no se ve
+   leyendo, porque en pantalla todo sigue igual. */
+@media print {
+  @page { size: A4 portrait; margin: 12mm }
+
+  /* Las cuatro piezas del marco: la barra global, el arbol, la barra de pestanas y la barra
+     inferior de acciones. En papel ninguna lleva a ninguna parte. */
+  [data-cromo] { display: none !important }
+
+  /* El contenido deja de estar encerrado. En pantalla vive dentro de contenedores de alto fijo
+     con `overflow:hidden` —la raiz es `height:100vh`—, y en papel eso recortaria todo menos la
+     primera pantalla: saldria una hoja con el principio de la lista y nada mas. `max-height`
+     entra en el mismo saco por el corte de 900 px, que le pone 300 px a `[data-lista]` y que en
+     impresion se cumple siempre (el ancho de A4 es menor que 900 px). */
+  html, body { height: auto !important; background: #fff }
+  #raiz, #raiz * { overflow: visible !important; max-height: none !important }
+  #raiz, #raiz div, #raiz main, #raiz section { height: auto !important; min-height: 0 !important }
+
+  /* Una tabla ancha vive en pantalla dentro de un contenedor que se desplaza, y por eso lleva
+     `min-width` —780 px la de cuotas, 620 y 660 las de consulta—. En papel no hay
+     desplazamiento: lo que sobresale del area imprimible **se recorta y no se avisa**, que es
+     el peor de los dos males. Asi que la tabla se ajusta a la hoja. */
+  table { min-width: 0 !important }
+
+  /* Sin sombras: en papel no significan nada y gastan tinta. Los bordes del cromo se van con el
+     cromo, porque son suyos y no del contenido. */
+  * { box-shadow: none !important; text-shadow: none !important }
+}

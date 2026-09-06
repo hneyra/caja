@@ -145,6 +145,8 @@ export function ArbolDeModulos({ abiertas, activa, sucias = {}, alIr }: ArbolDeM
   return (
     <aside
       aria-label="Módulos y submódulos"
+      // Cromo: no se imprime. Ver `data-cromo` en `BarraGlobal`.
+      data-cromo="arbol"
       style={{
         flex: "0 0 252px",
         width: 252,

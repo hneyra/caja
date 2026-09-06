@@ -403,6 +403,12 @@ export function Recibos({
               value={consulta}
               onChange={(e) => fijarConsulta(e.target.value)}
               placeholder={BUSQUEDA}
+              // El `aria-label` no esta en la linea 549 del artboard, y se anade con #15 por lo
+              // mismo que la linea 212 SI lo lleva en el filtro del arbol: un `placeholder` es
+              // un nombre accesible de ultimo recurso y **desaparece en cuanto se escribe**, asi
+              // que quien vuelva a preguntar por el campo con algo tecleado dentro se encuentra
+              // un cuadro sin nombre. Es la misma cadena, que es lo que hace el arbol.
+              aria-label={BUSQUEDA}
               style={{
                 flex: 1,
                 minWidth: 0,

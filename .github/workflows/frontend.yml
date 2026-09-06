@@ -78,7 +78,13 @@ jobs:
   # que alli la declaracion puede estar entera y la cabecera irse con la tabla sin que nada lo
   # diga. `pegajosa.mjs` desplaza de verdad y mira donde queda cada cosa.
   #
-  # Los otros dos arneses de `sgtm` —`mirar` y `cero-red`— llegan en su issue, no en este.
+  # Desde #15 corren aqui los otros dos, y por la misma razon. `mirar.mjs` mide lo que un
+  # emulador de DOM no puede ni plantear: *disposicion* —que la lista mida 320 px, que el arbol
+  # empuje el contenido exactamente 252 px— y el medio `print`, que jsdom y happy-dom no emulan,
+  # de modo que las reglas de `@media print` podrian estar enteras sin aplicar a nada.
+  # `cero-red.mjs` cuenta las peticiones que salen del navegador: `eslint.config.mjs` ya prohibe
+  # `fetch` en `src/`, pero una dependencia que llame a su propio servidor no escribe ningun
+  # `fetch` alli.
   navegador:
     name: Los arneses de navegador
     runs-on: ubuntu-latest
@@ -126,3 +132,31 @@ jobs:
 
       - name: La cabecera de las tablas se queda al desplazar
         run: CAJA_BASE=http://localhost:5182 yarn pegajosa
+
+      - name: Las cuatro secciones, los cortes, el teclado y el papel
+        run: CAJA_BASE=http://localhost:5182 yarn mirar
+
+      # Se ejecuta el ULTIMO a proposito: es el unico que necesita salida a internet para que la
+      # tipografia de Google llegue, y sin ella no falla —lo dice y sigue—, pero conviene que los
+      # otros tres ya hayan dado su veredicto antes de depender de un tercero.
+      - name: La aplicacion no habla con nadie
+        run: CAJA_BASE=http://localhost:5182 yarn cero-red
+
+      # Las capturas y los PDF de `mirar`, para poder MIRAR lo que la corrida dibujo sin tener
+      # que reproducirla. `if: always()` porque lo que mas se quiere ver es la corrida que fallo.
+      #
+      # `include-hidden-files` NO sobra, y no se dedujo leyendo la documentacion: la primera
+      # version subio **cero archivos** con el arnes en verde —«No files were found with the
+      # provided path: frontend/.capturas/»—, porque desde `upload-artifact@v4.4` los archivos
+      # ocultos se excluyen por omision y `.capturas` empieza por punto. `if-no-files-found:
+      # warn` deja el trabajo verde con el artefacto vacio, que es justo el modo de fallo
+      # silencioso: nadie mira un artefacto que no sabe que falta.
+      - name: Guardar las capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-de-caja-web
+          path: frontend/.capturas/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

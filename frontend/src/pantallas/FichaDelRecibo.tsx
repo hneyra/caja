@@ -709,6 +709,9 @@ export function FichaDelRecibo({
 
       {/* ——— La barra inferior (767-771) ——— */}
       <div
+        // Cromo: no se imprime. Ver `data-cromo` en `BarraGlobal`. En papel, «Anterior» y
+        // «Continuar» no llevan a ninguna parte: son los botones de una pantalla.
+        data-cromo="acciones"
         style={{
           flex: "0 0 auto",
           display: "flex",

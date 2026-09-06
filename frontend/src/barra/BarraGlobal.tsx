@@ -130,6 +130,9 @@ export function BarraGlobal({
 }: BarraGlobalProps) {
   return (
     <header
+      // Cromo, y por eso no se imprime: `global.css` retira `[data-cromo]` en `@media print`.
+      // El valor nombra la pieza para que el arnes pueda decir cual se quedo en el papel.
+      data-cromo="barra"
       style={{
         flex: "0 0 auto",
         display: "flex",
