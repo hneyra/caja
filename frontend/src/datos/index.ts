@@ -80,8 +80,8 @@ export { DETERMINACIONES, NODOS } from "./arqueo";
 export type { PestanaDeTarifario } from "./tarifario";
 export { TARIFARIO } from "./tarifario";
 
-export type { AvisoDelSistema, Sesion } from "./barra";
-export { AVISO, EJERCICIOS, SESION } from "./barra";
+export type { AvisoDelSistema, OpcionDeSesion, Sesion } from "./barra";
+export { AVISO, EJERCICIOS, OPCIONES_DE_SESION, SESION } from "./barra";
 
 export type { EntradaDeCola, TonoDeCola } from "./cola";
 export { COLA } from "./cola";

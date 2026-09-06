@@ -54,12 +54,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
 .hov-barra:hover { background: rgba(255,255,255,.18) !important }
 .hov-sesion:hover { background: rgba(255,255,255,.14) !important }
 
-/* —— El `style-hover` del arbol de modulos (lineas 233, 252 y 366) ——
-   Los tres botones del panel izquierdo —modulo, submodulo y entrada de la cola—
-   llevan el mismo `style-hover="background:#EFF7FC"`, asi que es una sola clase.
+/* —— El `style-hover` del arbol y el de las tres capas flotantes ——
+   Seis botones del artboard llevan **el mismo** `style-hover="background:#EFF7FC"`:
+   los tres del panel izquierdo —modulo (233), submodulo (252) y entrada de la
+   cola (366)— y los tres de lo que se despliega desde la barra —modulo del
+   lanzador (58), fila de la paleta (85) y opcion de sesion (186)—. Es una sola
+   declaracion con dos nombres, y los dos nombres existen porque el port los
+   dibuja en sitios distintos: quien lea `hov-arbol` en una fila de la paleta se
+   preguntaria si es un descuido.
    `#EFF7FC` no es ninguna de las constantes del artboard (lineas 914-924), y por
    eso va literal: darle un token seria ampliar la paleta del diseno desde aqui. */
-.hov-arbol:hover { background: #EFF7FC !important }
+.hov-arbol:hover, .hov-flotante:hover { background: #EFF7FC !important }
 
 /* —— Los `style-hover` del marco de pestanas ——
    El aspa de una pestana (linea 396), el boton primario —«Cobrar» de la 410 y

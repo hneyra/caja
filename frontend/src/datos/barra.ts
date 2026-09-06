@@ -48,6 +48,51 @@ export const SESION: Sesion = {
   puesto: "Cajero · caja C-3",
 };
 
+/** Una entrada del menu que despliega la ficha de sesion. */
+export interface OpcionDeSesion {
+  readonly label: string;
+  /** Los atributos `d` de su icono, copiados letra a letra del artboard. */
+  readonly icono: readonly string[];
+  /**
+   * Si es **la salida**.
+   *
+   * El artboard lo guarda como el tercer elemento de la tripleta (`o[2]`, lineas 1695-1697) y de
+   * el cuelgan tres cosas a la vez: la tinta `#8F2A17`, el peso 600 y que su toast diga
+   * «Cerraría la sesión.» en vez de «Abriría …». Va como un campo y no como tres, que es lo que
+   * impide que un dia una de las tres se quede atras.
+   */
+  readonly salida: boolean;
+}
+
+/**
+ * Las tres opciones del menu de sesion (lineas 1694-1698).
+ *
+ * Ninguna hace nada de verdad, y es lo que el issue exige: **aqui no hay autenticacion** —ni
+ * OIDC, ni Keycloak, ni token—, asi que la sesion es decorativa y las tres sacan su toast. El
+ * dia que la haya, lo que cambia es lo que hacen; los rotulos y los iconos ya estan.
+ */
+export const OPCIONES_DE_SESION: readonly OpcionDeSesion[] = [
+  {
+    label: "Mi perfil",
+    icono: ["M12 7.4a3 3 0 1 1-6 0 3 3 0 0 1 6 0", "M3.6 20c0-3 2.4-4.6 5.4-4.6s5.4 1.6 5.4 4.6"],
+    salida: false,
+  },
+  {
+    label: "Cambiar contraseña",
+    icono: ["M7 11V8a5 5 0 0 1 10 0v3", "M5.5 11h13v9.5h-13z"],
+    salida: false,
+  },
+  {
+    label: "Cerrar sesión",
+    icono: [
+      "M9.5 20H6A1.5 1.5 0 0 1 4.5 18.5v-13A1.5 1.5 0 0 1 6 4h3.5",
+      "M14 8l4 4-4 4",
+      "M18 12H9",
+    ],
+    salida: true,
+  },
+];
+
 /** El aviso de servicio que la campana anuncia y la banda despliega. */
 export interface AvisoDelSistema {
   /** Lo que dice la pastilla roja de la campana. Es texto: el artboard escribe `'1'`. */

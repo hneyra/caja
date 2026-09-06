@@ -136,4 +136,15 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
     rules: { "no-restricted-syntax": "off" },
   },
+
+  {
+    // Los arneses de navegador (`verificaciones/*.mjs`) viven **en los dos mundos a la vez**:
+    // el archivo corre en Node —`process`, `console`— y los cuerpos que se pasan a
+    // `page.evaluate` corren dentro del navegador, con su `document` y su `URL`. Sin este
+    // bloque, `eslint .` saca doce `no-undef` sobre codigo que funciona; se midio antes de
+    // escribirlo. El patron es `verificaciones/**/*.mjs` y no `*.mjs`, que solo casa la raiz.
+    files: ["verificaciones/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { "no-restricted-syntax": "off" },
+  },
 );
