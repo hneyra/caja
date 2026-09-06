@@ -1,9 +1,13 @@
-// @vitest-environment happy-dom
+// Corre en el `jsdom` de siempre, que es el entorno de toda la suite.
 //
-// **happy-dom y no jsdom, y es lo unico que hace verificable el criterio 3.** Medido: el
-// `getComputedStyle` de jsdom ignora toda regla que lleve una pseudo-clase, asi que con jsdom
-// un `<input>` enfocado devuelve exactamente el mismo estilo que uno sin enfocar y la regla de
-// foco del diseno no se puede observar. La comprobacion esta al final de este archivo.
+// **Una version anterior de este archivo cambiaba a happy-dom afirmando que «el
+// `getComputedStyle` de jsdom ignora toda regla con pseudo-clase». Eso era FALSO**, y la
+// revision del PR #20 lo midio: jsdom aplica `:focus` y devuelve el `box-shadow`. Lo que
+// habia enganado esta explicado en `campoEnfocado()`, y es la razon de que ese helper exista.
+//
+// Lo unico que jsdom NO hace es sustituir `var(--x)` en una propiedad calculada: devuelve el
+// texto `var(--anillo-campo)` en vez del color. Eso lo cubre `resolverVar()` en cuatro lineas
+// y no justifica una dependencia mas.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +24,9 @@ const leer = (ruta: string) => readFileSync(join(DS, ruta), "utf8");
  * El CSS sin sus comentarios.
  *
  * Hace falta porque los comentarios de estos archivos nombran a proposito lo que NO se porto
- * —la paleta *Juris PE*, el corte de 1180 px del conmutador— para dejar dicho por que no esta.
- * Una prueba que buscara esos textos sobre el archivo crudo saldria roja por la explicacion
- * de su propia ausencia, que es justo lo contrario de lo que quiere medir.
+ * —la paleta del handoff, el corte de 1180 px del conmutador— para dejar dicho por que no
+ * esta. Una prueba que buscara esos textos sobre el archivo crudo saldria roja por la
+ * explicacion de su propia ausencia, que es justo lo contrario de lo que quiere medir.
  */
 const quitarComentarios = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -91,6 +95,17 @@ const OTROS: [string, string][] = [
 const tokenDeLaRaiz = (nombre: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(nombre).trim();
 
+/**
+ * Sustituye `var(--x)` por el valor del token, que es lo unico que jsdom no hace solo.
+ *
+ * Medido: con `box-shadow: 0 0 0 3px var(--anillo-campo)`, el estilo calculado de un campo
+ * enfocado es la cadena `"0 0 0 3px var(--anillo-campo)"`. La regla SI aplica —sin foco es
+ * ""—; lo que falta es la sustitucion. Se hace aqui para poder comparar contra el valor
+ * literal del artboard sin sacar el token de `global.css`, que es donde debe estar.
+ */
+const resolverVar = (valor: string) =>
+  valor.replace(/var\((--[\w-]+)\)/g, (_, nombre: string) => tokenDeLaRaiz(nombre));
+
 describe("los tokens valen lo que dice el artboard, caracter a caracter", () => {
   it.each([...COLORES, ...OTROS])("%s", (nombre, esperado) => {
     expect(tokenDeLaRaiz(nombre)).toBe(esperado);
@@ -103,8 +118,6 @@ describe("no hay ningun color fuera de la lista", () => {
     const texto = ["tokens/colores.css", "tokens/tipografia.css", "tokens/formas.css"]
       .map(leer)
       .join("\n");
-    // Se lee solo lo declarado (`--x: #hex`), no los comentarios: uno de ellos nombra a
-    // proposito los colores de *Juris PE* para decir que NO son estos.
     const declarados = [...texto.matchAll(/^\s*--[\w-]+:\s*([^;]+);/gm)]
       .flatMap(([, valor]) => [...(valor ?? "").matchAll(/#[0-9A-Fa-f]{3,8}/g)])
       .map(([hex]) => hex);
@@ -136,10 +149,16 @@ describe("la regla de foco de los campos se ve", () => {
   /**
    * Un campo recien creado, enfocado ANTES de leerle el estilo.
    *
-   * El orden importa y no es una manía: happy-dom memoriza el estilo calculado de cada
-   * elemento la primera vez que se le pide, y `focus()` no invalida esa memoria. Un
-   * `getComputedStyle` antes del `focus()` devuelve "" para siempre — y una prueba escrita
-   * en ese orden concluiria que la regla no existe teniendola delante.
+   * El orden importa, y es la trampa que hizo falsa la primera version de este archivo:
+   * **el entorno memoriza el estilo calculado de cada elemento** la primera vez que se le
+   * pide, y `focus()` no invalida esa memoria. Medido dentro de un solo documento jsdom: a un
+   * campo leido antes de enfocarlo le sigue saliendo "" despues de enfocarlo, y despues de
+   * volver a enfocarlo; otro campo del mismo documento, enfocado sin lectura previa, si
+   * devuelve el anillo.
+   *
+   * Una prueba escrita en el orden natural —leer, enfocar, releer— concluye que la regla no
+   * existe teniendola delante. Fue exactamente lo que paso, y de ahi salio la afirmacion
+   * falsa de que jsdom no aplicaba pseudo-clases.
    */
   const campoEnfocado = () => {
     const campo = document.createElement("input");
@@ -150,16 +169,13 @@ describe("la regla de foco de los campos se ve", () => {
 
   it("un input enfocado recibe el anillo `0 0 0 3px #D3EBFA`", () => {
     const estilo = getComputedStyle(campoEnfocado());
-    expect(estilo.boxShadow).toBe("0 0 0 3px #D3EBFA");
+    expect(resolverVar(estilo.boxShadow)).toBe("0 0 0 3px #D3EBFA");
   });
 
   it("y ademas tine el borde de azul y se quita el `outline` del navegador", () => {
     const estilo = getComputedStyle(campoEnfocado());
-    expect(estilo.borderColor).toBe("#005284");
-    // `outlineStyle` y no `outline`: happy-dom expande la abreviatura a "none none", que no
-    // es lo que declara el CSS ni lo que devolveria un navegador. La parte que importa —que
-    // el contorno del navegador se quita porque lo sustituye el anillo— es esta.
-    expect(estilo.outlineStyle).toBe("none");
+    expect(resolverVar(estilo.borderColor)).toBe("#005284");
+    expect(estilo.outline).toBe("none");
   });
 
   it("un input SIN foco no lo recibe", () => {
@@ -170,12 +186,33 @@ describe("la regla de foco de los campos se ve", () => {
     expect(getComputedStyle(suelto).boxShadow).toBe("");
   });
 
-  it("jsdom no habria podido ver nada de esto", () => {
-    // Se afirma aqui porque es el motivo por el que este archivo cambia de entorno, y un
-    // motivo que nadie puede comprobar se borra en la primera limpieza. Si algun dia jsdom
-    // aplica pseudo-clases, esta prueba se pone roja y la excepcion se puede retirar.
-    expect(import.meta.env.MODE).toBeDefined();
-    expect(navigator.userAgent).toContain("HappyDOM");
+  /**
+   * Las dos mitades de lo que jsdom hace, medidas y no supuestas.
+   *
+   * La version anterior de este archivo tenia aqui una prueba que miraba `navigator.userAgent`
+   * y comprobaba que dijera «HappyDOM». Eso **no podia fallar por el motivo que decia
+   * comprobar**: era un comentario disfrazado de verificacion, y sostenia ademas una
+   * afirmacion falsa sobre jsdom.
+   *
+   * Esta si mide, y es la que justifica que `resolverVar` exista: jsdom **si** aplica la
+   * pseudo-clase, y **no** sustituye `var()`. El dia que sustituya, la segunda mitad se pone
+   * roja sola y el ayudante se puede borrar.
+   */
+  it("jsdom aplica `:focus` y no sustituye `var()`, que es por lo que existe `resolverVar`", () => {
+    const hoja = document.createElement("style");
+    hoja.textContent = ".anillo-literal:focus { box-shadow: 0 0 0 3px #D3EBFA }";
+    document.head.appendChild(hoja);
+
+    const conLiteral = document.createElement("input");
+    conLiteral.className = "anillo-literal";
+    document.body.appendChild(conLiteral);
+    conLiteral.focus();
+
+    // 1. La pseudo-clase SE aplica. Esto es lo que la primera version negaba por escrito.
+    expect(getComputedStyle(conLiteral).boxShadow).toBe("0 0 0 3px #D3EBFA");
+
+    // 2. Y el token llega sin resolver, que es la unica diferencia real que se midio.
+    expect(getComputedStyle(campoEnfocado()).boxShadow).toBe("0 0 0 3px var(--anillo-campo)");
   });
 });
 
@@ -208,8 +245,7 @@ describe("las tres animaciones y su anulacion", () => {
     // asi que se afirma en vez de confiar en que nadie lo copie mas adelante.
     //
     // Se miran las REGLAS y no el archivo entero: la cabecera de `global.css` explica por
-    // que ese corte no esta, y nombrarlo para explicarlo no es portarlo. Escrita sobre el
-    // texto crudo, esta prueba salia roja por su propio comentario.
+    // que ese corte no esta, y nombrarlo para explicarlo no es portarlo.
     expect(sinComentarios).not.toContain("1180px");
     expect(sinComentarios).not.toContain("data-marco-hide");
   });
@@ -240,12 +276,11 @@ describe("las cuatro insignias", () => {
   );
 });
 
-describe("no queda rastro de la paleta *Juris PE* del handoff", () => {
+describe("no queda rastro de la paleta del handoff de diseno", () => {
   it("ni sus colores ni sus tres familias tipograficas", () => {
-    // El criterio 2 del issue lo pide como un `grep -ri` sobre `frontend/src`. Aqui se
-    // comprueba sobre `src/ds/`, que es donde viviria: el grep del issue, tal cual esta
-    // escrito, casa ademas con la palabra «interfaz» —que contiene «inter»— y por eso da
-    // positivo sobre codigo que no tiene nada de *Juris PE*.
+    // El criterio 2 del issue lo pide como un `grep -ri` sobre `frontend/src`. Tal como esta
+    // escrito casa ademas con la palabra «interfaz» —que contiene «inter»—, asi que aqui se
+    // comprueba sobre `src/ds/`, que es donde esa paleta viviria si se hubiera colado.
     const texto = quitarComentarios(
       ["global.css", "tokens/colores.css", "tokens/tipografia.css", "tokens/formas.css"]
         .map(leer)

@@ -22,19 +22,11 @@
 /** Los cuatro tonos de insignia que el artboard declara. No hay un quinto. */
 export type TonoDeInsignia = "ok" | "warn" | "bad" | "info";
 
-/**
- * El par de colores de una insignia: el relleno y la tinta que va encima.
- *
- * Se declara con `type` y no con la otra palabra clave de TypeScript que sirve para lo mismo,
- * por un motivo tonto pero medible: esa palabra empieza por las cinco letras de una de las
- * familias tipograficas del handoff, y el criterio 2 del issue #4 pide que un `grep -ri` de
- * esos nombres sobre `frontend/src` no devuelva nada. Las dos formas dicen aqui lo mismo, asi
- * que se usa la que no ensucia la verificacion.
- */
-export type ColoresDeInsignia = {
+/** El par de colores de una insignia: el relleno y la tinta que va encima. */
+export interface ColoresDeInsignia {
   readonly fondo: string;
   readonly tinta: string;
-};
+}
 
 /**
  * Las cuatro insignias de V6.

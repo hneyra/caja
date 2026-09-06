@@ -19,11 +19,6 @@ export default defineConfig({
   test: {
     // `jsdom` para todo, incluida la prueba que linta las muestras: en Vitest el entorno del
     // navegador no quita los modulos de Node, asi que un solo entorno evita partir la suite.
-    //
-    // Con UNA excepcion, declarada en el propio archivo con `@vitest-environment happy-dom`:
-    // `verificaciones/tokens.test.ts`. Medido, no supuesto: el `getComputedStyle` de jsdom
-    // **ignora toda regla con pseudo-clase**, asi que un `input:focus` nunca aplica y la regla
-    // de foco del diseno seria inverificable. happy-dom si la aplica.
     environment: "jsdom",
     globals: true,
     // Sin esto, `import "@/ds/global.css"` desde una prueba no inyecta nada y la prueba de los
