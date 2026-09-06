@@ -13,7 +13,7 @@
  * | `navegacion.ts` | `MODULOS`, `ICO_SEC`, `MI_MODULO`, `ARBOL`, `HOJAS`, `SECS` | 942-962, 1171-1215 |
  * | `cajas.ts` | `PROGRAMAS`, `CAJAS_CERRADAS` | 967-973 |
  * | `recibo.ts` | `PASOS` | 978-1043 |
- * | `recibos-del-turno.ts` | `PREDIOS` | 1047-1063 |
+ * | `recibos-del-turno.ts` | `PREDIOS`, y los `chips`, `ordenes` y el «de 52» de la lista | 1047-1063, 1869-1878 |
  * | `arqueo.ts` | `NODOS`, `DETERMINACIONES` | 1066-1137 |
  * | `tarifario.ts` | `VAL` | 1139-1168 |
  * | `barra.ts` | `anios`, la ficha de sesion y el aviso de servicio | 1495, 168-175, 431 y 1681-1682 |
@@ -74,8 +74,15 @@ export { CAJAS, CAJAS_CERRADAS } from "./cajas";
 export type { Campo, Paso, TablaDeCuotas, TipoDeCampo } from "./recibo";
 export { PASOS } from "./recibo";
 
-export type { Recibo } from "./recibos-del-turno";
-export { RECIBOS } from "./recibos-del-turno";
+export type { OrdenDeLaLista, Recibo } from "./recibos-del-turno";
+export {
+  CHIP_DE_TODOS,
+  CHIPS,
+  ORDEN_NATURAL,
+  ORDENES,
+  RECIBOS,
+  TOTAL_DEL_TURNO,
+} from "./recibos-del-turno";
 
 export type { Nodo, TablaDeNodo } from "./arqueo";
 export { DETERMINACIONES, NODOS } from "./arqueo";
