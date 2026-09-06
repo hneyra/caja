@@ -55,6 +55,11 @@ const PROHIBICIONES: { prohibicion: string; muestra: string; delata: RegExp }[] 
     muestra: "peticion-de-red.ts",
     delata: /Esta interfaz no habla con nadie/,
   },
+  {
+    prohibicion: "un recurso pedido a la raíz del dominio",
+    muestra: "recurso-en-la-raiz.ts",
+    delata: /Un recurso no se pide a la raíz del dominio/,
+  },
 ];
 
 describe("cada regla propia tiene una muestra que la viola, y ESLint la detecta", () => {

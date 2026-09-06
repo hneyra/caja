@@ -676,15 +676,21 @@ describe("#17 — criterio 7: ninguna etiqueta de imagen escrita a mano", () => 
  *      puede reclamar** (prohibicion (a)).
  *
  * De modo que **las dos salidas no son alternativas**: el middleware es necesario y no suficiente,
- * y `base` es necesario y no suficiente. Y hay una tercera pieza, que es la que impide cerrar esto
- * hoy: `frontend/src/` escribe una ruta absoluta a la raiz en un literal de JavaScript, y **Vite
- * no reescribe eso**. Medido: con `base: "/caja/"`, `dist/index.html` pasa a decir
- * `/caja/escudo-catacaos.png` y el paquete sigue diciendo `/escudo-catacaos.png` — sobre el `dist/`
- * servido, `mirar.mjs` sale con codigo 1 y cuatro «Failed to load resource: 404», uno por seccion.
+ * y `base` es necesario y no suficiente. Y habia una tercera pieza, que es la que impidio cerrar
+ * esto en #17: `frontend/src/` escribia una ruta absoluta a la raiz en un literal de JavaScript, y
+ * **Vite no reescribe eso**. Medido entonces y vuelto a medir en #37: con `base: "/caja/"`,
+ * `dist/index.html` decia `/caja/escudo-catacaos.png` y el paquete seguia diciendo
+ * `/escudo-catacaos.png` (`grep -c` daba 1 y 0).
  *
  * Esta prueba fija que las dos que quedan **se muevan juntas**: mientras haya un literal absoluto
  * en `src/`, `base` tiene que estar sin declarar; el dia que no lo haya, `base` tiene que valer
  * `/caja/`. Cualquiera de las dos mitades sola pone esto rojo.
+ *
+ * **#37 la ha hecho cambiar de lado**, que es para lo que estaba escrita: el escudo se cuelga hoy
+ * de `import.meta.env.BASE_URL`, `absolutasEnSrc()` devuelve la lista vacia y por tanto lo que se
+ * exige ya no es que `base` este sin declarar, sino que valga `/caja/`. La rama de arriba no se
+ * borra: el dia que alguien vuelva a escribir un literal absoluto, esto tiene que volver a
+ * decirle que entonces `base` no puede quedarse.
  */
 describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", () => {
   const nginx = () => delRepositorio("frontend/nginx.conf");
@@ -695,9 +701,19 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
     return encaje?.[1] ?? "/";
   }
 
+  /** La raiz del codigo de la interfaz, que es lo que este escaner recorre. */
+  const raizDeLaInterfaz = () => fileURLToPath(new URL("../../frontend/src/", import.meta.url));
+
+  /** Los `.ts`/`.tsx` de `frontend/src/`: lo que este escaner llega a leer de verdad. */
+  function cuantasFuentesDeLaInterfaz(): number {
+    return readdirSync(raizDeLaInterfaz(), { recursive: true, encoding: "utf8" }).filter((n) =>
+      /\.tsx?$/.test(n),
+    ).length;
+  }
+
   /** Rutas absolutas a la raiz, escritas como literal de cadena, en el codigo de `frontend/src`. */
   function absolutasEnSrc(): { archivo: string; ruta: string }[] {
-    const raiz = fileURLToPath(new URL("../../frontend/src/", import.meta.url));
+    const raiz = raizDeLaInterfaz();
     const hallazgos: { archivo: string; ruta: string }[] = [];
     for (const nombre of readdirSync(raiz, { recursive: true, encoding: "utf8" })) {
       if (!/\.tsx?$/.test(nombre)) continue;
@@ -746,10 +762,18 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
   });
 
   /**
-   * Y el estado de hoy, dicho con nombre y apellido para que no se lea como una casilla: hay
-   * **una** ruta absoluta y es el escudo de la barra global.
+   * Y el estado de hoy, dicho con nombre y apellido para que no se lea como una casilla: desde
+   * #37 **no queda ninguna**, y el escudo —la unica que hubo— se cuelga de
+   * `import.meta.env.BASE_URL`.
+   *
+   * Las dos aserciones hacen falta y no se solapan. La primera es la lista vacia. La segunda es
+   * que el escaner **ha mirado algo**: `absolutasEnSrc()` recorre un directorio, y un
+   * `readdirSync` sobre una ruta que se quede vieja devolveria cero archivos y por tanto cero
+   * hallazgos — verde por vacio, que es el mismo modo de fallo que este archivo vigila en el
+   * resto de sus escaneres. Un grep vacio no es prueba de ausencia si no se sabe que grepeo.
    */
-  it("hoy la unica que queda es el escudo de la barra", () => {
-    expect(absolutasEnSrc().map((a) => a.ruta)).toEqual(["/escudo-catacaos.png"]);
+  it("desde #37 no queda ninguna, y el escaner lo dice habiendo mirado", () => {
+    expect(absolutasEnSrc().map((a) => `${a.archivo}: ${a.ruta}`)).toEqual([]);
+    expect(cuantasFuentesDeLaInterfaz()).toBeGreaterThan(30);
   });
 });

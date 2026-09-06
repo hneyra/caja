@@ -31,6 +31,33 @@ import { AVISO, EJERCICIOS, SESION } from "@/datos";
  * con JavaScript, que es exactamente lo que el artboard evita.
  */
 
+/**
+ * El escudo, colgado del prefijo con el que esta servida la aplicacion.
+ *
+ * **Aqui NO se escribe `"/escudo-catacaos.png"`.** Vite reescribe el `base` en el `index.html` y
+ * en los recursos **importados**, pero no dentro de un literal de cadena de JavaScript. Medido
+ * sobre el `dist/`: con `base: "/caja/"`, `index.html` pasa a pedir `/caja/escudo-catacaos.png`
+ * y el paquete seguia diciendo `"/escudo-catacaos.png"` (`grep -c` da 1 y 0) — una peticion a la
+ * raiz del dominio, fuera de lo que `PathPrefix(/caja)` casa, que en el navegador es un 404 por
+ * seccion y en la pantalla una barra sin escudo.
+ *
+ * `import.meta.env.BASE_URL` es el `base` de `vite.config.ts` y **termina siempre en barra**, asi
+ * que se concatena sin anadir ninguna.
+ *
+ * <h2>Por que esto y no un `import` del archivo</h2>
+ *
+ * La otra salida —`import escudo from "…/escudo-catacaos.png"`— tambien funciona y ademas le
+ * pone huella, pero se midio lo que cuesta: el escudo vive en `public/` porque el favicon del
+ * `index.html` lo pide desde ahi, asi que importarlo deja **dos copias identicas de 196 608 B**
+ * en la imagen —`dist/escudo-catacaos.png` y `dist/assets/escudo-catacaos-<huella>.png`—, y las
+ * dos referencias apuntando a copias distintas. Evitarlo obliga a sacarlo de `public/`, y eso
+ * cambia lo que `dist/` tiene en su raiz: justo lo que `frontend/nginx.conf` documenta —su
+ * `Cache-Control: immutable` es solo para `/assets/`, «el escudo NO entra aqui: esta en la raiz
+ * y su nombre no lleva huella»— y lo que la imagen de #16 midio. La huella no compra nada aqui:
+ * nginx no le da cache inmutable a este archivo de todos modos.
+ */
+const ESCUDO = `${import.meta.env.BASE_URL}escudo-catacaos.png`;
+
 /** El estilo comun de los dos botones cuadrados de la barra: la campana y la lupa. */
 const BOTON_CUADRADO: CSSProperties = {
   display: "grid",
@@ -171,7 +198,7 @@ export function BarraGlobal({
         style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0 }}
       >
         <img
-          src="/escudo-catacaos.png"
+          src={ESCUDO}
           alt="Escudo de la municipalidad"
           width={30}
           height={36}

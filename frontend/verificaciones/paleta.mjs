@@ -27,12 +27,20 @@
  * enfocado: `fireEvent.keyDown(campo, …)` las entrega por construcción. Aquí
  * las teclas se pulsan sin decir sobre qué, que es lo que hace una persona.
  *
- * Necesita la aplicación servida. `CAJA_BASE` dice dónde (por omisión, el
- * puerto de `yarn dev`).
+ * Necesita la aplicación servida **bajo `/caja`**, que es el `base` que `vite.config.ts`
+ * declara. `CAJA_BASE` dice dónde, prefijo incluido (por omisión, el puerto de `yarn dev`).
  */
 import { chromium } from "playwright-core";
 
-const BASE = process.env.CAJA_BASE ?? "http://localhost:5181";
+/*
+ * Donde esta servida la aplicacion, **con su prefijo**.
+ *
+ * `vite.config.ts` declara `base: "/caja/"`, asi que ni `yarn dev` ni `vite preview` sirven nada
+ * en la raiz: los dos contestan `302` a `/caja/` y todo cuelga de ahi. Por omision se apunta al
+ * `yarn dev` de este repositorio; en CI, `CAJA_BASE` trae el puerto de `vite preview` con el
+ * mismo prefijo. La barra final se quita para que las rutas de abajo no salgan con dos.
+ */
+const BASE = (process.env.CAJA_BASE ?? "http://localhost:5181/caja").replace(/\/+$/, "");
 
 const navegador = await chromium.launch();
 const contexto = await navegador.newContext({ viewport: { width: 1440, height: 900 } });

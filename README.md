@@ -38,7 +38,7 @@ tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
 ```bash
 cd frontend
 yarn install
-yarn dev          # el servidor de desarrollo, en http://localhost:5181
+yarn dev          # el servidor de desarrollo, en http://localhost:5181/caja/
 yarn verificar    # ESLint (con sus muestras), tipos y Vitest
 yarn build        # el artefacto de produccion, en frontend/dist/
 ```
@@ -61,9 +61,9 @@ $ eslint .
 $ tsc --noEmit
 $ vitest run
 …
- Test Files  20 passed (20)
-      Tests  634 passed (634)
-   Duration  86.76s
+ Test Files  21 passed (21)
+      Tests  648 passed (648)
+   Duration  81.23s
 ```
 
 Y la de `yarn build`:
@@ -73,23 +73,31 @@ $ yarn build
 $ tsc -b && vite build
 vite v6.4.3 building for production...
 ✓ 70 modules transformed.
-dist/index.html                   1.37 kB │ gzip:  0.75 kB
+dist/index.html                   1.38 kB │ gzip:  0.76 kB
 dist/assets/index-FJrOTcaG.css    3.42 kB │ gzip:  1.39 kB
-dist/assets/index-MIhEBA89.js   292.33 kB │ gzip: 85.76 kB
-✓ built in 2.26s
+dist/assets/index-DGWPq6eb.js   292.34 kB │ gzip: 85.80 kB
+✓ built in 2.25s
 ```
 
-**Los cuatro arneses de navegador** miden lo que un emulador de DOM no puede decir —disposicion,
+**La interfaz se sirve bajo `/caja`**, y no en la raiz: `vite.config.ts` declara
+`base: "/caja/"` (#37), asi que `yarn dev` y `vite preview` contestan `302` a `/caja/` para
+cualquier peticion a `/`. Es la mitad que le toca a Vite; la otra es el `stripPrefix` del
+`IngressRoute` (#17), y **ninguna de las dos basta sola**.
+
+**Los cinco arneses de navegador** miden lo que un emulador de DOM no puede decir —disposicion,
 foco real, impresion y peticiones de red—, y no entran en `yarn verificar` porque necesitan un
-Chromium y un servidor levantado. Se lanzan contra `yarn dev` o contra el `dist/` servido con
-`vite preview`, y su detalle esta en [DEV-02 §7](docs/D0-desarrollo/pruebas.md).
+servidor levantado (y los cuatro primeros, un Chromium). Se lanzan contra `yarn dev` o contra el
+`dist/` servido con `vite preview`, con `CAJA_BASE` apuntando al puerto **y al prefijo**
+(`CAJA_BASE=http://localhost:5182/caja`), y su detalle esta en
+[DEV-02 §7](docs/D0-desarrollo/pruebas.md).
 
 | Comando | Que mide |
 |---|---|
 | `yarn paleta` | La paleta de comandos con solo el teclado: abre, mueve, filtra, elige y cierra |
 | `yarn pegajosa` | Que la cabecera de las tablas de consulta se queda quieta **y pegada al borde** al desplazar, con la medida hecha en el marco del contenedor para que moverse la pagina no la descuadre (#35) |
 | `yarn mirar` | Las cuatro secciones: cortes, arbol, teclado y papel, con capturas y PDF |
-| `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada |
+| `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada, y que **todas cuelgan de `/caja`** |
+| `yarn prefijo` | Que el `dist/` no pide nada a la raiz del dominio y que `/caja/` y `/caja/recibos` sirven la aplicacion **con su tipo**. No necesita Chromium, y **solo vale contra el `dist/` servido**: apuntado a `yarn dev` lo dice y sale |
 
 ### Levantarla como se despliega
 
@@ -114,11 +122,20 @@ largo esta escrito en el propio [`despliegue/compose.yaml`](despliegue/compose.y
 > `nginx:1.31.4-alpine` sirviendo este mismo `dist/` con este mismo `nginx.conf`. Está en el PR
 > de #18, con sus cifras.
 
-> **El puerto publicado es hoy la unica puerta.** Bajo `/caja` todavia no se llega: el `index.html`
-> que emite Vite fija sus recursos en absoluto, asi que detras del prefijo el navegador los pide a
-> la raiz del dominio. Medido contra el nginx real de `nginx:1.31.4-alpine`:
-> `GET /caja/assets/index-MIhEBA89.js` devuelve **200 `text/html` de 1368 bytes** —el `index.html`,
-> no el JavaScript—, que es el 200 que miente. Es el **#37**.
+> **Desde #37 esto se ha dado la vuelta, y hay que leerlo entero.** `vite.config.ts` declara
+> `base: "/caja/"`, asi que el `index.html` pide sus recursos bajo el prefijo y **la interfaz es
+> alcanzable bajo `/caja`** — que es lo que faltaba. Pero este `nginx.conf` sigue sirviendo en `/`
+> a proposito, porque quien quita el prefijo es Traefik; y **el puerto publicado de este compose no
+> tiene ningun Traefik delante**. Medido aplicando a mano el `try_files $uri /index.html` de este
+> archivo sobre el `dist/` de hoy: `GET /` devuelve el `index.html` (200 `text/html`, 1 383 B) y ese
+> HTML pide `/caja/assets/index-<huella>.js`, que **contesta 200 `text/html` de 1 383 B** — el
+> `index.html` otra vez, el 200 que miente — mientras `/assets/index-<huella>.js`, o sea lo que
+> nginx recibe **con el prefijo quitado**, contesta `200 text/javascript` de 292 338 B.
+>
+> O sea: `curl -sf http://localhost:8082/` sigue devolviendo 200, y **un navegador ve una pantalla
+> en blanco**. Es la fila C de la tabla de #37, y la unica salida es un Traefik —o cualquier proxy—
+> que quite `/caja` antes de este nginx. Queda **declarado y sin cerrar**: cerrarlo obliga a tocar
+> `frontend/nginx.conf`, y con el su copia byte a byte del `ConfigMap`.
 
 ## El descriptor
 
