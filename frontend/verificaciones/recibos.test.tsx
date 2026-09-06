@@ -495,7 +495,8 @@ describe("criterio 8 · sin nada elegido, la derecha dice «Elija un recibo de l
     abrirRecibos();
     fireEvent.click(fila("0003-0041184"));
     expect(screen.queryByText(ELIJA_UN_RECIBO)).toBeNull();
-    expect(pantalla().querySelector("[data-ficha-pendiente]")?.getAttribute("data-ficha-pendiente")).toBe(
+    // Desde #12 lo que ocupa ese sitio es la ficha, y `data-ficha` dice de que recibo es.
+    expect(pantalla().querySelector("[data-ficha]")?.getAttribute("data-ficha")).toBe(
       "0003-0041184",
     );
   });

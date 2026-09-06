@@ -45,6 +45,15 @@ export interface PropsDePantalla {
   readonly fijarCampo: (clave: string, valor: string) => void;
   /** El valor de un campo, o `porOmision` si nadie lo ha tocado. Es el `val` de la 1358. */
   readonly valorDeCampo: (clave: string, porOmision: string) => string;
+  /**
+   * Sacar un toast. Es el `this.setState({ toast: … })` que el artboard escribe por todas partes.
+   *
+   * Entra con #12 y **cierra un hueco que #11 dejo declarado**: sin el, una pantalla no tenia
+   * con que avisar, y el «Cobrar» del vacio de la lista dejaba el destino puesto sin decir nada.
+   * El toast y su reloj siguen viviendo en el marco (`usarToast`), que es lo unico que garantiza
+   * que haya **uno** y que se cancele al desmontar.
+   */
+  readonly avisar: (texto: string) => void;
 }
 
 /** El componente que dibuja una seccion propia. */
