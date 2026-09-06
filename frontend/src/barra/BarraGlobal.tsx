@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { ENTIDAD } from "@/aplicacion";
+import { MenuDeSesion } from "@/barra/MenuDeSesion";
 import { AVISO, EJERCICIOS, SESION } from "@/datos";
 
 /**
@@ -20,10 +21,14 @@ import { AVISO, EJERCICIOS, SESION } from "@/datos";
  * declare **ningun** color que no este en esa lista. Inventarles un token aqui saldria rojo
  * alli, y con razon: seria ampliar la paleta del diseno desde una pantalla.
  *
- * <h2>Lo que este componente NO hace</h2>
+ * <h2>Lo que este componente NO hace, y la unica excepcion</h2>
  *
- * Ni abre la paleta, ni el lanzador, ni el menu de sesion: solo dispara el estado que los
- * abrira. Sus contenidos llegan en el issue de la paleta, y el arbol de modulos en el suyo.
+ * Ni abre la paleta ni el lanzador: solo dispara el estado que los abrira, y quien los dibuja es
+ * `App`, porque los dos son capas del documento (`position:fixed`). **El menu de sesion si se
+ * dibuja aqui**, y no es una incoherencia: es `position:absolute` colgando de la ficha que lo
+ * abre (`top:44px; right:0`, linea 176), asi que necesita el envoltorio `position:relative` de
+ * esta barra para alinearse con ella. Sacarlo fuera obligaria a medir la posicion de la ficha
+ * con JavaScript, que es exactamente lo que el artboard evita.
  */
 
 /** El estilo comun de los dos botones cuadrados de la barra: la campana y la lupa. */
@@ -98,6 +103,12 @@ export interface BarraGlobalProps {
   readonly alAlternarLanzador: () => void;
   readonly sesionAbierta: boolean;
   readonly alAlternarSesion: () => void;
+  /** Cerrar el menu de sesion sin elegir: su fondo, y elegir una opcion. */
+  readonly alCerrarSesion: () => void;
+  /** Cuantas pestanas tienen cambios sin guardar. Es lo que el pie del menu avisa. */
+  readonly cuantasSucias: number;
+  /** El toast que sacan las tres opciones del menu. El reloj lo tiene el marco. */
+  readonly alAvisar: (texto: string) => void;
 }
 
 export function BarraGlobal({
@@ -113,6 +124,9 @@ export function BarraGlobal({
   alAlternarLanzador,
   sesionAbierta,
   alAlternarSesion,
+  alCerrarSesion,
+  cuantasSucias,
+  alAvisar,
 }: BarraGlobalProps) {
   return (
     <header
@@ -395,6 +409,14 @@ export function BarraGlobal({
             </svg>
           </span>
         </button>
+
+        {sesionAbierta && (
+          <MenuDeSesion
+            alCerrar={alCerrarSesion}
+            alAvisar={alAvisar}
+            cuantasSucias={cuantasSucias}
+          />
+        )}
       </div>
     </header>
   );

@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { ArbolDeModulos, type DestinoDelArbol } from "@/arbol/ArbolDeModulos";
+import { ArbolDeModulos } from "@/arbol/ArbolDeModulos";
 import { AvisoDelSistema } from "@/barra/AvisoDelSistema";
 import { BarraGlobal } from "@/barra/BarraGlobal";
+import { LanzadorDeModulos } from "@/barra/LanzadorDeModulos";
 import { Toast, usarToast } from "@/barra/Toast";
 import { EJERCICIOS, HOJAS } from "@/datos";
 import { BarraDePestanas } from "@/marco/BarraDePestanas";
+import type { Destino } from "@/marco/destino";
+import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import { DialogoDeCambios } from "@/marco/DialogoDeCambios";
 import { FilaDelTitulo } from "@/marco/FilaDelTitulo";
 import { MarcadorDeSeccion, type Pantalla } from "@/marco/MarcadorDeSeccion";
@@ -18,7 +21,9 @@ import {
   tituloDe,
 } from "@/marco/rotulos";
 import { SinPestanas } from "@/marco/SinPestanas";
+import { usarAtajos } from "@/marco/usarAtajos";
 import { usarPestanas } from "@/marco/usarPestanas";
+import { PaletaDeComandos } from "@/paleta/PaletaDeComandos";
 
 /**
  * El marco de `caja-web`: la barra global, el arbol de modulos, las pestanas y lo que hay
@@ -60,7 +65,7 @@ export const mensajeDeEjercicio = (ejercicio: string) =>
 interface LoQueEstaAbierto {
   /** El arbol de modulos de la izquierda. */
   readonly modulos: boolean;
-  /** La paleta de comandos. Su contenido es del issue de la paleta. */
+  /** La paleta de comandos. */
   readonly paleta: boolean;
   readonly lanzador: boolean;
   readonly sesion: boolean;
@@ -103,29 +108,27 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
   const pestanas = usarPestanas();
 
   /**
-   * Lo que el arbol llama al pulsar un submodulo o una entrada de la cola.
+   * Con que estado se abre la seccion activa: el `extra` del `ir(dest, extra)` del artboard.
    *
-   * El `nodo` de la cola de trabajo se recibe y **todavia no se usa**: es la fila de «Cajas y
-   * arqueo» que hay que abrir, y quien la abre es esa pantalla, que llega despues. Se expone
-   * en un `data-` para que la prueba del arbol pueda seguir midiendolo.
+   * Se recibe y **todavia no se dibuja**, porque las cuatro pantallas llegan despues. Se expone
+   * en los `data-` de la raiz, que es lo unico que lo hace observable: un estado que nadie puede
+   * ver no se puede verificar. Lo que hay dentro y por que se reemplaza entero, en
+   * {@link import("@/marco/destino").Destino}.
    */
-  const [nodo, fijarNodo] = useState<number | null>(null);
+  const [destino, fijarDestino] = useState<Destino>(SIN_EXTRAS);
 
   /**
    * Ir a un destino: lo abre si no estaba, lo activa y **cierra el lanzador y la paleta**.
    *
-   * Los dos cierres son del artboard (`ir`, linea 1345) y valen para las tres puertas de
-   * entrada —el arbol, la barra de pestanas y el boton «Cobrar»—, que es por lo que estan aqui
-   * y no en cada una: olvidar uno no rompe nada visible hasta que dos capas se dibujan a la vez.
+   * Los dos cierres son del artboard (`ir`, linea 1345) y valen para las cuatro puertas de
+   * entrada —el arbol, la barra de pestanas, el boton «Cobrar» y la paleta—, que es por lo que
+   * estan aqui y no en cada una: olvidar uno no rompe nada visible hasta que dos capas se
+   * dibujan a la vez.
    */
-  const irA = (clave: string) => {
+  const irA = (clave: string, extra: Destino = SIN_EXTRAS) => {
     fijarAbierto((x) => ({ ...x, lanzador: false, paleta: false }));
+    fijarDestino(extra);
     pestanas.ir(clave);
-  };
-
-  const alIr = (clave: string, extra?: DestinoDelArbol) => {
-    fijarNodo(extra?.nodo ?? null);
-    irA(clave);
   };
 
   const visibles = pestanasDe(pestanas.abiertas, pestanas.activa, pestanas.sucias);
@@ -136,17 +139,46 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
   const rotuloPorCerrar =
     porCerrar === null ? "" : (HOJAS[porCerrar]?.label ?? porCerrar);
 
+  /**
+   * Cuantas pestanas tienen cambios sin guardar: lo que el menu de sesion avisa.
+   *
+   * Se cuentan las que valen `true` y no las claves del objeto, que es lo que hace el artboard
+   * (`Object.keys(s.sucias).length`, linea 1691): una clave con `false` dentro contaria igual, y
+   * el aviso diria que hay cambios que perder donde no los hay.
+   */
+  const cuantasSucias = Object.values(pestanas.sucias).filter((x) => x).length;
+
+  /** Cierra las tres capas flotantes. Es la mitad `Escape` del `_tecla` del artboard (1257). */
+  const cerrarCapas = () =>
+    fijarAbierto((x) => ({ ...x, paleta: false, lanzador: false, sesion: false }));
+
+  /**
+   * `Ctrl/Cmd + K` alterna la paleta **y limpia la consulta** (linea 1249).
+   *
+   * Lo de limpiarla no hace falta escribirlo: la paleta guarda su consulta dentro, y cerrarla la
+   * desmonta. Reabrirla monta una nueva, con el campo vacio y el foco en el primer resultado.
+   */
+  usarAtajos({
+    alAlternarPaleta: () =>
+      fijarAbierto((x) => ({ ...x, paleta: !x.paleta, lanzador: false })),
+    alCerrarCapas: cerrarCapas,
+  });
+
   return (
     <div
-      // El estado de la paleta no se ve todavia —su dialogo es de otro issue—, asi que se
-      // expone aqui: un estado que nadie puede observar no se puede verificar, y este si.
+      // El estado de la paleta se expone tambien aqui, y sigue valiendo la pena: desde este
+      // issue hay dialogo que mirar, pero `barra.test.tsx` mide con este atributo que abrir el
+      // lanzador la cierra sin tener que abrirla antes.
       data-paleta={abierto.paleta ? "abierta" : "cerrada"}
-      // `data-ir` es **la seccion activa**, que desde este issue ya se ve en la barra de
+      // `data-ir` es **la seccion activa**, que desde el issue del marco ya se ve en la barra de
       // pestanas y en el titulo; sigue estando porque `arbol.test.tsx` mide con ella que
-      // pulsar un submodulo llega hasta aqui. `data-ir-nodo` es lo unico que todavia no se
-      // dibuja en ningun sitio.
+      // pulsar un submodulo llega hasta aqui. Los cuatro `data-ir-*` son el `extra` del
+      // destino, que todavia no dibuja ninguna pantalla.
       data-ir={activa ?? ""}
-      data-ir-nodo={nodo === null ? "" : String(nodo)}
+      data-ir-nodo={destino.nodo === undefined ? "" : String(destino.nodo)}
+      data-ir-valtab={destino.valTab === undefined ? "" : String(destino.valTab)}
+      data-ir-chip={destino.chip ?? ""}
+      data-ir-recibo={destino.recibo ?? ""}
       style={{ display: "flex", flexDirection: "column", height: "100vh" }}
     >
       <BarraGlobal
@@ -170,7 +202,29 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
         alAlternarSesion={() =>
           fijarAbierto((x) => ({ ...x, sesion: !x.sesion, lanzador: false, paleta: false }))
         }
+        alCerrarSesion={() => fijarAbierto((x) => ({ ...x, sesion: false }))}
+        cuantasSucias={cuantasSucias}
+        alAvisar={avisar}
       />
+
+      {/* Las dos capas flotantes del documento. El menu de sesion NO esta aqui: cuelga de la
+          ficha que lo abre (`position:absolute`, linea 176) y lo dibuja `BarraGlobal`. */}
+      {abierto.lanzador && (
+        <LanzadorDeModulos
+          alCerrar={() => fijarAbierto((x) => ({ ...x, lanzador: false }))}
+          alAvisar={avisar}
+        />
+      )}
+
+      {abierto.paleta && (
+        <PaletaDeComandos
+          alCerrar={() => fijarAbierto((x) => ({ ...x, paleta: false }))}
+          alElegir={(resultado) => {
+            irA(resultado.seccion, resultado.destino);
+            if (resultado.aviso !== undefined) avisar(resultado.aviso);
+          }}
+        />
+      )}
 
       {/* La fila de la linea 204 del artboard: el arbol a la izquierda y el resto a la derecha.
           El arbol **empuja** el contenido en vez de taparlo, que es lo que dice el issue de la
@@ -181,7 +235,7 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
             abiertas={pestanas.abiertas}
             activa={activa}
             sucias={pestanas.sucias}
-            alIr={alIr}
+            alIr={irA}
           />
         )}
 
@@ -207,8 +261,11 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
               titulo={tituloDe(activa)}
               subtitulo={subtituloDe(activa)}
               hayAccion={activa !== null && esSeccionPropia(activa)}
+              // El `nuevo()` del artboard (linea 2073): abre Recibos **con un cobro empezado**,
+              // que es lo mismo que hace la accion «Cobrar» de la paleta. Los dos pasan por
+              // aqui con el mismo destino para que no puedan separarse.
               alCobrar={() => {
-                irA("predios");
+                irA("predios", { recibo: COBRO_NUEVO });
                 avisar(MENSAJE_DE_COBRO_NUEVO);
               }}
             />
