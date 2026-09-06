@@ -129,6 +129,10 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
       // El estado de la paleta no se ve todavia —su dialogo es de otro issue—, asi que se
       // expone aqui: un estado que nadie puede observar no se puede verificar, y este si.
       data-paleta={abierto.paleta ? "abierta" : "cerrada"}
+      // `data-ir` es **la seccion activa**, que desde este issue ya se ve en la barra de
+      // pestanas y en el titulo; sigue estando porque `arbol.test.tsx` mide con ella que
+      // pulsar un submodulo llega hasta aqui. `data-ir-nodo` es lo unico que todavia no se
+      // dibuja en ningun sitio.
       data-ir={activa ?? ""}
       data-ir-nodo={nodo === null ? "" : String(nodo)}
       style={{ display: "flex", flexDirection: "column", height: "100vh" }}
