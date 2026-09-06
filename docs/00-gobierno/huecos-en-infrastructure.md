@@ -143,7 +143,7 @@ que ya era mentira.
 
 ---
 
-## 2 · Las dos guardas que cuentan — y ya están rojas, dos de ellas desde #17
+## 2 · Las guardas que cuentan — tres archivos, y dos de los tres rojos son de #17
 
 **Rutas exactas:**
 
@@ -179,7 +179,7 @@ importaría, y el compose de esta rama.
 | 2 | `compose-de-los-sistemas.ts`, `principalDe()` | El despliegue de un sistema tiene **un** contenedor principal | **#17**: `caja.despliegue(e)` trae dos, el backend y la interfaz |
 | 3 | `compose-de-los-sistemas.test.ts:83` — ««%s» trae los tres procesos y ninguno mas» | Los servicios del compose son exactamente los tres del descriptor | **#18**, este PR: el cuarto es `caja-interfaz` |
 
-### El rojo 2 es el que hay que arreglar primero, y no por ser el primero
+### El rojo 2 es el que hay que arreglar primero, y no por ser el segundo
 
 Los rojos 1 y 3 son aserciones: se ponen rojas **diciendo qué sobra**. El 2 **lanza**:
 
