@@ -54,6 +54,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
 .hov-barra:hover { background: rgba(255,255,255,.18) !important }
 .hov-sesion:hover { background: rgba(255,255,255,.14) !important }
 
+/* —— El `style-hover` del arbol de modulos (lineas 233, 252 y 366) ——
+   Los tres botones del panel izquierdo —modulo, submodulo y entrada de la cola—
+   llevan el mismo `style-hover="background:#EFF7FC"`, asi que es una sola clase.
+   `#EFF7FC` no es ninguna de las constantes del artboard (lineas 914-924), y por
+   eso va literal: darle un token seria ampliar la paleta del diseno desde aqui. */
+.hov-arbol:hover { background: #EFF7FC !important }
+
 /* —— Los cortes responsive del producto (lineas 33-38) —— */
 @media (max-width: 1240px) { [data-lista] { flex: 0 0 320px !important; width: 320px !important } }
 @media (max-width: 900px) {

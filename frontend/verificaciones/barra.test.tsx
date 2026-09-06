@@ -65,21 +65,28 @@ describe("la barra mide lo que el artboard dice", () => {
 });
 
 describe("la hamburguesa", () => {
-  it("empieza sin desplegar, y lo dice", () => {
+  /**
+   * Desde el issue del arbol, la aplicacion arranca con los modulos **desplegados**, que es lo
+   * que dice el artboard (`secOpen: true`, linea 1219). Estas dos pruebas afirmaban lo contrario
+   * y cambiaron con el: mientras no hubo arbol, un `aria-expanded="true"` sobre una region que
+   * no existe era algo que un lector de pantalla anunciaba. Que el arbol **este** cuando lo dice
+   * lo comprueba `arbol.test.tsx`; aqui se mide el boton.
+   */
+  it("empieza desplegada, y lo dice", () => {
     render(<App />);
-    expect(hamburguesa().getAttribute("aria-expanded")).toBe("false");
-    expect(hamburguesa().getAttribute("title")).toBe("Mostrar los módulos");
+    expect(hamburguesa().getAttribute("aria-expanded")).toBe("true");
+    expect(hamburguesa().getAttribute("title")).toBe("Ocultar los módulos");
   });
 
   it("alterna `aria-expanded` y el `title` a la vez", () => {
     render(<App />);
     fireEvent.click(hamburguesa());
-    expect(hamburguesa().getAttribute("aria-expanded")).toBe("true");
-    expect(hamburguesa().getAttribute("title")).toBe("Ocultar los módulos");
-
-    fireEvent.click(hamburguesa());
     expect(hamburguesa().getAttribute("aria-expanded")).toBe("false");
     expect(hamburguesa().getAttribute("title")).toBe("Mostrar los módulos");
+
+    fireEvent.click(hamburguesa());
+    expect(hamburguesa().getAttribute("aria-expanded")).toBe("true");
+    expect(hamburguesa().getAttribute("title")).toBe("Ocultar los módulos");
   });
 });
 
