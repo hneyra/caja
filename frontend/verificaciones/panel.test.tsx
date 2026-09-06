@@ -32,7 +32,6 @@ import {
   NODO_DE_MI_CAJA,
   NODOS,
   RECIBOS,
-  SECCION_DE_RECIBOS,
   SECCIONES,
 } from "../src/datos";
 import {
@@ -47,7 +46,6 @@ import {
   TURNO_DEL_ARQUEO,
   VER_LOS_RECIBOS,
 } from "../src/pantallas/Panel";
-import { textoDelMarcador } from "../src/marco/MarcadorDeSeccion";
 import "../src/ds/global.css";
 
 afterEach(cleanup);
@@ -422,18 +420,18 @@ describe("el panel es lo que `#panel` dibuja, y solo `#panel`", () => {
   );
 
   /**
-   * Las que **siguen** en el marcador, que desde #11 ya no son las tres: `predios` es la lista
-   * de recibos. Se filtran por su clave y no se escriben a mano para que portar la siguiente
-   * ponga esta prueba roja en vez de dejarla midiendo una seccion que ya no existe alli.
+   * Y **ninguna se queda sin pantalla**, que es lo que hasta #14 decia el marcador.
+   *
+   * Esta prueba ocupa el sitio de la que afirmaba «y `%s` sigue en el marcador», escrita en #10
+   * sobre las tres que faltaban y reducida a dos por #11. Con las cuatro portadas su lista queda
+   * **vacia** —un `it.each([])` no es una prueba que pase, es una que no existe— asi que se
+   * sustituye por la afirmacion complementaria: cada seccion dibuja **la suya**, marcada con su
+   * propio `data-seccion`. Es lo mismo que aquella protegia, del otro lado.
    */
-  it.each(
-    SECCIONES.filter((s) => s.clave !== "panel" && s.clave !== SECCION_DE_RECIBOS).map(
-      (s) => [s.clave, s.label] as const,
-    ),
-  )("y `%s` sigue en el marcador", (clave, label) => {
+  it.each(SECCIONES.map((s) => [s.clave] as const))("`%s` dibuja su propia pantalla", (clave) => {
     render(<App />);
     abrirSeccion(clave);
-    expect(screen.getByText(textoDelMarcador(label))).toBeDefined();
+    expect(document.querySelectorAll(`[data-seccion="${clave}"]`)).toHaveLength(1);
   });
 
   it("las doce filas llevan la clase del `style-hover`, y la regla existe", () => {

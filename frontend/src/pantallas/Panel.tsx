@@ -12,7 +12,7 @@ import {
 } from "@/datos";
 import type { LineaDeArqueo } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
-import type { PropsDePantalla } from "@/marco/MarcadorDeSeccion";
+import type { PropsDePantalla } from "@/marco/pantalla";
 
 /**
  * `#panel` — el Panel de Tesoreria: la primera pantalla que ve el cajero al entrar.

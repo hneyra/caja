@@ -22,7 +22,7 @@ import {
   YA_ESTA_EN,
 } from "../src/barra/LanzadorDeModulos";
 import { abriria, avisoDeSucias, CERRARIA_LA_SESION } from "../src/barra/MenuDeSesion";
-import type { PropsDePantalla } from "../src/marco/MarcadorDeSeccion";
+import type { PropsDePantalla } from "../src/marco/pantalla";
 import "../src/ds/global.css";
 
 afterEach(cleanup);

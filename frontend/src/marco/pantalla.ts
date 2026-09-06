@@ -1,22 +1,29 @@
 import type { ReactNode } from "react";
 import type { ClaveDeSeccion } from "@/datos";
-import { SECCIONES } from "@/datos";
 import type { Destino } from "@/marco/destino";
 
 /**
- * El hueco de una de las cuatro pantallas propias, mientras la pantalla no esta portada.
+ * El contrato entre el marco y la pantalla que dibuja la seccion activa.
  *
  * <h2>Por que el marco no sabe cual es cual</h2>
  *
  * El marco —pestanas, titulo, hash y cierre— no tiene por que saber que pantalla dibuja cada
  * seccion. `App` recibe **el componente** que pinta la seccion activa y lo llama con
- * {@link PropsDePantalla}; quien reparte es `pantallas/PantallaDeSeccion`, que desde #10 manda
- * `panel` al Panel de Tesoreria y las otras tres aqui. Portar una mas no toca el marco.
+ * {@link PropsDePantalla}; quien reparte es `pantallas/PantallaDeSeccion`. Portar una pantalla
+ * nunca toco el marco, que era la propiedad que esta ranura compraba.
  *
- * Esa ranura es tambien lo unico que hace observable `fijarCampo`, que es la forma —la del
- * artboard, su `set(k, v)` de la linea 1352— de ensuciar una pestana: una pantalla que edita un
- * campo lo llama y el marco pone el ` *`, el aviso de cerrar y el dialogo. Ninguna de las
- * pantallas portadas tiene campos todavia, asi que hoy solo lo llaman las pruebas del marco.
+ * <h2>Lo que este archivo tenia hasta #14, y por que ya no</h2>
+ *
+ * Se llamaba `MarcadorDeSeccion.tsx` y ademas del contrato traia el **hueco**: la tarjeta con
+ * borde discontinuo que decia en pantalla «la pantalla de «X» se porta en un issue siguiente».
+ * Con las cuatro portadas ya no queda ninguna seccion que mandar alli, y el `switch` de
+ * `PantallaDeSeccion` cubre la union entera sin `default`. Un componente al que no llega nadie
+ * no protege de nada: lo que protege hoy es el propio exhaustivo, que se pone rojo en `tsc` el
+ * dia que aparezca una quinta seccion.
+ *
+ * La ranura sigue siendo tambien lo unico que hace observable `fijarCampo` —la forma del
+ * artboard (`set(k, v)`, linea 1352) de ensuciar una pestana—, y por eso las pruebas del marco
+ * enchufan por ella una pantalla que edita un campo.
  */
 
 /** Lo que el marco le da a la pantalla que dibuja la seccion activa. */
@@ -67,43 +74,3 @@ export interface PropsDePantalla {
 
 /** El componente que dibuja una seccion propia. */
 export type Pantalla = (props: PropsDePantalla) => ReactNode;
-
-/** El texto del marcador, compuesto con el rotulo de la seccion. */
-export const textoDelMarcador = (rotulo: string) =>
-  `La pantalla de «${rotulo}» se porta en un issue siguiente. El marco ya funciona: se abre ` +
-  "en pestaña, se navega entre las abiertas, se cierra y el hash de la URL dice cuál está a " +
-  "la vista.";
-
-export function MarcadorDeSeccion({ seccion }: PropsDePantalla) {
-  const rotulo = SECCIONES.find((x) => x.clave === seccion)?.label ?? seccion;
-  return (
-    <div
-      data-seccion={seccion}
-      // El contenedor de pantalla del artboard (linea 480): mismo relleno y misma entrada.
-      style={{ flex: 1, overflow: "auto", padding: 18, animation: "fadeIn .22s ease" }}
-    >
-      <div
-        style={{
-          maxWidth: 640,
-          background: "#fff",
-          border: "1px dashed var(--linea)",
-          borderRadius: "var(--radio-8)",
-          padding: "16px 18px",
-        }}
-      >
-        <p style={{ margin: 0, fontSize: 15, fontWeight: "var(--peso-fuerte)" }}>{rotulo}</p>
-        <p
-          style={{
-            margin: "7px 0 0",
-            fontSize: 13.5,
-            lineHeight: 1.6,
-            color: "var(--tinta-3)",
-            textWrap: "pretty",
-          }}
-        >
-          {textoDelMarcador(rotulo)}
-        </p>
-      </div>
-    </div>
-  );
-}

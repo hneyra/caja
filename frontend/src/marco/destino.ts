@@ -7,11 +7,12 @@
  * Sin estos campos, «Arqueo de mi caja» y «Anulaciones del día» serian el mismo comando con dos
  * rotulos, que es la mitad del trabajo que `PORTAR.md` (regla 5) prohibe dejar a medias.
  *
- * Las cuatro pantallas no estan portadas todavia, asi que hoy el destino **se guarda y se
- * expone** en los `data-` de la raiz, que es lo unico que lo hace observable. El dia que las
- * pantallas lleguen, lo leeran de ahi: `nodo` es el panel de arqueo que se abre, `valTab` la
- * pestana del tarifario, `chip` el filtro de la lista de recibos y `recibo` cual esta
- * seleccionado.
+ * Desde #14 lo leen **las cuatro pantallas**: `nodo` es el panel de arqueo con el que se abre
+ * `#cajas`, `valTab` la pestana del tarifario, `chip` el filtro de la lista de recibos y
+ * `recibo` cual esta seleccionado. Hasta entonces el destino solo se guardaba y se exponia en
+ * los `data-` de la raiz, que era lo unico que lo hacia observable; esos `data-` siguen ahi
+ * porque miden una propiedad de `irA` —que navegar desde el arbol no lleva ningun extra— que
+ * ninguna pantalla puede afirmar por si sola.
  *
  * <h2>Se reemplaza entero, no se mezcla — y eso es una desviacion del artboard</h2>
  *

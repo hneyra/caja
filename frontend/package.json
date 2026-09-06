@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "verificar": "yarn lint && yarn typecheck && yarn test",
-    "paleta": "node verificaciones/paleta.mjs"
+    "paleta": "node verificaciones/paleta.mjs",
+    "pegajosa": "node verificaciones/pegajosa.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
