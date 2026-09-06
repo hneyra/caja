@@ -7,12 +7,43 @@ name: Infraestructura
 # compro: la parte que puede equivocarse a diario —un limite que falta, una sonda sin plazo, una
 # ruta fuera del prefijo— se detecta en la maquina de quien lo escribe y en el PR de cualquiera.
 
+# POR QUE ESTE FILTRO NOMBRA ARCHIVOS DE `frontend/` Y DE `backend/`
+# Desde #17 el descriptor afirma cosas que se cumplen en OTROS archivos, y las lee:
+#
+#   · `frontend/nginx.conf`, del que lleva una copia caracter a caracter para meterla en un
+#     `ConfigMap` — un descriptor es una funcion pura y no puede leerlo al componer;
+#   · `frontend/vite.config.ts` y `frontend/src/**`, porque el prefijo que el ingreso quita y la
+#     `base` que Vite hornea son dos mitades de una sola decision y tienen que moverse juntas;
+#   · `frontend/Dockerfile`, porque `runAsNonRoot` solo lo puede comprobar el kubelet si el `USER`
+#     de la imagen es un numero;
+#   · `Api.java`, porque la ruta que NO se le quita a la API es su `RAIZ`.
+#
+# Sin estas lineas, editar solo uno de esos archivos dejaria la comprobacion vieja **en verde**: la
+# guarda no se rompe, deja de correr. Es el mismo modo de fallo silencioso que la fila que nadie
+# escribe (`registro.yml`) o la tabla que falta en el reparto (#27).
+#
+# La lista va escrita dos veces, y no por descuido: GitHub Actions **no admite anclas de YAML**
+# (`&`/`*`) en un flujo, asi que no hay forma de nombrarla una sola vez.
 on:
   push:
     branches: [main]
-    paths: ["infrastructure/**", ".github/workflows/infraestructura.yml"]
+    paths:
+      - "infrastructure/**"
+      - "frontend/nginx.conf"
+      - "frontend/vite.config.ts"
+      - "frontend/Dockerfile"
+      - "frontend/src/**"
+      - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - ".github/workflows/infraestructura.yml"
   pull_request:
-    paths: ["infrastructure/**", ".github/workflows/infraestructura.yml"]
+    paths:
+      - "infrastructure/**"
+      - "frontend/nginx.conf"
+      - "frontend/vite.config.ts"
+      - "frontend/Dockerfile"
+      - "frontend/src/**"
+      - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - ".github/workflows/infraestructura.yml"
 
 # Sin permisos de escritura: este trabajo lee y verifica, no publica nada.
 permissions:
