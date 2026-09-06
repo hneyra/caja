@@ -41,10 +41,22 @@ import { describe, expect, it } from "vitest";
  */
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const SRC = join(AQUI, "..", "src");
+const RAIZ = join(AQUI, "..");
+const SRC = join(RAIZ, "src");
+const CONFIG_DE_ESLINT = join(RAIZ, "eslint.config.mjs");
 
-/** Extensiones de recurso, las mismas que `eslint.config.mjs` reconoce. */
-const RECURSOS = "png|jpe?g|gif|svg|webp|avif|ico|woff2?|css|js|mjs|json";
+/**
+ * Las extensiones de recurso, **leidas del texto de `eslint.config.mjs`**.
+ *
+ * No se copian: se leen, por lo mismo que `importes-de-datos.test.ts` lee de ahi su lista de
+ * campos de dinero. Con dos listas escritas a mano, ampliar una y no la otra deja a uno de los dos
+ * instrumentos mirando menos que el otro sin que nada lo diga — y el que se quedaria corto es este,
+ * que es justo el que ve lo que ESLint no puede.
+ */
+const RECURSOS = (() => {
+  const texto = readFileSync(CONFIG_DE_ESLINT, "utf8");
+  return /const RECURSOS\s*=\s*"([^"]+)"/.exec(texto)?.[1] ?? "";
+})();
 
 /** Una ruta absoluta encontrada: donde estaba, que decia y con que forma se escribio. */
 interface Hallazgo {
@@ -94,11 +106,14 @@ function fuentes(): { archivo: string; texto: string; esCss: boolean }[] {
 
 describe("ningun recurso de `src/` se pide a la raiz del dominio", () => {
   it("hay archivos que mirar: un escaner sobre cero archivos siempre sale verde", () => {
-    // «No encontro nada» y «no miro nada» se leen igual en la salida. Las dos cifras de abajo son
-    // las que distinguen un verde de un vacio.
+    // «No encontro nada» y «no miro nada» se leen igual en la salida. Las tres cifras de abajo son
+    // las que distinguen un verde de un vacio: los archivos leidos, el CSS entre ellos, y que la
+    // lista de extensiones se haya leido de `eslint.config.mjs` — vacia, este escaner no casaria
+    // con nada y saldria verde con `src/` entero roto.
     const todas = fuentes();
     expect(todas.filter((f) => !f.esCss).length).toBeGreaterThan(30);
     expect(todas.filter((f) => f.esCss).length).toBeGreaterThan(0);
+    expect(RECURSOS, "no se pudo leer `const RECURSOS` de `eslint.config.mjs`").toContain("png");
   });
 
   it("no queda ninguna, ni en el codigo ni en el CSS", () => {

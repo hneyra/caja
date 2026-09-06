@@ -76,7 +76,18 @@ contar(`\`index.html\`: ${delIndice.length} recursos propios, todos bajo \`${PRE
 // Criterio 3, literal: el paquete no contiene ninguna ruta absoluta a la raiz del dominio. Se
 // mira la forma exacta que Vite NO reescribe —un literal de cadena— y con la comilla dentro,
 // que es lo que distingue `"/escudo-catacaos.png"` de `"/caja/escudo-catacaos.png"`.
-const EXTENSIONES = "png|jpe?g|gif|svg|webp|avif|ico|woff2?|css|js|mjs|json";
+//
+// La lista de extensiones se LEE de `eslint.config.mjs`, no se copia: es la tercera pieza que la
+// usa —la regla, el escaner de `src/` y esto—, y tres listas escritas a mano son tres cosas que
+// pueden separarse sin que nada lo diga. Vacia, este arnes no casaria con nada y saldria verde
+// sobre un paquete roto, asi que se comprueba antes de usarla.
+const EXTENSIONES = /const RECURSOS\s*=\s*"([^"]+)"/.exec(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "eslint.config.mjs"), "utf8"),
+)?.[1];
+if (!EXTENSIONES?.includes("png")) {
+  console.log("no se pudo leer `const RECURSOS` de `eslint.config.mjs`: este arnes estaria ciego");
+  process.exit(1);
+}
 const enElPaquete = [
   ...new Set(
     [...codigo.matchAll(new RegExp(`(["'\`])(/[A-Za-z0-9._~/-]+\\.(?:${EXTENSIONES}))\\1`, "g"))].map(
