@@ -1,0 +1,72 @@
+import type { ReactNode } from "react";
+import type { ClaveDeSeccion } from "@/datos";
+import { SECCIONES } from "@/datos";
+
+/**
+ * El hueco de una de las cuatro pantallas propias, mientras la pantalla no esta portada.
+ *
+ * <h2>Por que hay una ranura y no un `switch`</h2>
+ *
+ * Las cuatro pantallas se portan en issues posteriores, y el marco —pestanas, titulo, hash y
+ * cierre— no tiene por que saber cual dibuja cada seccion. `App` recibe el componente que
+ * pinta la seccion activa y lo llama con {@link PropsDePantalla}; hoy el que llega por omision
+ * es este marcador, y manana seran las pantallas de verdad **sin tocar el marco**.
+ *
+ * Esa ranura es tambien lo unico que hace observable `fijarCampo`, que es la forma —la del
+ * artboard, su `set(k, v)` de la linea 1352— de ensuciar una pestana: una pantalla que edita un
+ * campo lo llama y el marco pone el ` *`, el aviso de cerrar y el dialogo. Ninguna pantalla
+ * tiene campos todavia, asi que hoy no lo llama nadie.
+ */
+
+/** Lo que el marco le da a la pantalla que dibuja la seccion activa. */
+export interface PropsDePantalla {
+  /** Cual de las cuatro secciones propias se esta dibujando. */
+  readonly seccion: ClaveDeSeccion;
+  /** Guarda el valor de un campo y **marca sucia** la pestana activa. Es el `set` de la 1352. */
+  readonly fijarCampo: (clave: string, valor: string) => void;
+  /** El valor de un campo, o `porOmision` si nadie lo ha tocado. Es el `val` de la 1358. */
+  readonly valorDeCampo: (clave: string, porOmision: string) => string;
+}
+
+/** El componente que dibuja una seccion propia. */
+export type Pantalla = (props: PropsDePantalla) => ReactNode;
+
+/** El texto del marcador, compuesto con el rotulo de la seccion. */
+export const textoDelMarcador = (rotulo: string) =>
+  `La pantalla de «${rotulo}» se porta en un issue siguiente. El marco ya funciona: se abre ` +
+  "en pestaña, se navega entre las abiertas, se cierra y el hash de la URL dice cuál está a " +
+  "la vista.";
+
+export function MarcadorDeSeccion({ seccion }: PropsDePantalla) {
+  const rotulo = SECCIONES.find((x) => x.clave === seccion)?.label ?? seccion;
+  return (
+    <div
+      data-seccion={seccion}
+      // El contenedor de pantalla del artboard (linea 480): mismo relleno y misma entrada.
+      style={{ flex: 1, overflow: "auto", padding: 18, animation: "fadeIn .22s ease" }}
+    >
+      <div
+        style={{
+          maxWidth: 640,
+          background: "#fff",
+          border: "1px dashed var(--linea)",
+          borderRadius: "var(--radio-8)",
+          padding: "16px 18px",
+        }}
+      >
+        <p style={{ margin: 0, fontSize: 15, fontWeight: "var(--peso-fuerte)" }}>{rotulo}</p>
+        <p
+          style={{
+            margin: "7px 0 0",
+            fontSize: 13.5,
+            lineHeight: 1.6,
+            color: "var(--tinta-3)",
+            textWrap: "pretty",
+          }}
+        >
+          {textoDelMarcador(rotulo)}
+        </p>
+      </div>
+    </div>
+  );
+}

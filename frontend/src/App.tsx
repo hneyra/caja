@@ -1,23 +1,47 @@
 import { useState } from "react";
-import { ENTIDAD, MODULO, NOMBRE_DE_LA_APLICACION } from "@/aplicacion";
 import { ArbolDeModulos, type DestinoDelArbol } from "@/arbol/ArbolDeModulos";
 import { AvisoDelSistema } from "@/barra/AvisoDelSistema";
 import { BarraGlobal } from "@/barra/BarraGlobal";
 import { Toast, usarToast } from "@/barra/Toast";
-import { EJERCICIOS } from "@/datos";
+import { EJERCICIOS, HOJAS } from "@/datos";
+import { BarraDePestanas } from "@/marco/BarraDePestanas";
+import { DialogoDeCambios } from "@/marco/DialogoDeCambios";
+import { FilaDelTitulo } from "@/marco/FilaDelTitulo";
+import { MarcadorDeSeccion, type Pantalla } from "@/marco/MarcadorDeSeccion";
+import { PestanaAjena } from "@/marco/PestanaAjena";
+import {
+  esSeccionPropia,
+  MENSAJE_DE_COBRO_NUEVO,
+  mensajeDeGuardado,
+  pestanasDe,
+  subtituloDe,
+  tituloDe,
+} from "@/marco/rotulos";
+import { SinPestanas } from "@/marco/SinPestanas";
+import { usarPestanas } from "@/marco/usarPestanas";
 
 /**
- * El armazon de `caja-web`: la barra global, el aviso de servicio, el arbol de modulos y el toast.
+ * El marco de `caja-web`: la barra global, el arbol de modulos, las pestanas y lo que hay
+ * abierto en ellas.
  *
- * A la derecha del arbol todavia no hay ninguna pantalla —llegan en los issues siguientes,
- * portadas desde `TesoreriaV6.dc.html`—, y por eso el cuerpo es un marcador de posicion que lo
- * dice.
+ * Portado de `TesoreriaV6.dc.html`: la fila de las lineas 204 y 378, la barra de pestanas
+ * (380-401), la fila del titulo (403-416), el hueco sin pestanas (418-426), la banda del aviso
+ * (428-436), la tarjeta de pestana ajena (438-464) y el dialogo de cambios sin guardar
+ * (862-883).
  *
  * <h2>Donde vive el estado</h2>
  *
  * Aqui, como en el artboard: un solo componente con un solo `state`. Lo que la barra hace es
- * **alternarlo**, no interpretarlo, que es lo que permite que el arbol de modulos, las
- * pestanas y la paleta se enchufen despues sin tocar la barra.
+ * **alternarlo**, no interpretarlo. Lo que ya es demasiado para un `useState` suelto —lo
+ * abierto, lo activo, lo sucio y lo que se pregunta cerrar— vive en `usarPestanas`, que es el
+ * mismo objeto de estado del artboard con sus transiciones al lado.
+ *
+ * <h2>Las cuatro pantallas no estan, y la ranura por la que entraran si</h2>
+ *
+ * `Pantalla` es el componente que dibuja la seccion activa. Por omision es
+ * `MarcadorDeSeccion`, que dice que la pantalla llega despues; cuando se porten, se sustituye
+ * ahi y el marco no se entera. Es tambien lo que hace observable `fijarCampo`, la unica forma
+ * de ensuciar una pestana.
  */
 
 /** El texto del toast al cambiar de ejercicio. Artboard, linea 1496. */
@@ -34,7 +58,7 @@ export const mensajeDeEjercicio = (ejercicio: string) =>
  * rompe nada visible hasta que dos capas se dibujan a la vez.
  */
 interface LoQueEstaAbierto {
-  /** El arbol de modulos de la izquierda. Lo dibuja el issue del arbol. */
+  /** El arbol de modulos de la izquierda. */
   readonly modulos: boolean;
   /** La paleta de comandos. Su contenido es del issue de la paleta. */
   readonly paleta: boolean;
@@ -42,13 +66,7 @@ interface LoQueEstaAbierto {
   readonly sesion: boolean;
 }
 
-/**
- * El arbol arranca **desplegado**, como el artboard (`secOpen: true`, linea 1219).
- *
- * Hasta el issue del arbol arrancaba cerrado, y con su motivo escrito aqui: un
- * `aria-expanded="true"` sobre una region que no existe lo anuncia un lector de pantalla. Ahora
- * la region existe —el `<aside aria-label="Módulos y submódulos">`—, asi que la deuda se paga.
- */
+/** El arbol arranca **desplegado**, como el artboard (`secOpen: true`, linea 1219). */
 const AL_ARRANCAR: LoQueEstaAbierto = {
   modulos: true,
   paleta: false,
@@ -56,30 +74,19 @@ const AL_ARRANCAR: LoQueEstaAbierto = {
   sesion: false,
 };
 
-/**
- * Las pestanas abiertas al arrancar y cual es la activa: `abiertas: ['panel']` y `dest: 'panel'`
- * del artboard (linea 1219).
- *
- * Son **constantes y no estado**, y eso es el limite de este issue: el arbol las dibuja —la
- * pastilla de cuantas hay abiertas por modulo, el realce de la activa y la marca «abierta»— pero
- * abrirlas y cerrarlas es la barra de pestanas, que llega en el issue siguiente. Un `useState`
- * aqui seria empezar a escribir `ir()` sin la mitad que lo usa.
- */
-const ABIERTAS_AL_ARRANCAR: readonly string[] = ["panel"];
-const ACTIVA_AL_ARRANCAR = "panel";
-
-export function App() {
-  const [abierto, fijarAbierto] = useState<LoQueEstaAbierto>(AL_ARRANCAR);
-
+export interface AppProps {
   /**
-   * El ultimo destino que el arbol pidio.
+   * Quien dibuja la seccion propia que este activa.
    *
-   * No abre nada: aqui no hay pestanas ni enrutado por hash todavia. Se guarda por el mismo
-   * motivo que `data-paleta` —un estado que nadie puede observar no se puede verificar—, de modo
-   * que la prueba pueda afirmar que pulsar un submodulo llama al `alIr` inyectado con su clave, y
-   * que la cola de trabajo llama con el nodo de «Cajas y arqueo» que le toca.
+   * Se pasa entera y no seccion a seccion porque las cuatro pantallas comparten contrato
+   * ({@link import("@/marco/MarcadorDeSeccion").PropsDePantalla}) y el marco no distingue entre
+   * ellas: lo que cambia con la seccion es el titulo, y eso lo calcula `rotulos.ts`.
    */
-  const [destino, fijarDestino] = useState<{ clave: string; nodo?: number } | null>(null);
+  readonly Pantalla?: Pantalla;
+}
+
+export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
+  const [abierto, fijarAbierto] = useState<LoQueEstaAbierto>(AL_ARRANCAR);
 
   /**
    * Los dos booleanos del aviso, como en el artboard (linea 1225): `aviso` es si sigue vivo y
@@ -93,17 +100,53 @@ export function App() {
 
   const { toast, avisar } = usarToast();
 
-  /** Lo que el arbol llama al pulsar un submodulo o una entrada de la cola. */
-  const alIr = (clave: string, extra?: DestinoDelArbol) =>
-    fijarDestino({ clave, ...(extra?.nodo === undefined ? {} : { nodo: extra.nodo }) });
+  const pestanas = usarPestanas();
+
+  /**
+   * Lo que el arbol llama al pulsar un submodulo o una entrada de la cola.
+   *
+   * El `nodo` de la cola de trabajo se recibe y **todavia no se usa**: es la fila de «Cajas y
+   * arqueo» que hay que abrir, y quien la abre es esa pantalla, que llega despues. Se expone
+   * en un `data-` para que la prueba del arbol pueda seguir midiendolo.
+   */
+  const [nodo, fijarNodo] = useState<number | null>(null);
+
+  /**
+   * Ir a un destino: lo abre si no estaba, lo activa y **cierra el lanzador y la paleta**.
+   *
+   * Los dos cierres son del artboard (`ir`, linea 1345) y valen para las tres puertas de
+   * entrada —el arbol, la barra de pestanas y el boton «Cobrar»—, que es por lo que estan aqui
+   * y no en cada una: olvidar uno no rompe nada visible hasta que dos capas se dibujan a la vez.
+   */
+  const irA = (clave: string) => {
+    fijarAbierto((x) => ({ ...x, lanzador: false, paleta: false }));
+    pestanas.ir(clave);
+  };
+
+  const alIr = (clave: string, extra?: DestinoDelArbol) => {
+    fijarNodo(extra?.nodo ?? null);
+    irA(clave);
+  };
+
+  const visibles = pestanasDe(pestanas.abiertas, pestanas.activa, pestanas.sucias);
+  const activa = pestanas.activa;
+  const hayPestanas = pestanas.abiertas.length > 0 && activa !== null;
+  const ajena = activa !== null && !esSeccionPropia(activa);
+  const porCerrar = pestanas.porCerrar;
+  const rotuloPorCerrar =
+    porCerrar === null ? "" : (HOJAS[porCerrar]?.label ?? porCerrar);
 
   return (
     <div
       // El estado de la paleta no se ve todavia —su dialogo es de otro issue—, asi que se
       // expone aqui: un estado que nadie puede observar no se puede verificar, y este si.
       data-paleta={abierto.paleta ? "abierta" : "cerrada"}
-      data-ir={destino?.clave ?? ""}
-      data-ir-nodo={destino?.nodo === undefined ? "" : String(destino.nodo)}
+      // `data-ir` es **la seccion activa**, que desde este issue ya se ve en la barra de
+      // pestanas y en el titulo; sigue estando porque `arbol.test.tsx` mide con ella que
+      // pulsar un submodulo llega hasta aqui. `data-ir-nodo` es lo unico que todavia no se
+      // dibuja en ningun sitio.
+      data-ir={activa ?? ""}
+      data-ir-nodo={nodo === null ? "" : String(nodo)}
       style={{ display: "flex", flexDirection: "column", height: "100vh" }}
     >
       <BarraGlobal
@@ -129,53 +172,87 @@ export function App() {
         }
       />
 
-      {aviso && avisoAbierto && (
-        <AvisoDelSistema
-          alDescartar={() => {
-            fijarAviso(false);
-            fijarAvisoAbierto(false);
-          }}
-        />
-      )}
-
       {/* La fila de la linea 204 del artboard: el arbol a la izquierda y el resto a la derecha.
           El arbol **empuja** el contenido en vez de taparlo, que es lo que dice el issue de la
           barra global, y por eso es una fila y no una capa flotante. */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
         {abierto.modulos && (
           <ArbolDeModulos
-            abiertas={ABIERTAS_AL_ARRANCAR}
-            activa={ACTIVA_AL_ARRANCAR}
+            abiertas={pestanas.abiertas}
+            activa={activa}
+            sucias={pestanas.sucias}
             alIr={alIr}
           />
         )}
 
+        {/* La columna de la derecha, linea 378. Es un `<main>` y no un `<div>`: el artboard no
+            marca landmarks y esta pantalla si los necesita. */}
         <main
           style={{
             flex: 1,
             minWidth: 0,
-            minHeight: 0,
-            overflow: "auto",
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 14,
-            padding: 24,
+            overflow: "hidden",
           }}
         >
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: "var(--peso-fuerte)" }}>
-            {NOMBRE_DE_LA_APLICACION}
-          </h1>
-          <p style={{ margin: 0, color: "var(--tinta-2)" }}>
-            {MODULO} · {ENTIDAD}
-          </p>
-          <p style={{ margin: 0, maxWidth: 440, textAlign: "center", color: "var(--tinta-3)" }}>
-            A la izquierda está el árbol de módulos y arriba la barra global. Aquí todavía no hay
-            ninguna pantalla: las pestañas y las cuatro pantallas llegan en los issues siguientes.
-          </p>
+          <BarraDePestanas
+            pestanas={visibles}
+            alIr={irA}
+            alCerrar={(clave) => pestanas.pedirCierre(clave)}
+          />
+
+          {hayPestanas && (
+            <FilaDelTitulo
+              titulo={tituloDe(activa)}
+              subtitulo={subtituloDe(activa)}
+              hayAccion={activa !== null && esSeccionPropia(activa)}
+              alCobrar={() => {
+                irA("predios");
+                avisar(MENSAJE_DE_COBRO_NUEVO);
+              }}
+            />
+          )}
+
+          {!hayPestanas && <SinPestanas />}
+
+          {/* La banda del aviso va **debajo de la barra de pestanas** (linea 428), que es donde
+              el artboard la pone. Hasta este issue estaba bajo la barra global porque no habia
+              pestanas debajo de las que ponerla. */}
+          {aviso && avisoAbierto && (
+            <AvisoDelSistema
+              alDescartar={() => {
+                fijarAviso(false);
+                fijarAvisoAbierto(false);
+              }}
+            />
+          )}
+
+          {activa !== null && ajena && (
+            <PestanaAjena clave={activa} alCerrar={() => pestanas.pedirCierre(activa)} />
+          )}
+
+          {activa !== null && esSeccionPropia(activa) && (
+            <Pantalla
+              seccion={activa}
+              fijarCampo={pestanas.fijarCampo}
+              valorDeCampo={pestanas.valorDeCampo}
+            />
+          )}
         </main>
       </div>
+
+      {porCerrar !== null && (
+        <DialogoDeCambios
+          rotulo={rotuloPorCerrar}
+          alDescartar={() => pestanas.cerrarPestana(porCerrar)}
+          alSeguir={pestanas.cancelarCierre}
+          alGuardar={() => {
+            avisar(mensajeDeGuardado(rotuloPorCerrar));
+            pestanas.cerrarPestana(porCerrar);
+          }}
+        />
+      )}
 
       {toast !== "" && <Toast texto={toast} />}
     </div>
