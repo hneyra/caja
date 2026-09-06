@@ -220,7 +220,8 @@ cd ../../infrastructure
 docker compose -f despliegue/plataforma.compose.yaml up -d --wait
 
 # Lo de ESTE sistema contra ella: sus tres procesos y su interfaz (#18). El `.env` es el de
-# la plataforma. `caja-interfaz` no necesita nada de lo demas y se puede levantar solo.
+# la plataforma, y la red `kamayuk-plataforma` tiene que existir ya (`external: true`).
+# `caja-interfaz` se levanta SOLO: no arrastra migrador, implantacion ni backend.
 cd ../caja
 docker compose -f despliegue/compose.yaml up -d --build --wait
 docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait
