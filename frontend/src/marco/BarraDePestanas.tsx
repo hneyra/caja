@@ -76,6 +76,8 @@ export function BarraDePestanas({ pestanas, alIr, alCerrar }: BarraDePestanasPro
   return (
     <div
       data-pestanas=""
+      // Cromo: no se imprime. Ver `data-cromo` en `BarraGlobal`.
+      data-cromo="pestanas"
       style={{
         flex: "0 0 auto",
         display: "flex",

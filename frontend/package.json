@@ -13,7 +13,9 @@
     "test": "vitest run",
     "verificar": "yarn lint && yarn typecheck && yarn test",
     "paleta": "node verificaciones/paleta.mjs",
-    "pegajosa": "node verificaciones/pegajosa.mjs"
+    "pegajosa": "node verificaciones/pegajosa.mjs",
+    "mirar": "node verificaciones/mirar.mjs",
+    "cero-red": "node verificaciones/cero-red.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
