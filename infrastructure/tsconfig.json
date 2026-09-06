@@ -11,7 +11,7 @@
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "node"]
   },
   "include": ["src/**/*.ts", "verificaciones/**/*.ts", "*.ts", "*.mjs"]
 }

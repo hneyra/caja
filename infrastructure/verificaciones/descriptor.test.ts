@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Contenedor, EntornoDelDescriptor, Manifiesto } from "@kamayuk/infra-contrato";
 import { caja } from "../src/descriptor";
@@ -154,8 +156,17 @@ describe("C-14 — que esto se pueda desplegar", () => {
     expect(declara(c, "KAMAYUK_DB_USUARIO")).toBe(false);
   });
 
-  it("y las dos imagenes son los dos objetivos del Dockerfile", () => {
-    expect(caja.imagenes).toEqual(["caja", `${"caja"}-migrador`]);
+  /**
+   * TRES desde #17, y no son tres objetivos del mismo `Dockerfile`.
+   *
+   * Las dos primeras si lo son (C-14, punto 1). La tercera sale de `frontend/Dockerfile`, con
+   * contexto `frontend/`, y no comparte una capa con ellas. El nombre importa mas que el numero:
+   * **`caja-interfaz`, nunca `caja-web`**, porque `kamayuk-caja-web` ya es el `Deployment` y el
+   * `Service` del backend con el perfil `web` de Spring.
+   */
+  it("sus tres imagenes, y la de la interfaz no se llama como el backend", () => {
+    expect(caja.imagenes).toEqual(["caja", `${"caja"}-migrador`, `${"caja"}-interfaz`]);
+    expect(caja.imagenes).not.toContain(`${"caja"}-web`);
   });
 
   /**
@@ -276,18 +287,469 @@ describe("C-17 — que el despliegue pase de verdad", () => {
    * anadida a mano sobre el clúster, las ocho tareas de los cuatro sistemas pasaron de `Failed` a
    * `Complete` (C-17, punto 3).
    */
-  it("abre DNS hacia kube-system, en UDP y en TCP", () => {
-    const reglas = caja.egreso(ENTORNO).flatMap((p) => p.spec.egress ?? []);
-    const dns = reglas.filter((r) =>
-      (r.to ?? []).some(
-        (d) => d.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"] === "kube-system",
-      ),
+  /**
+   * Y **cada** politica de egreso la abre, no «alguna».
+   *
+   * Hasta #17 habia una sola politica de egreso y bastaba contarla. Con la de la interfaz al lado
+   * son dos, y un `toHaveLength(1)` sobre el total no distingue «las dos la tienen» de «una la
+   * tiene y la otra no» — que es justo el caso que deja un pod sin resolver un solo nombre, con la
+   * politica de al lado en verde.
+   */
+  it("toda politica de egreso abre DNS hacia kube-system, en UDP y en TCP", () => {
+    const politicas = caja.egreso(ENTORNO).filter((p) => p.spec.policyTypes.includes("Egress"));
+    expect(politicas.length, "ninguna politica de egreso: ¿se dejo de leer?").toBeGreaterThan(1);
+
+    for (const politica of politicas) {
+      const dns = (politica.spec.egress ?? []).filter((r) =>
+        (r.to ?? []).some(
+          (d) => d.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"] === "kube-system",
+        ),
+      );
+      const donde = politica.metadata.name;
+      expect(dns, `${donde}: sin DNS ninguna otra regla suya puede resolver un nombre`).toHaveLength(1);
+      expect(
+        (dns[0]?.ports ?? []).map((p) => `${p.protocol}/${p.port}`).sort(),
+        `${donde}: TCP tambien, que una respuesta que no cabe en un datagrama se reintenta por TCP`,
+      ).toEqual(["TCP/53", "UDP/53"]);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #17 — el despliegue de la interfaz de ventanilla
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NOMBRE_DE_LA_INTERFAZ = "kamayuk-caja-interfaz";
+const NOMBRE_DEL_BACKEND = "kamayuk-caja-web";
+
+/** Un archivo del repositorio, por su ruta desde la raiz. */
+function delRepositorio(ruta: string): string {
+  return readFileSync(fileURLToPath(new URL(`../../${ruta}`, import.meta.url)), "utf8");
+}
+
+/** Los manifiestos que `despliegue()` produce, de una clase. */
+function delDespliegue<K extends Manifiesto["kind"]>(clase: K) {
+  return caja
+    .despliegue(ENTORNO)
+    .filter((m): m is Extract<Manifiesto, { kind: K }> => m.kind === clase);
+}
+
+function deploymentDeLaInterfaz() {
+  const d = delDespliegue("Deployment").find((m) => m.metadata.name === NOMBRE_DE_LA_INTERFAZ);
+  expect(d, `no hay ningun Deployment «${NOMBRE_DE_LA_INTERFAZ}»`).toBeDefined();
+  return d!;
+}
+
+function rutasDelIngreso() {
+  const todas = caja
+    .ingreso(ENTORNO)
+    .filter((m) => m.kind === "IngressRoute")
+    .flatMap((m) => m.spec.routes);
+  return {
+    api: todas.find((r) => r.match.includes("/caja/api/v1"))!,
+    interfaz: todas.find((r) => !r.match.includes("/caja/api/v1"))!,
+    todas,
+  };
+}
+
+describe("#17 — la interfaz se despliega, y no se llama como el backend", () => {
+  /**
+   * Criterio 3. Lo que se afirma no es «hay cuatro manifiestos» sino **que ninguno de los dos de
+   * la interfaz se llama como los del backend**: `kamayuk-caja-web` ya existe, y reutilizar ese
+   * nombre no daria un error de despliegue sino un `Service` repartiendo entre un backend de
+   * Spring y un nginx de archivos estaticos — la mitad de las peticiones de la API contestadas
+   * con el `index.html`.
+   */
+  it("el Deployment y el Service de la interfaz van al lado de los del backend, con otro nombre", () => {
+    const deployments = delDespliegue("Deployment").map((m) => m.metadata.name);
+    const services = delDespliegue("Service").map((m) => m.metadata.name);
+
+    expect(deployments).toEqual([NOMBRE_DEL_BACKEND, NOMBRE_DE_LA_INTERFAZ]);
+    expect(services).toEqual([NOMBRE_DEL_BACKEND, NOMBRE_DE_LA_INTERFAZ]);
+
+    // Los cuatro manifiestos, con dos nombres distintos: uno por pieza. Se afirma aparte porque
+    // las dos listas de arriba se pueden cumplir por separado y aun asi chocar entre si.
+    const nombres = [...deployments, ...services];
+    expect(new Set(nombres).size, `nombres repetidos: ${nombres.join(", ")}`).toBe(2);
+  });
+
+  /**
+   * Criterio 4. La auditoria de `infrastructure` rechaza un `Deployment` sin limites ni sondas
+   * —prohibicion (d)— y `runAsNonRoot` es «el endurecimiento que no admite excepcion» (#157).
+   */
+  it("su Deployment declara limites, las dos sondas y el endurecimiento entero", () => {
+    const c = deploymentDeLaInterfaz().spec.template.spec.containers[0]!;
+
+    expect(c.resources.limits.cpu).toBeTruthy();
+    expect(c.resources.limits.memory).toBeTruthy();
+    expect(c.resources.requests.cpu).toBeTruthy();
+    expect(c.resources.requests.memory).toBeTruthy();
+
+    // Vida y disponibilidad. Y con `timeoutSeconds` entre 3 y 5: el valor por omision del kubelet
+    // es 1 s, y tres fallos de la sonda de vida matan el contenedor con codigo 143, que se parece
+    // a un OOM sin serlo.
+    for (const sonda of [c.livenessProbe, c.readinessProbe]) {
+      expect(sonda).toBeDefined();
+      expect(sonda!.httpGet?.path, "la sonda pide la pantalla, no un puerto abierto").toBe("/");
+      expect(sonda!.timeoutSeconds).toBeGreaterThanOrEqual(3);
+      expect(sonda!.timeoutSeconds).toBeLessThanOrEqual(5);
+    }
+
+    expect(c.securityContext?.runAsNonRoot).toBe(true);
+    expect(c.securityContext?.allowPrivilegeEscalation).toBe(false);
+    expect(c.securityContext?.capabilities.drop).toEqual(["ALL"]);
+  });
+
+  /**
+   * `runAsNonRoot: true` no lo puede comprobar el kubelet si el `USER` de la imagen es un NOMBRE:
+   * se niega a arrancar el contenedor con un `CreateContainerConfigError` que solo aparece al
+   * desplegar. Por eso `frontend/Dockerfile` dice `USER 101` en numero (#16), y por eso esta
+   * prueba lo lee de alli: el descriptor exige una propiedad que se cumple en otro archivo.
+   */
+  it("y la imagen que endurece trae un `USER` numerico, que es lo unico que el kubelet comprueba", () => {
+    const usuarios = [...delRepositorio("frontend/Dockerfile").matchAll(/^USER\s+(\S+)/gm)].map(
+      (m) => m[1]!,
+    );
+    expect(
+      usuarios,
+      "`frontend/Dockerfile` no declara ningun USER: correria como root",
+    ).not.toEqual([]);
+    for (const u of usuarios) expect(u, `USER ${u} no es un numero`).toMatch(/^\d+$/);
+    for (const u of usuarios) expect(Number(u), "USER 0 es root").not.toBe(0);
+  });
+
+  /**
+   * Criterio 8. La prohibicion (e) es «un Secret en claro»; esto es mas fuerte: **la interfaz no
+   * declara ni una variable de entorno**, ni con valor ni con `secretKeyRef`. No tiene backend al
+   * que llamar ni credencial que manejar, asi que cualquiera de las dos seria superficie regalada.
+   */
+  it("no maneja ninguna credencial: ni `secretKeyRef`, ni variables de entorno", () => {
+    const c = deploymentDeLaInterfaz().spec.template.spec.containers[0]!;
+    expect(c.env ?? []).toEqual([]);
+    expect(c.envFrom ?? []).toEqual([]);
+    expect(JSON.stringify(deploymentDeLaInterfaz())).not.toContain("secretKeyRef");
+  });
+});
+
+describe("#17 — el ingreso partido en dos, y la precedencia escrita", () => {
+  /**
+   * Criterio 5, y es **el fallo que este issue existe para impedir**.
+   *
+   * Con la precedencia al reves, `/caja/api/v1/...` lo atenderia el nginx de la interfaz, cuyo
+   * `try_files $uri /index.html` devuelve el `index.html` con un **200**: el cliente recibe HTML
+   * donde espera JSON y el error aparece lejos de su causa. Traefik v3 ordena por longitud de la
+   * regla cuando nadie declara `priority`, asi que hoy saldria bien por accidente — y por eso las
+   * dos rutas la declaran.
+   */
+  it("dos rutas, y la de la API gana a la de la interfaz", () => {
+    const { api, interfaz, todas } = rutasDelIngreso();
+    expect(todas).toHaveLength(2);
+
+    expect(api.services.map((s) => s.name)).toEqual([NOMBRE_DEL_BACKEND]);
+    expect(interfaz.services.map((s) => s.name)).toEqual([NOMBRE_DE_LA_INTERFAZ]);
+
+    expect(
+      api.priority,
+      "la ruta de la API no declara prioridad: quedaria a merced de la longitud de la regla",
+    ).toBeDefined();
+    expect(interfaz.priority, "la ruta de la interfaz no declara prioridad").toBeDefined();
+    expect(
+      api.priority!,
+      "al reves, la API la contesta el nginx de la interfaz con un 200 y el `index.html` dentro",
+    ).toBeGreaterThan(interfaz.priority!);
+  });
+
+  /**
+   * Criterio 6, ya cubierto por «todas sus rutas van bajo su prefijo», dicho aqui por el otro
+   * lado: la ruta de la API es **mas especifica** que la de la interfaz y las dos cuelgan de
+   * `/caja`.
+   */
+  it("las dos cuelgan de `/caja`, y la de la API es la de dentro", () => {
+    const { api, interfaz } = rutasDelIngreso();
+    expect(api.match).toContain("PathPrefix(`/caja/api/v1`)");
+    expect(interfaz.match).toContain("PathPrefix(`/caja`)");
+    expect(api.match).toContain(`Host(\`${ENTORNO.dominio}\`)`);
+    expect(interfaz.match).toContain(`Host(\`${ENTORNO.dominio}\`)`);
+  });
+
+  /**
+   * El middleware que quita el prefijo va **solo** en la ruta de la interfaz.
+   *
+   * La raiz de la API del backend es la ruta ENTERA —`Api.RAIZ = "/caja/api/v1"` en
+   * `kamayuk-caja-plataforma`, de donde cuelgan los `@RequestMapping` del nucleo—, asi que
+   * quitarsela dejaria a Spring buscando `/pagos` y contestando 404 a todo.
+   */
+  it("y el prefijo se lo quita a la interfaz, nunca a la API", () => {
+    const middlewares = caja.ingreso(ENTORNO).filter((m) => m.kind === "Middleware");
+    expect(middlewares, "no hay ningun Middleware que quite el prefijo").toHaveLength(1);
+    const middleware = middlewares[0]!;
+    expect(middleware.spec).toEqual({ stripPrefix: { prefixes: ["/caja"] } });
+    expect(
+      middleware.metadata.namespace,
+      "un Middleware de otro namespace no se referencia por nombre a secas",
+    ).toBe(ENTORNO.namespace);
+
+    const { api, interfaz } = rutasDelIngreso();
+    expect((interfaz.middlewares ?? []).map((m) => m.name)).toEqual([middleware.metadata.name]);
+    expect(
+      (api.middlewares ?? []).map((m) => m.name),
+      "quitarle `/caja` a la API deja a Spring buscando `/pagos`: 404 en todos sus endpoints",
+    ).toEqual([]);
+
+    // Y `Api.RAIZ` es de verdad la ruta entera, leido del backend y no supuesto.
+    expect(
+      delRepositorio("backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"),
+    ).toContain('RAIZ = "/caja/api/v1"');
+  });
+});
+
+describe("#17 — la configuracion de nginx que se monta", () => {
+  /**
+   * El `ConfigMap` es **el archivo**, caracter a caracter.
+   *
+   * La copia vive en `src/nginx-de-la-interfaz.ts` y no se lee del disco porque un descriptor es
+   * una funcion pura; lo que la hace segura es esta comparacion, que sale roja en cuanto los dos
+   * se separen. Para que salga roja **tambien cuando lo unico que cambia es el archivo**,
+   * `infraestructura.yml` lo nombra en su `paths:`.
+   */
+  it("el ConfigMap lleva `frontend/nginx.conf` sin una coma de diferencia", () => {
+    const configMaps = delDespliegue("ConfigMap");
+    expect(configMaps).toHaveLength(1);
+    expect(configMaps[0]!.data["default.conf"]).toBe(delRepositorio("frontend/nginx.conf"));
+  });
+
+  /** Y se monta donde el `Dockerfile` copia el suyo, o el `include conf.d/*.conf` no lo recoge. */
+  it("y se monta sobre el `default.conf` de la imagen, con `subPath`", () => {
+    const pod = deploymentDeLaInterfaz().spec.template.spec;
+    const configMap = delDespliegue("ConfigMap")[0]!.metadata.name;
+    const montaje = (pod.containers[0]!.volumeMounts ?? [])[0];
+
+    expect(montaje?.mountPath).toBe("/etc/nginx/conf.d/default.conf");
+    expect(montaje?.subPath, "sin `subPath` el montaje tapa el directorio entero de conf.d").toBe(
+      "default.conf",
+    );
+    expect(delRepositorio("frontend/Dockerfile")).toContain(
+      "COPY nginx.conf /etc/nginx/conf.d/default.conf",
     );
 
-    expect(dns, "sin DNS ninguna de las demas reglas de egreso puede resolver un nombre").toHaveLength(1);
+    const volumen = (pod.volumes ?? []).find((v) => v.name === montaje?.name);
     expect(
-      (dns[0]?.ports ?? []).map((p) => `${p.protocol}/${p.port}`).sort(),
-      "TCP tambien: una respuesta que no cabe en un datagrama se reintenta por TCP",
-    ).toEqual(["TCP/53", "UDP/53"]);
+      volumen?.configMap?.name,
+      "el volumen no apunta al ConfigMap que este descriptor emite",
+    ).toBe(configMap);
+  });
+});
+
+describe("#17 — las dos politicas de red de la interfaz", () => {
+  function politicaDeLaInterfaz(tipo: "Ingress" | "Egress") {
+    const p = caja
+      .egreso(ENTORNO)
+      .find(
+        (n) =>
+          n.spec.podSelector.matchLabels?.["componente"] === "caja-interfaz" &&
+          n.spec.policyTypes.includes(tipo),
+      );
+    expect(p, `no hay politica de ${tipo} para la interfaz`).toBeDefined();
+    return p!;
+  }
+
+  /**
+   * Criterio 9, primera mitad. `infrastructure` deniega por omision en el namespace: sin esta
+   * regla el ingreso enruta y el paquete no llega — la ruta existe, el pod esta sano y el
+   * navegador se queda esperando.
+   */
+  it("Traefik le entra, y al puerto del POD, no al del Service", () => {
+    const reglas = politicaDeLaInterfaz("Ingress").spec.ingress ?? [];
+    expect(reglas).toHaveLength(1);
+    expect(
+      (reglas[0]!.from ?? []).map(
+        (f) => f.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"],
+      ),
+    ).toEqual(["kube-system"]);
+    // 8080 y no 80: una NetworkPolicy filtra sobre el puerto del CONTENEDOR, y el 80 → 8080 lo
+    // deshace el `Service` antes. Con 80 aqui, la politica no admitiria nada.
+    expect((reglas[0]!.ports ?? []).map((p) => `${p.protocol}/${p.port}`)).toEqual(["TCP/8080"]);
+    const contenedor = deploymentDeLaInterfaz().spec.template.spec.containers[0]!;
+    expect((contenedor.ports ?? []).map((p) => p.containerPort)).toEqual([8080]);
+  });
+
+  /**
+   * Criterio 9, segunda mitad: su egreso es **solo** DNS. Y no es una casilla: la interfaz no
+   * declara ninguna regla hacia el backend, asi que un reenvio escrito en `nginx.conf` manana no
+   * funcionaria en el clúster —aunque funcionara en el compose— y se veria en el PR que lo
+   * escriba, no en produccion.
+   */
+  it("y no sale a ningun otro sitio: solo DNS", () => {
+    const reglas = politicaDeLaInterfaz("Egress").spec.egress ?? [];
+    expect(reglas).toHaveLength(1);
+    expect(reglas[0]!.ports?.map((p) => p.port)).toEqual([53, 53]);
+    // La otra mitad de la afirmacion, y la que de verdad importa: nada apunta a ningun pod.
+    expect(JSON.stringify(reglas)).not.toContain(NOMBRE_DEL_BACKEND);
+    expect(JSON.stringify(reglas)).not.toContain("podSelector");
+  });
+
+  /**
+   * Y la interfaz **no hereda** las tres aristas del backend, que es lo que compra tener su propia
+   * etiqueta `componente`. Un nginx de archivos estaticos con salida a PostgreSQL es superficie
+   * que nadie pidio.
+   */
+  it("y no hereda el egreso del backend: su `componente` es otro", () => {
+    const delBackend = caja
+      .egreso(ENTORNO)
+      .filter((n) => n.spec.podSelector.matchLabels?.["componente"] === "caja");
+    expect(delBackend).toHaveLength(1);
+
+    const etiquetas = deploymentDeLaInterfaz().spec.template.metadata.labels;
+    expect(etiquetas["componente"]).toBe("caja-interfaz");
+    expect(etiquetas["componente"]).not.toBe("caja");
+  });
+});
+
+/** El texto de un archivo sin sus comentarios: una prohibicion no puede cazar a su propia prosa. */
+function sinComentarios(texto: string): string {
+  return texto.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** Los `.ts` de `src/`, recursivamente. */
+function fuentesDelDescriptor(): { nombre: string; texto: string }[] {
+  const raiz = fileURLToPath(new URL("../src/", import.meta.url));
+  return readdirSync(raiz, { recursive: true, encoding: "utf8" })
+    .filter((n) => n.endsWith(".ts"))
+    .map((n) => ({ nombre: n, texto: readFileSync(raiz + n, "utf8") }));
+}
+
+describe("#17 — criterio 7: ninguna etiqueta de imagen escrita a mano", () => {
+  /**
+   * La prohibicion (b), comprobada tambien sobre el TEXTO y no solo sobre lo que se devuelve.
+   *
+   * Se mira el codigo **sin comentarios**, y no es un detalle: este archivo habla de la imagen
+   * base de la interfaz por su version exacta, que es informacion util y no una etiqueta que
+   * nadie va a desplegar. Un escaner que se dispara con la prosa que lo explica es un escaner que
+   * alguien acaba apagando — la leccion del criterio 5 de #16, donde `grep -c proxy_pass` daba 3
+   * sobre un archivo con cero reenvios.
+   */
+  it("ni `:latest`, ni `:main`, ni `:stable` en el codigo del descriptor", () => {
+    const culpables = fuentesDelDescriptor()
+      .filter((f) => /:(latest|main|stable)\b/.test(sinComentarios(f.texto)))
+      .map((f) => f.nombre);
+    expect(culpables).toEqual([]);
+  });
+
+  it("y toda imagen sale de `e.imagenDe()`, incluida la de la interfaz", () => {
+    const admisibles = caja.imagenes.map((n) => ENTORNO.imagenDe(n));
+    const imagenes = [
+      ...caja.despliegue(ENTORNO),
+      ...caja.migracion(ENTORNO),
+      ...caja.implantacion(ENTORNO),
+    ].flatMap((m) =>
+      m.kind === "Deployment"
+        ? [...m.spec.template.spec.containers, ...(m.spec.template.spec.initContainers ?? [])]
+        : m.kind === "Job"
+          ? [...m.spec.template.spec.containers, ...(m.spec.template.spec.initContainers ?? [])]
+          : [],
+    );
+    expect(imagenes.length).toBeGreaterThan(0);
+    for (const c of imagenes) expect(admisibles, `contenedor «${c.name}»`).toContain(c.image);
+    // Y la de la interfaz esta de verdad entre ellas: sin esto, la afirmacion la cumpliria un
+    // despliegue en el que la interfaz no existe.
+    expect(imagenes.map((c) => c.image)).toContain(ENTORNO.imagenDe("caja-interfaz"));
+  });
+});
+
+/**
+ * La coherencia entre lo que el ingreso quita y lo que la interfaz hornea. Es la guarda que este
+ * issue deja para que la decision no se pueda deshacer a medias.
+ *
+ * Las tres piezas, medidas contra el nginx real de `nginx:1.31.4-alpine` con el `nginx.conf` de
+ * este repositorio y el `dist/` que `yarn build` produce:
+ *
+ *   1. `frontend/nginx.conf` sirve en la RAIZ (`root …/html; location / { try_files … }`) y no
+ *      declara ningun `location /caja`. Luego el ingreso tiene que quitar el prefijo, o nginx
+ *      recibe `/caja/assets/index-<huella>.js`, no encuentra el archivo, cae en el `try_files` y
+ *      contesta **200 text/html de 1 383 B** — el `index.html`, donde el navegador esperaba un
+ *      modulo. La pantalla queda en blanco sin un solo error en el servidor.
+ *   2. Quitado el prefijo, nginx sirve bien todo lo que le llega: `200 application/javascript`
+ *      para el paquete y `200 image/png` para el escudo.
+ *   3. Pero el navegador solo pide bajo `/caja` lo que el `index.html` diga. Con `base` sin
+ *      declarar en `frontend/vite.config.ts`, `dist/index.html` dice `src="/assets/…"`, o sea la
+ *      raiz del dominio: una ruta que `PathPrefix(/caja)` no casa y que este descriptor **no
+ *      puede reclamar** (prohibicion (a)).
+ *
+ * De modo que **las dos salidas no son alternativas**: el middleware es necesario y no suficiente,
+ * y `base` es necesario y no suficiente. Y hay una tercera pieza, que es la que impide cerrar esto
+ * hoy: `frontend/src/` escribe una ruta absoluta a la raiz en un literal de JavaScript, y **Vite
+ * no reescribe eso**. Medido: con `base: "/caja/"`, `dist/index.html` pasa a decir
+ * `/caja/escudo-catacaos.png` y el paquete sigue diciendo `/escudo-catacaos.png` — sobre el `dist/`
+ * servido, `mirar.mjs` sale con codigo 1 y cuatro «Failed to load resource: 404», uno por seccion.
+ *
+ * Esta prueba fija que las dos que quedan **se muevan juntas**: mientras haya un literal absoluto
+ * en `src/`, `base` tiene que estar sin declarar; el dia que no lo haya, `base` tiene que valer
+ * `/caja/`. Cualquiera de las dos mitades sola pone esto rojo.
+ */
+describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", () => {
+  const nginx = () => delRepositorio("frontend/nginx.conf");
+
+  /** El `base` que `vite.config.ts` declara. Sin declarar, Vite usa `/`. */
+  function baseDeVite(): string {
+    const encaje = /^\s*base:\s*"([^"]*)"/m.exec(sinComentarios(delRepositorio("frontend/vite.config.ts")));
+    return encaje?.[1] ?? "/";
+  }
+
+  /** Rutas absolutas a la raiz, escritas como literal de cadena, en el codigo de `frontend/src`. */
+  function absolutasEnSrc(): { archivo: string; ruta: string }[] {
+    const raiz = fileURLToPath(new URL("../../frontend/src/", import.meta.url));
+    const hallazgos: { archivo: string; ruta: string }[] = [];
+    for (const nombre of readdirSync(raiz, { recursive: true, encoding: "utf8" })) {
+      if (!/\.tsx?$/.test(nombre)) continue;
+      const texto = sinComentarios(readFileSync(raiz + nombre, "utf8"));
+      for (const m of texto.matchAll(
+        /["'`](\/[A-Za-z0-9._/-]+\.(?:png|jpe?g|gif|svg|webp|avif|ico|woff2?|css|js|mjs|json))["'`]/g,
+      )) {
+        hallazgos.push({ archivo: nombre, ruta: m[1]! });
+      }
+    }
+    return hallazgos;
+  }
+
+  it("nginx sirve en la raiz, asi que el ingreso tiene que quitar el prefijo", () => {
+    const conf = nginx();
+    expect(conf).toContain("root /usr/share/nginx/html;");
+    expect(conf).toContain("location / {");
+    expect(
+      conf,
+      "si nginx pasara a servir bajo /caja, el middleware que quita el prefijo sobraria",
+    ).not.toContain("location /caja");
+
+    const { interfaz } = rutasDelIngreso();
+    expect((interfaz.middlewares ?? []).length).toBe(1);
+  });
+
+  it("y `base` de Vite y las rutas absolutas de `src/` se mueven juntas", () => {
+    const absolutas = absolutasEnSrc();
+    const base = baseDeVite();
+
+    if (absolutas.length > 0) {
+      expect(
+        base,
+        `«${absolutas.map((a) => `${a.archivo}: ${a.ruta}`).join(", ")}» apunta a la raiz del ` +
+          "dominio y Vite no reescribe un literal de JavaScript. Con `base` declarado, esa " +
+          "peticion se va fuera de `/caja` y no llega: la pantalla sale sin escudo y `mirar.mjs` " +
+          "cuenta un 404 por seccion. Se arregla en `frontend/`, y entonces `base` pasa a `/caja/`.",
+      ).toBe("/");
+    } else {
+      expect(
+        base,
+        "ya no hay rutas absolutas en `src/`: toca declarar `base: \"/caja/\"` para que el " +
+          "navegador pida sus recursos bajo el prefijo que el ingreso quita",
+      ).toBe("/caja/");
+    }
+  });
+
+  /**
+   * Y el estado de hoy, dicho con nombre y apellido para que no se lea como una casilla: hay
+   * **una** ruta absoluta y es el escudo de la barra global.
+   */
+  it("hoy la unica que queda es el escudo de la barra", () => {
+    expect(absolutasEnSrc().map((a) => a.ruta)).toEqual(["/escudo-catacaos.png"]);
   });
 });
