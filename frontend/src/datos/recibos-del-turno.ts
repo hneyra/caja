@@ -145,3 +145,47 @@ export const RECIBOS: readonly Recibo[] = [
       "Anulado a las 08:32 por error en la cuota imputada · autorizado por el Jefe de Tesorería · la deuda volvió a la cuenta corriente",
   },
 ];
+
+/**
+ * Los cuatro chips del filtro de la lista, en el orden del artboard (linea 1869).
+ *
+ * `Todos` no filtra nada —es el estado con el que la lista se abre— y los otros tres son estados
+ * de recibo. Estan aqui y no en la pantalla porque **son un vocabulario de los datos**: cada uno
+ * tiene que casar con el `estado` o el `uso` de algun recibo, y esa correspondencia se comprueba
+ * en `verificaciones/recibos.test.tsx`. Un chip que no casara con ninguno vaciaria la lista sin
+ * decir por que.
+ */
+export const CHIPS: readonly string[] = ["Todos", "Aplicado", "Sin conciliar", "Anulado"];
+
+/** El chip que no filtra: el primero de {@link CHIPS}. */
+export const CHIP_DE_TODOS = "Todos";
+
+/** Los tres ordenes que la lista ofrece (linea 1876). */
+export type OrdenDeLaLista = "Recibo" | "Importe" | "Contribuyente";
+
+/**
+ * Los tres, en el orden en que el `<select>` los ofrece.
+ *
+ * El primero es **el natural**: no ordena nada, deja los recibos como estan en {@link RECIBOS},
+ * que es del mas reciente al mas antiguo. No es lo mismo que ordenar por `cod` descendente
+ * aunque hoy los dos den la misma lista: el dia que una serie no mida cuatro caracteres —ver la
+ * cabecera de este archivo— ordenar por el texto del codigo dejaria de dar ese mismo orden.
+ */
+export const ORDENES: readonly OrdenDeLaLista[] = ["Recibo", "Importe", "Contribuyente"];
+
+/** El orden con el que la lista se abre: el natural. */
+export const ORDEN_NATURAL: OrdenDeLaLista = "Recibo";
+
+/**
+ * Cuantos recibos lleva el turno: el «de 52» del conteo (linea 1878).
+ *
+ * **No es el numero de filas de {@link RECIBOS}, y ahi esta lo que hay que entender**: la lista
+ * ensena cinco recibos de muestra y el turno lleva 52. Por eso el conteo dice «5 de 52» y, con
+ * un filtro que deja una fila, «1 de 52» y no «1 de 1»: lo de la izquierda es lo que se ve y lo
+ * de la derecha es lo que hay.
+ *
+ * Es la misma cifra que la tarjeta «Su caja — C-3» del panel ensena como `52 recibos`. El
+ * artboard las escribe por separado y aqui se copian por separado —igual que la bandeja y la
+ * cola—; que sigan coincidiendo lo comprueba `verificaciones/recibos.test.tsx`.
+ */
+export const TOTAL_DEL_TURNO = "52";

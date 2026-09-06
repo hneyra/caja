@@ -32,6 +32,7 @@ import {
   NODO_DE_MI_CAJA,
   NODOS,
   RECIBOS,
+  SECCION_DE_RECIBOS,
   SECCIONES,
 } from "../src/datos";
 import {
@@ -411,15 +412,29 @@ describe("el panel es lo que `#panel` dibuja, y solo `#panel`", () => {
     expect(panel().textContent).toContain(TITULO_DE_LA_BANDEJA);
   });
 
-  it.each(SECCIONES.filter((s) => s.clave !== "panel").map((s) => [s.clave, s.label] as const))(
-    "y `%s` sigue en el marcador, sin nada del panel",
-    (clave, label) => {
+  it.each(SECCIONES.filter((s) => s.clave !== "panel").map((s) => [s.clave] as const))(
+    "y `%s` no dibuja nada del panel",
+    (clave) => {
       render(<App />);
       abrirSeccion(clave);
       expect(panel()).toBeNull();
-      expect(screen.getByText(textoDelMarcador(label))).toBeDefined();
     },
   );
+
+  /**
+   * Las que **siguen** en el marcador, que desde #11 ya no son las tres: `predios` es la lista
+   * de recibos. Se filtran por su clave y no se escriben a mano para que portar la siguiente
+   * ponga esta prueba roja en vez de dejarla midiendo una seccion que ya no existe alli.
+   */
+  it.each(
+    SECCIONES.filter((s) => s.clave !== "panel" && s.clave !== SECCION_DE_RECIBOS).map(
+      (s) => [s.clave, s.label] as const,
+    ),
+  )("y `%s` sigue en el marcador", (clave, label) => {
+    render(<App />);
+    abrirSeccion(clave);
+    expect(screen.getByText(textoDelMarcador(label))).toBeDefined();
+  });
 
   it("las doce filas llevan la clase del `style-hover`, y la regla existe", () => {
     // El `style-hover` del artboard, que `PORTAR.md` traduce a una clase porque un estilo en
