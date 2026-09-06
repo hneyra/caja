@@ -66,6 +66,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
    eso va literal: darle un token seria ampliar la paleta del diseno desde aqui. */
 .hov-arbol:hover, .hov-flotante:hover { background: #EFF7FC !important }
 
+/* —— El `style-hover` de las filas del panel (lineas 492, 510 y 529) ——
+   Las tres listas del Panel de Tesoreria llevan `style-hover="background:#F7FBFE"`, que **no
+   es** el `#EFF7FC` de `hov-arbol`: son dos grises distintos y el artboard los usa en sitios
+   distintos. `#F7FBFE` si es una constante del artboard (SUP, linea 924), asi que va por su
+   token. El `!important` es por lo mismo que en los demas: el estilo base es en linea. */
+.hov-fila:hover { background: var(--sup) !important }
+
 /* —— Los `style-hover` del marco de pestanas ——
    El aspa de una pestana (linea 396), el boton primario —«Cobrar» de la 410 y
    «Guardar y cerrar» de la 881—, los dos botones de borde (462 y 880) y el que
