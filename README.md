@@ -17,13 +17,13 @@ tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
 | Pieza | Estado |
 |---|---|
 | `infrastructure/` — el descriptor (ADR-0031 §2) | **Existe y verifica**: `yarn verificar` en verde —`Tests 31 passed (31)`—, sin Pulumi, sin token y sin cluster. Desde #17 declara tambien el `Deployment`, el `Service`, el `ConfigMap` de nginx y las **dos** rutas del `IngressRoute` de la interfaz |
-| `.github/workflows/` — su CI | **Existe**, con cinco flujos: el descriptor, el frontend, las **dos barreras bloqueantes** del backend, la publicacion de imagenes y la guarda del registro |
+| `.github/workflows/` — su CI | **Existe**, con seis flujos: el descriptor, el frontend, las **dos barreras bloqueantes** del backend, la publicacion de imagenes, la guarda del registro y —desde #39— el compose |
 | `docs/30-arquitectura/adr/` | **Existe**, con 0 ADR propio(s) y su indice ⚠ ver la nota de abajo |
 | `backend/` — seis modulos, con el negocio dentro | **Existe desde P5D**: `kamayuk-caja-nucleo` es el contexto acotado entero, y a su lado el esquema, la plataforma, el dominio compartido, la seguridad (C-7) y la aplicacion que ensambla |
 | `backend/kamayuk-caja-esquema` — su esquema | **Esta aqui desde P5D**, con `V1__baseline.sql` (23 tablas, **cero extensiones**) y `V2__ordenes_de_cobro_y_outbox.sql` |
 | Su frontend (`caja-web`, ADR-0030 §1) | **Existe, y esta entero**: las cuatro pantallas, `Tests 634 passed (634)` en 20 archivos. **No se conecta al backend** — ver la seccion de abajo, que es la mitad importante |
 | La imagen `ghcr.io/hneyra/kamayuk-caja-interfaz` | **Existe y se publica** desde #16, junto a `kamayuk-caja` y `kamayuk-caja-migrador`, etiquetadas con el `sha` de este repositorio |
-| `despliegue/compose.yaml` | **Cuatro servicios** desde #18: el migrador, la implantacion, el backend y `caja-interfaz` |
+| `despliegue/compose.yaml` | **Cuatro servicios** desde #18: el migrador, la implantacion, el backend y `caja-interfaz`. Desde #39 **lo verifica alguien de este repositorio**: `node despliegue/verificar-el-compose.mjs`, con Compose de verdad y sin demonio |
 | Que la interfaz sea alcanzable bajo `/caja` | **Todavia NO.** Falta declarar `base` en Vite **y** arreglar un literal de `BarraGlobal.tsx`, las dos a la vez. Es el **#37**, y hasta entonces se mira por el puerto que publica el compose |
 | Lo que falta y vive en `infrastructure` | **Declarado, no descubierto tarde**: [`docs/00-gobierno/huecos-en-infrastructure.md`](docs/00-gobierno/huecos-en-infrastructure.md) |
 

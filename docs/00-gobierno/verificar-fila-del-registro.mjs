@@ -19,7 +19,8 @@
 
      1. el cuerpo del PR declara que cierra un issue (`Cierra #N`, `Closes #N`,
         `Fixes #N`, `Resuelve #N`), y
-     2. el cambio toca el codigo de produccion del backend, del frontend o de infra.
+     2. el cambio toca el codigo de produccion del backend, del frontend, de infra o
+        —desde #39— el compose de `despliegue/`.
 
    Un PR de solo documentacion, de solo pruebas o sin issue asociado pasa en verde. Sin
    ese contraste la guarda seria un peaje que todo el mundo aprende a esquivar — y una
@@ -49,11 +50,39 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-/** Lo que hace de un cambio «codigo» a efectos de esta guarda. */
+/** Lo que hace de un cambio «codigo» a efectos de esta guarda.
+
+    `despliegue/` entra con #39, y lo que lo justifica es una medida: el PR de #18 anadio
+    un servicio al compose —o sea la interfaz entera de este sistema— y con la lista de
+    tres esta guarda contestaba «Cierra #18 y no toca codigo de produccion: la fila no se
+    exige». Sin fila y en verde. La fila se escribio igual, pero nadie la exigia, y ese
+    es exactamente el modo de fallo silencioso que esta guarda existe para impedir: un
+    compose es codigo de produccion — decide con que rol se conecta cada proceso, que
+    imagen corre y en que orden arranca—, solo que no se compila.
+
+    ## Si esto viaja a los otros cuatro repositorios (#39, criterio 5)
+
+    **Deberia, y no se lleva desde aqui.** El motivo de que no desalinee nada es medido:
+    esta lista **ya es distinta en cada repositorio y siempre lo fue**. El 2026-09-06,
+    leidos de `main` de cada uno, `rentas` tiene `/^infra\//` donde `caja`, `catastro` y
+    `normativa` tienen `/^infrastructure\/src\//`; y las seis muestras de la autoprueba
+    nombran en cada uno sus propias rutas —`kamayuk-rentas-nucleo` alli, `kamayuk-caja`
+    aqui—, asi que los cuatro archivos de muestras difieren ya entre si. Lo comun es el
+    MECANISMO —los seis casos, `CIERRA`, «exige que la fila exista y no lo que diga»—; lo
+    propio de cada repositorio es esta lista, y esta cabecera lo dice desde que se copio.
+
+    Lo que si es comun es el DEFECTO: los cuatro sistemas tienen su `despliegue/compose.yaml`
+    (comprobado con la API de GitHub el 2026-09-06: los tres hermanos lo tienen), y en los
+    tres restantes la guarda sigue sin mirarlo. Que ese cambio se haga alli es trabajo de
+    alli, con su propia muestra y su propia corrida — copiar cuatro archivos a ciegas es
+    justo lo que produjo el `/^infra\//` de `rentas` sin que nadie lo notara. */
 const RUTAS_DE_CODIGO = [
   /^backend\/[^/]+\/src\/main\//,
   /^infrastructure\/src\//,
   /^frontend\/src\//,
+  // Un compose es configuracion de produccion: dice con que rol se conecta cada proceso,
+  // que imagen corre y en que orden arranca. Ver la nota de arriba (#39).
+  /^despliegue\//,
 ];
 
 /** Como se declara que un PR cierra un issue. GitHub admite estas y alguna mas. */

@@ -4,9 +4,15 @@
    esquivada, que en una convencion de proceso es peor todavia — el peaje se aprende a
    rodear y la tabla se queda igual de vacia.
 
-   Asi que se corre la comprobacion contra seis situaciones fabricadas, tres que tiene
-   que rechazar y tres que tiene que dejar pasar, y se exige que el rechazo **nombre el
-   issue**: rechazar por el motivo equivocado seria pasar por casualidad.
+   Asi que se corre la comprobacion contra siete situaciones fabricadas, cuatro que
+   tiene que rechazar y tres que tiene que dejar pasar, y se exige que el rechazo
+   **nombre el issue**: rechazar por el motivo equivocado seria pasar por casualidad.
+
+   La cuarta que rechaza entra con #39, y es la muestra de `despliegue/`: hasta entonces
+   un PR que solo tocaba `despliegue/compose.yaml` —o sea el archivo que dice con que rol
+   se conecta cada proceso y en que orden arranca— pasaba por el caso «no toca codigo de
+   produccion». Es lo que le paso al PR de #18, medido. Sin esta muestra, ampliar
+   `RUTAS_DE_CODIGO` seria una linea que nadie comprueba.
 
    Uso: node docs/00-gobierno/verificar-las-muestras-del-registro.mjs
 */
@@ -48,6 +54,17 @@ const CASOS = [
     anadido: '+| Una fila cualquiera (#711) | … | … |',
     esperado: 'rojo',
     dice: '#71',
+  },
+  {
+    // La muestra de #39. Y es una muestra de verdad y no un adorno: sin el patron
+    // `/^despliegue\//` en RUTAS_DE_CODIGO, este caso cae en «no toca codigo de
+    // produccion» y sale VERDE, que es como paso el PR de #18.
+    nombre: 'cierra un issue, toca SOLO el compose y NO deja fila',
+    cuerpo: 'Cierra #711. Un servicio mas en el compose.',
+    archivos: ['despliegue/compose.yaml'],
+    anadido: '',
+    esperado: 'rojo',
+    dice: '#711',
   },
   {
     nombre: 'cierra un issue, toca backend y SI deja su fila',

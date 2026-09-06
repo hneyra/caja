@@ -1,0 +1,69 @@
+# La guarda de #39: `despliegue/compose.yaml` lo verifica alguien.
+#
+# POR QUE ESTE FLUJO EXISTE
+# Hasta #39 **nada del CI de este repositorio leia ese archivo**. Sus dos unicas apariciones en
+# `.github/workflows/` eran comentarios, y la unica guarda que si lo lee vive en el repositorio
+# `infrastructure` (`infra/verificaciones/compose-de-los-sistemas.ts`), que ademas hoy no corre en
+# un espacio de trabajo sin `normativa` clonado — esta medido en
+# `docs/00-gobierno/huecos-en-infrastructure.md` §0. O sea que el archivo que declara como se
+# levanta este sistema entero estaba sin verificacion automatica viva.
+#
+# POR QUE NO ES UN TRABAJO MAS DE `infraestructura.yml`
+# Aquel flujo clona el repositorio hermano `infrastructure` para resolver un `link:` y necesita
+# `GH_CLONE_KEY`. Esto no necesita nada de eso: lee un archivo del repositorio con la herramienta
+# que ya trae el runner. Y separado, el `paths:` puede ser exactamente el suyo — editar solo el
+# compose ejecuta solo esto.
+#
+# POR QUE EL `paths:` NOMBRA LOS DOS `Dockerfile`
+# La verificacion comprueba que cada `build.target` del compose EXISTE como etapa en el Dockerfile
+# al que apunta. Es la unica afirmacion del compose que se cumple en otro archivo, y por eso es la
+# que se pudre en silencio: renombrar `AS interfaz` no rompe nada hasta que alguien construye. Sin
+# estas dos lineas, ese renombrado dejaria la comprobacion vieja **en verde**: la guarda no se
+# rompe, deja de correr. Es el mismo modo de fallo que #17 encontro en el `paths:` de
+# `infraestructura.yml`.
+#
+# La lista va escrita dos veces, y no por descuido: GitHub Actions **no admite anclas de YAML**
+# (`&`/`*`) en un flujo, asi que no hay forma de nombrarla una sola vez.
+name: Despliegue
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "despliegue/**"
+      - "backend/Dockerfile"
+      - "frontend/Dockerfile"
+      - ".github/workflows/despliegue.yml"
+  pull_request:
+    paths:
+      - "despliegue/**"
+      - "backend/Dockerfile"
+      - "frontend/Dockerfile"
+      - ".github/workflows/despliegue.yml"
+
+# Sin permisos de escritura: este trabajo lee y verifica, no publica nada.
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    name: El compose declara lo que dice declarar
+    runs-on: ubuntu-latest
+    # Un colgado no consume cuota sin limite: la leccion de `observabilidad-alertas`.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # `docker compose config` NO necesita demonio: resuelve el archivo y lo imprime. Y si el
+      # runner no lo trajera, la verificacion sale ROJA en vez de omitirse — la doctrina de
+      # `verificarAislamiento`: una comprobacion que se salta a si misma deja el build en verde
+      # sin haber verificado nada.
+      - name: Que Compose hay
+        run: docker compose version
+
+      - name: El compose de este sistema
+        run: node despliegue/verificar-el-compose.mjs
