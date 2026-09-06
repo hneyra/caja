@@ -11,7 +11,7 @@ import {
 import type { OrdenDeLaLista, Recibo } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
 import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
-import type { PropsDePantalla } from "@/marco/MarcadorDeSeccion";
+import type { PropsDePantalla } from "@/marco/pantalla";
 import { MENSAJE_DE_COBRO_NUEVO } from "@/marco/rotulos";
 import { BORRADOR_DESCARTADO, reciboEmitido } from "@/pantallas/CobroNuevo";
 import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";

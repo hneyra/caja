@@ -7,7 +7,7 @@ import {
   valoresDelCobroNuevo,
   VALORES_DEL_RECIBO,
 } from "@/datos";
-import type { Columna, Recibo, TablaDeCuotas } from "@/datos";
+import type { Recibo, TablaDeCuotas } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
 import { CampoDeFicha, faltan } from "@/pantallas/CampoDeFicha";
 import {
@@ -31,6 +31,7 @@ import {
   puedeCobrar,
   ResumenDelCobro,
 } from "@/pantallas/CobroNuevo";
+import { cabeceraDe, celdaDe } from "@/pantallas/TablaDeDatos";
 
 /**
  * La ficha: **la de un recibo existente y la de un cobro nuevo**, que son la misma plantilla.
@@ -204,47 +205,6 @@ const pestanaDe = (activa: boolean): CSSProperties => ({
   color: activa ? "var(--tinta)" : "var(--tinta-3)",
   fontWeight: activa ? "var(--peso-fuerte)" : "var(--peso-normal)",
 });
-
-/** `TH` y `THN` (lineas 929-930): la cabecera de la tabla, y la de una columna con cifras. */
-const cabeceraDe = (columna: Columna): CSSProperties => ({
-  padding: "9px 16px",
-  textAlign: columna.numerica ? "right" : "left",
-  fontSize: 11,
-  fontWeight: "var(--peso-fuerte)",
-  textTransform: "uppercase",
-  letterSpacing: ".07em",
-  color: "var(--tinta-3)",
-  whiteSpace: "nowrap",
-  background: "var(--sup)",
-  borderBottom: "1px solid var(--linea)",
-});
-
-/**
- * `TD1`, `TDN` y `TD` (lineas 931-933), repartidos como en `filas()` (linea 1363).
- *
- * La primera columna va en peso 600 **por ser la primera**, no por su contenido; las demas
- * miran si su columna es numerica. Son dos criterios distintos y el artboard los escribe asi.
- */
-const celdaDe = (columna: Columna | undefined, primera: boolean): CSSProperties => {
-  if (primera)
-    return {
-      padding: "11px 16px",
-      fontSize: 13.5,
-      fontWeight: "var(--peso-medio)",
-      color: "var(--tinta)",
-      whiteSpace: "nowrap",
-    };
-  if (columna?.numerica === true)
-    return {
-      padding: "11px 16px",
-      fontSize: 13.5,
-      color: "var(--tinta)",
-      textAlign: "right",
-      whiteSpace: "nowrap",
-      fontVariantNumeric: "tabular-nums",
-    };
-  return { padding: "11px 16px", fontSize: 13.5, color: "var(--tinta-2)" };
-};
 
 /**
  * La tabla de cuotas del paso «Deuda a cobrar» (lineas 710-741).

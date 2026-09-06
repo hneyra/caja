@@ -72,9 +72,15 @@ jobs:
   # que es lo que hace una persona en una ventanilla. Es el arnes que `sgtm` estreno porque esto
   # ya se rompio una vez.
   #
+  # Desde #14 corre aqui un segundo arnes con la misma justificacion: la cabecera pegajosa de las
+  # tablas de `#cajas` y `#tarifario`. `cajas.test.tsx` afirma que el `<th>` calcula `position:
+  # sticky` y `top: 0px`, y hace falta; lo que un emulador de DOM no hace es **disposicion**, asi
+  # que alli la declaracion puede estar entera y la cabecera irse con la tabla sin que nada lo
+  # diga. `pegajosa.mjs` desplaza de verdad y mira donde queda cada cosa.
+  #
   # Los otros dos arneses de `sgtm` —`mirar` y `cero-red`— llegan en su issue, no en este.
   navegador:
-    name: La paleta se opera con el teclado
+    name: Los arneses de navegador
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -117,3 +123,6 @@ jobs:
 
       - name: La paleta, sola con el teclado
         run: CAJA_BASE=http://localhost:5182 yarn paleta
+
+      - name: La cabecera de las tablas se queda al desplazar
+        run: CAJA_BASE=http://localhost:5182 yarn pegajosa

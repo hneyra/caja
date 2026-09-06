@@ -20,7 +20,7 @@ import { HOJAS, SECCIONES } from "../src/datos";
 import { CERRAR_LA_PESTANA, textoDeAjena } from "../src/marco/PestanaAjena";
 import { EXPLICACION_DEL_HUECO, TITULO_DEL_HUECO } from "../src/marco/SinPestanas";
 import { ROTULO_DEL_DIALOGO, tituloDelDialogo } from "../src/marco/DialogoDeCambios";
-import type { PropsDePantalla } from "../src/marco/MarcadorDeSeccion";
+import type { PropsDePantalla } from "../src/marco/pantalla";
 import {
   MENSAJE_DE_COBRO_NUEVO,
   mensajeDeGuardado,

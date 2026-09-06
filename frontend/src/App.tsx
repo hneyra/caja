@@ -10,7 +10,7 @@ import type { Destino } from "@/marco/destino";
 import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import { DialogoDeCambios } from "@/marco/DialogoDeCambios";
 import { FilaDelTitulo } from "@/marco/FilaDelTitulo";
-import type { Pantalla } from "@/marco/MarcadorDeSeccion";
+import type { Pantalla } from "@/marco/pantalla";
 import { PestanaAjena } from "@/marco/PestanaAjena";
 import {
   esSeccionPropia,
@@ -45,10 +45,9 @@ import { PantallaDeSeccion } from "@/pantallas/PantallaDeSeccion";
  * <h2>La ranura por la que entran las cuatro pantallas</h2>
  *
  * `Pantalla` es el componente que dibuja la seccion activa, y por omision es
- * {@link PantallaDeSeccion}: el reparto de las cuatro secciones propias, con el Panel portado
- * y las otras tres todavia en el marcador. El marco no sabe cual es cual —lo unico que cambia
- * con la seccion es el titulo, y eso lo calcula `rotulos.ts`—, asi que portar una pantalla mas
- * no toca este archivo.
+ * {@link PantallaDeSeccion}: el reparto de las cuatro secciones propias, las cuatro portadas
+ * desde #14. El marco no sabe cual es cual —lo unico que cambia con la seccion es el titulo, y
+ * eso lo calcula `rotulos.ts`—, y por eso portarlas una a una no toco nunca este archivo.
  *
  * Es tambien la ranura por la que las pruebas del marco enchufan una pantalla que edita un
  * campo, que es lo unico que hace observable `fijarCampo` y la unica forma de ensuciar una
@@ -90,7 +89,7 @@ export interface AppProps {
    * Quien dibuja la seccion propia que este activa.
    *
    * Se pasa entera y no seccion a seccion porque las cuatro pantallas comparten contrato
-   * ({@link import("@/marco/MarcadorDeSeccion").PropsDePantalla}) y el marco no distingue entre
+   * ({@link import("@/marco/pantalla").PropsDePantalla}) y el marco no distingue entre
    * ellas: lo que cambia con la seccion es el titulo, y eso lo calcula `rotulos.ts`.
    */
   readonly Pantalla?: Pantalla;
@@ -117,10 +116,11 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
    * Con que estado se abre la seccion activa: el `extra` del `ir(dest, extra)` del artboard.
    *
    * Se le pasa entero a la pantalla que se dibuja, y ademas se expone en los `data-` de la
-   * raiz. Los `data-` siguen valiendo la pena mientras tres de las cuatro pantallas sean el
-   * marcador: son lo unico que hace observable el destino de una navegacion cuyo destino nadie
-   * dibuja todavia. Lo que hay dentro y por que se reemplaza entero, en
-   * {@link import("@/marco/destino").Destino}.
+   * raiz. Los `data-` nacieron porque tres de las cuatro pantallas eran el marcador y eran lo
+   * unico que hacia observable el destino; con las cuatro portadas siguen valiendo la pena por
+   * otra razon: `arbol.test.tsx` mide con `data-ir-nodo` que navegar desde el arbol **no** lleva
+   * ningun nodo, y eso es una propiedad de `irA`, no de ninguna pantalla. Lo que hay dentro y
+   * por que se reemplaza entero, en {@link import("@/marco/destino").Destino}.
    */
   const [destino, fijarDestino] = useState<Destino>(SIN_EXTRAS);
 
@@ -199,7 +199,7 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
       // `data-ir` es **la seccion activa**, que desde el issue del marco ya se ve en la barra de
       // pestanas y en el titulo; sigue estando porque `arbol.test.tsx` mide con ella que
       // pulsar un submodulo llega hasta aqui. Los cuatro `data-ir-*` son el `extra` del
-      // destino, que todavia no dibuja ninguna pantalla.
+      // destino: lo que cada pantalla lee para saber con que estado se abre.
       data-ir={activa ?? ""}
       data-ir-nodo={destino.nodo === undefined ? "" : String(destino.nodo)}
       data-ir-valtab={destino.valTab === undefined ? "" : String(destino.valTab)}

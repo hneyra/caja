@@ -1,18 +1,22 @@
-import { MarcadorDeSeccion, type PropsDePantalla } from "@/marco/MarcadorDeSeccion";
+import type { PropsDePantalla } from "@/marco/pantalla";
+import { Cajas } from "@/pantallas/Cajas";
 import { Panel } from "@/pantallas/Panel";
 import { Recibos } from "@/pantallas/Recibos";
+import { Tarifario } from "@/pantallas/Tarifario";
 
 /**
- * Quien dibuja la seccion activa: **dos de cuatro portadas, dos por portar**.
+ * Quien dibuja la seccion activa: **las cuatro, desde #14**.
  *
  * Es lo que `App` recibe por omision en su ranura `Pantalla`. El marco —pestanas, titulo, hash
  * y cierre— no distingue entre las cuatro secciones propias, asi que el reparto vive aqui y no
- * alli: cuando se porte `#cajas` o `#tarifario`, se anade su linea a este `switch` y `App` no se
- * entera.
+ * alli: portar una pantalla mas nunca toco `App`.
  *
- * Las dos que faltan siguen cayendo en {@link MarcadorDeSeccion}, que dice en pantalla que
- * llegan despues. Un `default` que las dibujara en blanco seria la forma silenciosa de fallar
- * que `PORTAR.md` avisa: una pantalla a medio portar que compila y no da ningun error.
+ * Ya no hay `default`, y esa es la diferencia que este issue deja: con las cuatro portadas,
+ * `ClaveDeSeccion` tiene exactamente cuatro valores y el `switch` los cubre todos, de modo que
+ * TypeScript se pone rojo solo el dia que aparezca una quinta seccion sin pantalla. Mientras
+ * quedaban huecos, el `default` los mandaba a `MarcadorDeSeccion` —que decia en pantalla que
+ * llegaban despues— y hacia falta: un `default` que las dibujara en blanco es la forma
+ * silenciosa de fallar que `PORTAR.md` avisa.
  */
 export function PantallaDeSeccion(props: PropsDePantalla) {
   switch (props.seccion) {
@@ -20,7 +24,9 @@ export function PantallaDeSeccion(props: PropsDePantalla) {
       return <Panel {...props} />;
     case "predios":
       return <Recibos {...props} />;
-    default:
-      return <MarcadorDeSeccion {...props} />;
+    case "territorio":
+      return <Cajas {...props} />;
+    case "valores":
+      return <Tarifario {...props} />;
   }
 }
