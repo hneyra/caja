@@ -94,13 +94,25 @@ Chromium y un servidor levantado. Se lanzan contra `yarn dev` o contra el `dist/
 ### Levantarla como se despliega
 
 ```bash
+# La red `kamayuk-plataforma` tiene que EXISTIR antes: este compose la declara
+# `external: true` para no crear una segunda con el mismo nombre, asi que sin ella
+# Compose se niega. Es lo unico que `caja-interfaz` necesita de fuera.
+docker compose -f ../infrastructure/despliegue/plataforma.compose.yaml up -d --wait
+
 docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait
 curl -sf http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/
 ```
 
 Ese servicio construye `frontend/Dockerfile` y sirve `dist/` con nginx **sin root** (uid 101). **No
 declara `depends_on` del backend**, y esa ausencia es una afirmacion, no un descuido: el motivo
-largo esta escrito en el propio [`despliegue/compose.yaml`](despliegue/compose.yaml).
+largo esta escrito en el propio [`despliegue/compose.yaml`](despliegue/compose.yaml). Levantarlo
+**no arranca** el migrador, ni la implantacion, ni el backend, ni necesita la base ni Keycloak.
+
+> **Esos dos comandos no se ejecutaron**, y por una razon que no se disimula: la maquina donde se
+> escribio esto **no tiene Docker** —ni `podman`, ni `nerdctl`—. Lo que si se ejecuto es
+> `docker compose config` con el binario oficial, que no necesita demonio, y el nginx real de
+> `nginx:1.31.4-alpine` sirviendo este mismo `dist/` con este mismo `nginx.conf`. Está en el PR
+> de #18, con sus cifras.
 
 > **El puerto publicado es hoy la unica puerta.** Bajo `/caja` todavia no se llega: el `index.html`
 > que emite Vite fija sus recursos en absoluto, asi que detras del prefijo el navegador los pide a

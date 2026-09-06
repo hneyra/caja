@@ -233,6 +233,12 @@ services:
   # El dia que esta interfaz lea algo de verdad, esa linea entra CON su motivo, y
   # entonces `nginx.conf` tendra que reenviar y `Identidad.ts` tendra que darle un
   # cliente publico (ver `docs/00-gobierno/huecos-en-infrastructure.md`).
+  #
+  # Lo unico que SI necesita de fuera es la red `kamayuk-plataforma`, porque este
+  # archivo entero la declara `external: true` (ver el final). O sea que
+  # `up -d caja-interfaz` no arranca el migrador ni la implantacion ni el backend,
+  # pero exige que la plataforma este levantada. Sin ella Compose se niega, que es
+  # mejor que crear una segunda red con el mismo nombre.
   caja-interfaz:
     build:
       # El contexto es `frontend/` y no la raiz, al reves que los tres de arriba:

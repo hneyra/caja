@@ -75,7 +75,7 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | Los cuatro arneses de navegador | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | `frontend/`, con `yarn dev` levantado |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
 | Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml up -d --build --wait` | la raíz |
-| Levantar **sólo la interfaz**, que no necesita nada más | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |
+| Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |
 | Lo que hay que pasar antes de un PR | `./gradlew build verificarAislamiento verificarArquitectura` · `yarn verificar` (los **dos**: `infrastructure/` y `frontend/`) | los tres |
 
 ## Las dos frases que gobiernan todo lo demás
