@@ -144,11 +144,19 @@ jobs:
 
       # Las capturas y los PDF de `mirar`, para poder MIRAR lo que la corrida dibujo sin tener
       # que reproducirla. `if: always()` porque lo que mas se quiere ver es la corrida que fallo.
+      #
+      # `include-hidden-files` NO sobra, y no se dedujo leyendo la documentacion: la primera
+      # version subio **cero archivos** con el arnes en verde —«No files were found with the
+      # provided path: frontend/.capturas/»—, porque desde `upload-artifact@v4.4` los archivos
+      # ocultos se excluyen por omision y `.capturas` empieza por punto. `if-no-files-found:
+      # warn` deja el trabajo verde con el artefacto vacio, que es justo el modo de fallo
+      # silencioso: nadie mira un artefacto que no sabe que falta.
       - name: Guardar las capturas
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: capturas-de-caja-web
           path: frontend/.capturas/
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
