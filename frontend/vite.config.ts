@@ -14,7 +14,7 @@ export default defineConfig({
    * La interfaz se sirve bajo `/caja`, y esto es la mitad que le toca a Vite.
    *
    * La otra mitad es el `stripPrefix` del `IngressRoute` (#17), y **no son alternativas**: las
-   * cuatro combinaciones se midieron contra el nginx real de `nginx:1.31.4-alpine` con dos
+   * cuatro combinaciones las midio #17 contra el nginx real de `nginx:1.31.4-alpine` con dos
    * `dist/` distintos, y solo la ultima funciona.
    *
    *   - `base: "/"` sin quitar el prefijo → nginx recibe `/caja/assets/index-<huella>.js`, no
