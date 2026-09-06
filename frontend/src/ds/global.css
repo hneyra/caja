@@ -1,0 +1,96 @@
+/* ============================================================
+   Los estilos globales de `caja-web`.
+   ------------------------------------------------------------
+   Es el bloque <style> de `TesoreriaV6.dc.html` (lineas 15-43) portado entero,
+   con los valores sustituidos por los tokens que declaran ese mismo valor. Lo
+   que aqui esta, esta porque el artboard lo trae; lo que no, no se invento.
+
+   **Una sola omision, deliberada**: la consulta `@media (max-width:1180px)` de
+   la linea 41 oculta `[data-marco-hide]`, que es el conmutador de panel A/B/C.
+   El propio artboard lo llama «un control del prototipo» y no es parte del
+   producto, asi que ni el conmutador ni su corte se portan.
+
+   No hay tema oscuro, y es una decision: el artboard no lo tiene y esta pantalla
+   se usa en una ventanilla con luz de oficina.
+   ============================================================ */
+@import './tokens/colores.css';
+@import './tokens/tipografia.css';
+@import './tokens/formas.css';
+
+/* —— Las tres animaciones (lineas 16-18), copiadas letra por letra —— */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.985) } to { opacity: 1; transform: none } }
+@keyframes subir { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+
+html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--tinta); font-family: var(--familia); font-size: var(--texto-base); -webkit-font-smoothing: antialiased }
+* { box-sizing: border-box }
+a { color: var(--azul); text-decoration: none }
+a:hover { text-decoration: underline; text-underline-offset: 3px }
+input, select, textarea, button { font: inherit; color: inherit }
+
+/* —— El foco (lineas 24-25) ——
+   Dos reglas distintas y NO una: el anillo exterior de `:focus-visible` es el
+   acento (#52BDEF) y solo aparece cuando el navegador decide que el foco se ve;
+   el de los campos es #D3EBFA y aparece siempre que el campo tiene el foco,
+   venga del raton o del teclado. #D3EBFA no es --azul-suave. */
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px }
+input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shadow: 0 0 0 3px var(--anillo-campo); outline: none }
+
+::placeholder { color: var(--tenue) }
+::-webkit-scrollbar { width: 10px; height: 10px }
+::-webkit-scrollbar-thumb { background: var(--pulgar); border-radius: var(--radio-8) }
+::-webkit-scrollbar-thumb:hover { background: var(--pulgar-hover) }
+
+/* Una celda que ocupa la fila entera de una rejilla de formulario. */
+[data-ancho="1"] { grid-column: 1 / -1 }
+[data-tramo]::placeholder { color: var(--borde-campo); letter-spacing: .2em }
+[data-sticky] th { position: sticky; top: 0; z-index: 2 }
+
+/* —— Los `style-hover` de la barra global (lineas 130, 148 y 163) ——
+   `PORTAR.md` los traduce a una clase porque un estilo en linea no puede
+   expresar `:hover`. Llevan `!important` porque el estilo base SI es en linea
+   —que es la doctrina— y un estilo en linea gana a una clase: sin el, la regla
+   se escribiria y no se veria nunca. */
+.hov-barra:hover { background: rgba(255,255,255,.18) !important }
+.hov-sesion:hover { background: rgba(255,255,255,.14) !important }
+
+/* —— El `style-hover` del arbol y el de las tres capas flotantes ——
+   Seis botones del artboard llevan **el mismo** `style-hover="background:#EFF7FC"`:
+   los tres del panel izquierdo —modulo (233), submodulo (252) y entrada de la
+   cola (366)— y los tres de lo que se despliega desde la barra —modulo del
+   lanzador (58), fila de la paleta (85) y opcion de sesion (186)—. Es una sola
+   declaracion con dos nombres, y los dos nombres existen porque el port los
+   dibuja en sitios distintos: quien lea `hov-arbol` en una fila de la paleta se
+   preguntaria si es un descuido.
+   `#EFF7FC` no es ninguna de las constantes del artboard (lineas 914-924), y por
+   eso va literal: darle un token seria ampliar la paleta del diseno desde aqui. */
+.hov-arbol:hover, .hov-flotante:hover { background: #EFF7FC !important }
+
+/* —— El `style-hover` de las filas del panel (lineas 492, 510 y 529) ——
+   Las tres listas del Panel de Tesoreria llevan `style-hover="background:#F7FBFE"`, que **no
+   es** el `#EFF7FC` de `hov-arbol`: son dos grises distintos y el artboard los usa en sitios
+   distintos. `#F7FBFE` si es una constante del artboard (SUP, linea 924), asi que va por su
+   token. El `!important` es por lo mismo que en los demas: el estilo base es en linea. */
+.hov-fila:hover { background: var(--sup) !important }
+
+/* —— Los `style-hover` del marco de pestanas ——
+   El aspa de una pestana (linea 396), el boton primario —«Cobrar» de la 410 y
+   «Guardar y cerrar» de la 881—, los dos botones de borde (462 y 880) y el que
+   descarta (879). `#7E96A8` y `#A8321E` no son constantes del artboard, asi que
+   van literales por lo mismo que `#EFF7FC`: darles un token seria ampliar la
+   paleta del diseno desde aqui. */
+.hov-aspa:hover { background: var(--linea-2) !important; color: var(--tinta) !important }
+.hov-primario:hover { background: var(--azul-osc) !important }
+.hov-borde:hover { border-color: #7E96A8 !important }
+.hov-borde-rojo:hover { border-color: #A8321E !important }
+
+/* —— Los cortes responsive del producto (lineas 33-38) —— */
+@media (max-width: 1240px) { [data-lista] { flex: 0 0 320px !important; width: 320px !important } }
+@media (max-width: 900px) {
+  [data-split] { flex-direction: column !important }
+  [data-lista] { flex: 0 0 auto !important; width: 100% !important; max-height: 300px; border-right: 0 !important; border-bottom: 1px solid var(--linea) !important }
+}
+@media (max-width: 760px) { [data-sm-hide] { display: none !important } }
+
+/* Quien pide menos movimiento no recibe ninguno (linea 42). */
+@media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important } }

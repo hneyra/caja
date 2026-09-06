@@ -1,0 +1,62 @@
+/* ============================================================
+   Los colores de V6.
+   ------------------------------------------------------------
+   Fuente de verdad: `TesoreriaV6.dc.html`, constantes de las lineas 914-940 y
+   bloque <style> de las 15-43. **Cada valor se copia caracter a caracter**, y
+   `verificaciones/tokens.test.ts` lo comprueba leyendo el CSS: si alguien cambia
+   un digito, sale roja.
+
+   Los nombres son los del artboard —AZUL, TINTA, LINEA— y no una taxonomia
+   inventada aqui: asi la correspondencia con el diseno se lee sin traducir.
+
+   Esta NO es la paleta del handoff de diseno —la crema y el navy, con su pareja
+   de serif y monoespaciada—: V6 no la usa. Donde el handoff y el .dc.html
+   discrepan gana el .dc.html, y los `ds/tokens/*.css` de aquel no se copian.
+   Sus valores no se transcriben aqui ni para citarlos: el criterio 2 del issue
+   #4 es que no quede ni rastro de ellos en `frontend/src`.
+   ============================================================ */
+:root {
+  /* —— Accion y marca —— */
+  --azul: #005284;        /* accion / primario */
+  --azul-osc: #00365A;    /* barra global y hover del primario */
+  --azul-suave: #E4F4FD;  /* relleno tenue */
+  --acento: #52BDEF;      /* acento y anillo de foco */
+
+  /* —— Superficies —— */
+  --fondo: #F2F6F9;       /* fondo de pagina (<style>, linea 19) */
+  --sup: #F7FBFE;         /* superficie elevada */
+
+  /* —— Lineas —— */
+  --linea: #D6DEE4;
+  --linea-2: #E3E9EE;
+  --borde-campo: #C3CFD9;
+
+  /* —— Tinta —— */
+  --tinta: #16232C;
+  --tinta-2: #3A4A55;
+  --tinta-3: #5A6B78;
+  --tenue: #93A3AF;       /* ::placeholder (<style>, linea 26) */
+
+  /* —— Barra de desplazamiento (<style>, lineas 28-29) —— */
+  --pulgar: #C3CFD9;
+  --pulgar-hover: #A7B7C4;
+
+  /* —— El anillo del foco en campos (<style>, linea 25) ——
+     OJO: #D3EBFA **no** es --azul-suave (#E4F4FD). Son dos valores distintos y
+     el artboard los usa en sitios distintos. La prueba afirma que difieren. */
+  --anillo-campo: #D3EBFA;
+
+  /* —— Insignias (lineas 935-940) ——
+     `--ins-info-fondo` vale lo mismo que --azul-suave porque el artboard escribe
+     ahi `background:' + AZUL_SUAVE`; la prueba afirma esa igualdad para que
+     separarlos algun dia sea una decision y no un descuido. Lo mismo con
+     --pulgar y --borde-campo. */
+  --ins-ok-fondo: #DCEFE3;
+  --ins-ok-tinta: #1F5B39;
+  --ins-warn-fondo: #FFF4D9;
+  --ins-warn-tinta: #7A5200;
+  --ins-bad-fondo: #FBE4E0;
+  --ins-bad-tinta: #8F2A17;
+  --ins-info-fondo: #E4F4FD;
+  --ins-info-tinta: #004670;
+}

@@ -1,0 +1,128 @@
+name: Frontend
+
+# `caja-web`: el andamio de la interfaz de ventanilla.
+#
+# POR QUE ESTE FLUJO NO CLONA `infrastructure`
+# El de `infraestructura.yml` si tiene que hacerlo: el descriptor declara `@kamayuk/infra-contrato`
+# como `link:` a un repositorio hermano, y sin ese hermano en el disco yarn no resuelve. Aqui no
+# hay `link:`, no hay *composite build* y no hay una sola dependencia de red en la aplicacion, asi
+# que este trabajo se basta con lo que hay en el arbol. Es lo mismo que compra la regla de ESLint
+# que prohibe `fetch`: mientras esta interfaz no hable con nadie, verificarla no necesita a nadie.
+#
+# QUE SE EJECUTA, Y EN QUE ORDEN
+# `yarn verificar` encadena lint, tipos y pruebas —las tres, y en ese orden, porque el error mas
+# barato de leer tiene que salir primero—, y `yarn build` demuestra ademas que el artefacto que se
+# desplegaria se construye. Que `yarn verificar` pase no implica que `vite build` pase: `tsc` y
+# Rollup no fallan por lo mismo.
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+
+# Sin permisos de escritura: este trabajo lee y verifica, no publica nada.
+permissions:
+  contents: read
+
+# Un `push` nuevo cancela la corrida anterior de la misma rama. En `main` no se cancela: cada
+# commit de `main` tiene que dejar su propio veredicto.
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verificar:
+    name: caja-web verifica y construye
+    runs-on: ubuntu-latest
+    # Un colgado no consume cuota sin limite: la leccion de `observabilidad-alertas`.
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # La version sale de `frontend/.nvmrc` y no de un literal aqui: con el literal, CI y quien
+      # clona el repositorio son dos numeros que pueden separarse sin que nada lo diga.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      # `--frozen-lockfile`: si el `package.json` y el `yarn.lock` no cuadran, esto falla aqui en
+      # vez de instalar en silencio una version distinta de la que se probo en local.
+      - name: Instalar
+        run: yarn install --frozen-lockfile
+
+      - name: Lint, tipos y pruebas
+        run: yarn verificar
+
+      - name: Construir el artefacto de produccion
+        run: yarn build
+
+  # POR QUE ESTE SEGUNDO TRABAJO EXISTE
+  # `verificaciones/paleta.test.tsx` mide la paleta sobre un emulador de DOM en cada `yarn
+  # verificar`, y hace falta. Lo que un emulador NO puede decir es que un navegador de verdad
+  # entregue `Ctrl-K`, las flechas e `Intro` al campo enfocado: alli las teclas se entregan al
+  # elemento que la prueba nombra, o sea por construccion. Aqui se pulsan sin decir sobre que,
+  # que es lo que hace una persona en una ventanilla. Es el arnes que `sgtm` estreno porque esto
+  # ya se rompio una vez.
+  #
+  # Desde #14 corre aqui un segundo arnes con la misma justificacion: la cabecera pegajosa de las
+  # tablas de `#cajas` y `#tarifario`. `cajas.test.tsx` afirma que el `<th>` calcula `position:
+  # sticky` y `top: 0px`, y hace falta; lo que un emulador de DOM no hace es **disposicion**, asi
+  # que alli la declaracion puede estar entera y la cabecera irse con la tabla sin que nada lo
+  # diga. `pegajosa.mjs` desplaza de verdad y mira donde queda cada cosa.
+  #
+  # Los otros dos arneses de `sgtm` —`mirar` y `cero-red`— llegan en su issue, no en este.
+  navegador:
+    name: Los arneses de navegador
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Instalar
+        run: yarn install --frozen-lockfile
+
+      # `playwright-core` va con version EXACTA en `package.json`: la revision del navegador que
+      # este paso descarga la elige la biblioteca, asi que con un rango serian dos numeros que
+      # pueden separarse sin que nada lo diga —la misma razon por la que la version de Node sale
+      # de `.nvmrc` y no de un literal—. Medido: con `^1.62.1` yarn instala 1.63.0, que busca
+      # `chromium_headless_shell-1243` donde el disco tiene el 1234, y el arnes muere antes de
+      # medir nada.
+      - name: Instalar Chromium
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Construir y servir
+        run: |
+          yarn build
+          npx vite preview --port 5182 --strictPort &
+          # Sin `wait-on`: es una dependencia mas que descargar para hacer lo que hacen tres
+          # lineas, y en un flujo bloqueante cada descarga es una forma nueva de ponerse rojo
+          # por algo que no se esta midiendo.
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:5182/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:5182/
+
+      - name: La paleta, sola con el teclado
+        run: CAJA_BASE=http://localhost:5182 yarn paleta
+
+      - name: La cabecera de las tablas se queda al desplazar
+        run: CAJA_BASE=http://localhost:5182 yarn pegajosa
