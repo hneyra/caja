@@ -1,0 +1,23 @@
+/* ============================================================
+   La tipografia de V6: **una sola familia**.
+   ------------------------------------------------------------
+   `TesoreriaV6.dc.html` linea 19 (`font-family`, `font-size`, el alisado) y
+   linea 14 (la carga desde Google Fonts, que se replica en `index.html` con las
+   mismas etiquetas <link> que el artboard).
+
+   No hay serif ni monoespaciada. El handoff de diseno emparejaba tres familias;
+   V6 lo dejo en Source Sans 3 y nada mas, y manda el .dc.html.
+
+   El respaldo `system-ui, sans-serif` es del artboard y **es justo lo que hace
+   admisible depender de Google Fonts**: si la ventanilla no alcanza la CDN, la
+   pantalla se dibuja con la fuente del sistema en vez de quedarse en blanco.
+   ============================================================ */
+:root {
+  --familia: 'Source Sans 3', system-ui, sans-serif;
+  --texto-base: 15px;
+
+  /* Los tres unicos pesos que el artboard carga (linea 14: wght@400;600;700). */
+  --peso-normal: 400;
+  --peso-medio: 600;
+  --peso-fuerte: 700;
+}

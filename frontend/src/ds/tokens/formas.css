@@ -1,0 +1,28 @@
+/* ============================================================
+   Radios y sombras de V6.
+   ------------------------------------------------------------
+   Censados sobre `TesoreriaV6.dc.html` contando ocurrencias, no elegidos a ojo:
+   6px (28 usos) es el radio por omision de campos y botones, 8px (14), 5px (9),
+   999px (8), 4px (8, las insignias), 7px (7), 50% (7) y 10px (3, los dialogos).
+
+   Los radios se nombran por su valor y no por un papel semantico: el artboard no
+   declara esa semantica, e inventarla aqui seria decidir en nombre del diseno.
+   Las sombras si se nombran por el elemento, porque el artboard **si** lo dice
+   (`role="dialog"`, `role="menu"`, `role="status"`).
+   ============================================================ */
+:root {
+  --radio-4: 4px;
+  --radio-5: 5px;
+  --radio-6: 6px;
+  --radio-7: 7px;
+  --radio-8: 8px;
+  --radio-10: 10px;
+  --radio-pastilla: 999px;
+  --radio-circulo: 50%;
+
+  --sombra-lanzador: 0 18px 48px rgba(0,54,90,.2);
+  --sombra-menu: 0 16px 42px rgba(0,54,90,.22);
+  --sombra-cajon: 0 22px 56px rgba(0,54,90,.26);
+  --sombra-modal: 0 22px 56px rgba(0,54,90,.28);
+  --sombra-aviso: 0 10px 30px rgba(0,54,90,.28);
+}

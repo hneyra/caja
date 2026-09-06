@@ -21,6 +21,10 @@ export default defineConfig({
     // navegador no quita los modulos de Node, asi que un solo entorno evita partir la suite.
     environment: "jsdom",
     globals: true,
+    // Sin esto, `import "@/ds/global.css"` desde una prueba no inyecta nada y la prueba de los
+    // tokens mediria un documento sin estilos: verde, y sin haber verificado nada. Con `css`
+    // encendido es Vite quien resuelve la cadena de `@import`, o sea la misma que se despliega.
+    css: true,
     include: ["verificaciones/**/*.test.{ts,tsx}"],
   },
 });
