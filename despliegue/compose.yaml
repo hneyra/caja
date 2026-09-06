@@ -18,10 +18,16 @@
 #  rol con que se conecta, el prefijo de la ruta y los dos objetivos del
 #  Dockerfile. No se copia una lista a mano: se derivan las dos y se comparan.
 #
-#  AQUI NO HAY FRONTEND, y no es un olvido. Este repositorio no tiene todavia
-#  `frontend/`: ADR-0030 §1 decide que habra uno por sistema y hoy no existe
-#  ninguno de los cuatro. El `README.md` de `infrastructure/despliegue/` decia
-#  que este compose traia «su backend y su frontend»; se corrigio a lo que hay.
+#  Y DESDE #18 SI HAY FRONTEND. Hasta aqui este bloque decia «AQUI NO HAY
+#  FRONTEND, y no es un olvido», porque no lo habia: ADR-0030 §1 decide que habra
+#  uno por sistema y ninguno de los cuatro existia. `C-18 — el compose de los
+#  cuatro` dejo escrito cuando entraria —«El frontend no se inventa. […] Cuando
+#  exista, entra en el compose de su sistema»—, y `caja-web` existe desde #3, con
+#  su imagen publicada desde #16 y su descriptor desde #17. Entra.
+#
+#  LO QUE ESE SERVICIO NO HACE, que es la mitad importante: no habla con el
+#  backend. No tiene `depends_on`, no reenvia nada y no lee ni una variable de
+#  este compose. El motivo largo esta en su servicio.
 # ============================================================================
 
 name: kamayuk-caja
@@ -189,6 +195,93 @@ services:
       timeout: 3s
       retries: 40
       start_period: 30s
+
+  # ── La interfaz de ventanilla ───────────────────────────────────────────────
+  #
+  # `caja-web` compilado y servido por nginx. La imagen es `kamayuk-caja-interfaz`
+  # (#16) y NUNCA `kamayuk-caja-web`: ese nombre ya es el del BACKEND con el perfil
+  # `web` de Spring, y darselo aqui seria un `Service` repartiendo entre dos cosas
+  # distintas.
+  #
+  # POR QUE SE LLAMA `caja-interfaz` Y NO `interfaz`
+  #
+  # Por lo mismo que el backend se llama `caja` y no `aplicacion`, escrito unas
+  # lineas mas arriba: los cuatro composes comparten la red `kamayuk-plataforma` y
+  # Compose le da a cada servicio un alias de red con su nombre. Hoy `interfaz` no
+  # lo declara nadie mas en esa red —medido: la plataforma trae `base`, `correo`,
+  # `identidad` e `ingreso`, y `rentas` y `catastro` solo sus tres procesos—, pero
+  # ADR-0030 §1 dice que habra CUATRO interfaces, y el dia de la segunda ese alias
+  # resolveria a una cualquiera de las dos. El sintoma de eso no es un error: es
+  # una peticion que a veces llega a quien no era. El nombre generico se corrige
+  # ahora, en un repositorio, o mas tarde en cuatro.
+  #
+  # (El `interfaz` a secas del monolito no choca con este: su compose se llama
+  # `sgtm` y NO declara `networks`, asi que vive en su propia red `sgtm_default`.
+  # Medido sobre `infrastructure/despliegue/compose.yaml`.)
+  #
+  # SIN `depends_on`, Y ESO ES UNA AFIRMACION
+  #
+  # Esta interfaz no necesita el backend para nada: sus datos salen de
+  # `frontend/src/datos/`, su `nginx.conf` no reenvia a ningun sitio —el del
+  # monolito si, y esa ausencia es la afirmacion principal de aquel archivo— y
+  # `eslint.config.mjs` prohibe `fetch` en el codigo. Declarar aqui una dependencia
+  # que no existe costaria dos cosas: haria que el compose MINTIERA sobre el grafo
+  # —que es justo lo que la guarda de `infrastructure` compara contra el
+  # descriptor—, y obligaria a `up -d caja-interfaz` a levantar antes la base, el
+  # migrador y la implantacion para dibujar una pantalla que no los usa.
+  #
+  # El dia que esta interfaz lea algo de verdad, esa linea entra CON su motivo, y
+  # entonces `nginx.conf` tendra que reenviar y `Identidad.ts` tendra que darle un
+  # cliente publico (ver `docs/00-gobierno/huecos-en-infrastructure.md`).
+  #
+  # Lo unico que SI necesita de fuera es la red `kamayuk-plataforma`, porque este
+  # archivo entero la declara `external: true` (ver el final). O sea que
+  # `up -d caja-interfaz` no arranca el migrador ni la implantacion ni el backend,
+  # pero exige que la plataforma este levantada. Sin ella Compose se niega, que es
+  # mejor que crear una segunda red con el mismo nombre.
+  caja-interfaz:
+    build:
+      # El contexto es `frontend/` y no la raiz, al reves que los tres de arriba:
+      # este `Dockerfile` no tiene ni un `COPY` que salga de ahi, y el
+      # `.dockerignore` que acota el contexto —`frontend/.dockerignore`— solo se
+      # aplica desde la raiz del contexto. El de la raiz excluye `frontend/` entero.
+      context: ../frontend
+      target: interfaz
+    image: kamayuk-caja-interfaz:compose
+    # EL UNICO SERVICIO DE ESTE COMPOSE QUE PUBLICA UN PUERTO, y hace falta.
+    #
+    # A los tres de arriba se entra por Traefik, bajo `/caja`. Aqui NO se puede
+    # todavia: `vite.config.ts` no declara `base`, asi que el `index.html` fija sus
+    # recursos en absoluto (`/assets/...`, `/escudo-catacaos.png`) y detras del
+    # prefijo el navegador los pediria a la raiz del dominio, que `PathPrefix(/caja)`
+    # ya no casa. Es el issue #37, con su tabla de medicion dentro. Mientras siga
+    # abierto, el puerto publicado es la unica forma de mirar esta pantalla — y por
+    # eso este servicio tampoco lleva etiquetas de Traefik: dos enrutadores
+    # reclamando `PathPrefix(/caja)` no dan error, se lo reparten.
+    #
+    # LA VARIABLE NO ES `KAMAYUK_PUERTO_INTERFAZ`, y no es capricho. Ese nombre ya
+    # lo usa la interfaz del monolito —`infrastructure/despliegue/compose.yaml:252`
+    # publica `${KAMAYUK_PUERTO_INTERFAZ:-8081}:8080`— y el `.env` es EL MISMO para
+    # todo esto: `infrastructure/despliegue/.env.ejemplo:86` trae
+    # `KAMAYUK_PUERTO_INTERFAZ=8081` y el README de ese directorio dice «El `.env`
+    # es el mismo de la plataforma». Reusar el nombre tendria dos efectos, los dos
+    # malos: con ese `.env` delante el valor por omision de aqui NO SE APLICA NUNCA
+    # —o sea que documentar `:8082` seria documentar algo falso—, y las dos
+    # interfaces pedirian el mismo puerto del anfitrion.
+    ports:
+      - "${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}:8080"
+    # SIN `healthcheck`, y tampoco es un olvido: `frontend/Dockerfile:126` ya
+    # declara el suyo —`wget --spider -q http://127.0.0.1:8080/`, en 127.0.0.1 y no
+    # `localhost` porque este nginx escucha solo en IPv4—, y Docker aplica el
+    # `HEALTHCHECK` de la imagen al contenedor, que es de donde `up --wait` lee la
+    # salud. **Eso ultimo NO se ha comprobado aqui**: esta maquina no tiene demonio
+    # y `docker compose config` no lo puede decir; es el comportamiento documentado
+    # y se anota como tal, no como medido.
+    #
+    # El monolito si lo escribe en su compose, y por un motivo concreto: su
+    # `frontend/Dockerfile` no trae ninguno (comprobado con `grep HEALTHCHECK`, que
+    # no encuentra nada alli). Copiarlo aqui seria un segundo sitio con la misma
+    # verdad, y el que envejece sin ponerse rojo.
 
 # La red de la plataforma, QUE YA EXISTE. `external: true` es lo que impide que
 # este compose cree una segunda con el mismo nombre y deje a los servicios sin

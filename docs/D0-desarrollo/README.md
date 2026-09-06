@@ -40,12 +40,23 @@ cd backend && ./gradlew verificarArquitectura
 
 # 3 · El descriptor de despliegue. Tampoco necesita Pulumi, ni token, ni cluster
 cd ../infrastructure && yarn install && yarn verificar
+
+# 4 · La pantalla. Lo más barato que hay, y lo único que se puede MIRAR hoy
+cd ../frontend && yarn install && yarn dev      # http://localhost:5181
 ```
 
-Con eso ya corre todo lo que hoy hay que correr en este repositorio. **Lo que todavía no hay es
-una aplicación que arrancar**: no existe ni una clase de negocio, así que no hay `bootRun`, ni
-API, ni pantalla. Levantar la plataforma sirve para tener la base y la identidad esperando —y
-para descubrir hoy lo que si no se descubre el día que haya código—, y está en
+**Lo más rápido para ver algo funcionando es el punto 4, y no necesita nada de lo anterior**: ni
+Docker, ni PostgreSQL, ni Keycloak, ni el clon hermano. `caja-web` **no habla con nadie** —sus
+datos salen de `frontend/src/datos/`, `eslint.config.mjs` prohíbe `fetch` y el arnés
+`yarn cero-red` lo comprueba en un navegador de verdad—, así que `yarn dev` dibuja las cuatro
+secciones sobre un repositorio recién clonado.
+
+> **Este párrafo decía «lo que todavía no hay es una aplicación que arrancar: no existe ni una
+> clase de negocio», y es falso desde P5D.** El backend tiene su contexto acotado entero
+> (`backend/kamayuk-caja-nucleo`) y desde C-7 arranca en sus dos perfiles —lo comprueba
+> `./gradlew verificarArranque`—; y la pantalla existe desde el lote de `caja-web`.
+
+Levantar la plataforma sirve para tener la base y la identidad esperando, y está en
 [DEV-01 §3](entorno-local.md).
 
 ## Qué comando para qué tarea
@@ -54,11 +65,18 @@ para descubrir hoy lo que si no se descubre el día que haya código—, y está
 |---|---|---|
 | Las reglas de arquitectura y los escáneres | `./gradlew verificarArquitectura` | `backend/` |
 | El aislamiento multi-tenant | `./gradlew verificarAislamiento` | `backend/` |
+| Que el artefacto levante en sus dos perfiles | `./gradlew verificarArranque` | `backend/` |
 | Todo, más el formato | `./gradlew build` | `backend/` |
 | Arreglar el formato | `./gradlew spotlessApply` | `backend/` |
 | Verificar el descriptor | `yarn verificar` | `infrastructure/` |
+| **Ver la pantalla** | `yarn dev` → <http://localhost:5181> | `frontend/` |
+| **Verificar la pantalla** | `yarn verificar` (ESLint, tipos y Vitest) | `frontend/` |
+| **Construir el artefacto de la pantalla** | `yarn build` → `frontend/dist/` | `frontend/` |
+| Los cuatro arneses de navegador | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | `frontend/`, con `yarn dev` levantado |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
-| Lo que hay que pasar antes de un PR | `./gradlew build verificarAislamiento verificarArquitectura` · `yarn verificar` | ambos |
+| Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml up -d --build --wait` | la raíz |
+| Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |
+| Lo que hay que pasar antes de un PR | `./gradlew build verificarAislamiento verificarArquitectura` · `yarn verificar` (los **dos**: `infrastructure/` y `frontend/`) | los tres |
 
 ## Las dos frases que gobiernan todo lo demás
 
