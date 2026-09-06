@@ -1,13 +1,10 @@
-// Corre en el `jsdom` de siempre, que es el entorno de toda la suite.
+// Los tokens del diseno, en el `jsdom` que usa toda la suite.
 //
-// **Una version anterior de este archivo cambiaba a happy-dom afirmando que «el
-// `getComputedStyle` de jsdom ignora toda regla con pseudo-clase». Eso era FALSO**, y la
-// revision del PR #20 lo midio: jsdom aplica `:focus` y devuelve el `box-shadow`. Lo que
-// habia enganado esta explicado en `campoEnfocado()`, y es la razon de que ese helper exista.
-//
-// Lo unico que jsdom NO hace es sustituir `var(--x)` en una propiedad calculada: devuelve el
-// texto `var(--anillo-campo)` en vez del color. Eso lo cubre `resolverVar()` en cuatro lineas
-// y no justifica una dependencia mas.
+// **La regla de foco NO se comprueba aqui**, sino en `foco.test.ts`, que corre en happy-dom y
+// explica por que. No es una preferencia de estilo: mientras vivio en este archivo, su
+// asercion pasaba por el ORDEN en que caian las pruebas —leer un input sin foco envenenaba la
+// sustitucion de `var()` para todo lo que viniera despues—, y una verificacion que depende de
+// eso no mide lo que dice medir. Alli hay una prueba que vigila esa independencia.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -95,17 +92,6 @@ const OTROS: [string, string][] = [
 const tokenDeLaRaiz = (nombre: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(nombre).trim();
 
-/**
- * Sustituye `var(--x)` por el valor del token, que es lo unico que jsdom no hace solo.
- *
- * Medido: con `box-shadow: 0 0 0 3px var(--anillo-campo)`, el estilo calculado de un campo
- * enfocado es la cadena `"0 0 0 3px var(--anillo-campo)"`. La regla SI aplica —sin foco es
- * ""—; lo que falta es la sustitucion. Se hace aqui para poder comparar contra el valor
- * literal del artboard sin sacar el token de `global.css`, que es donde debe estar.
- */
-const resolverVar = (valor: string) =>
-  valor.replace(/var\((--[\w-]+)\)/g, (_, nombre: string) => tokenDeLaRaiz(nombre));
-
 describe("los tokens valen lo que dice el artboard, caracter a caracter", () => {
   it.each([...COLORES, ...OTROS])("%s", (nombre, esperado) => {
     expect(tokenDeLaRaiz(nombre)).toBe(esperado);
@@ -142,77 +128,6 @@ describe("las dos coincidencias de valor son deliberadas", () => {
     // La trampa del material: #D3EBFA y #E4F4FD se parecen y son dos valores distintos.
     expect(tokenDeLaRaiz("--anillo-campo")).toBe("#D3EBFA");
     expect(tokenDeLaRaiz("--anillo-campo")).not.toBe(tokenDeLaRaiz("--azul-suave"));
-  });
-});
-
-describe("la regla de foco de los campos se ve", () => {
-  /**
-   * Un campo recien creado, enfocado ANTES de leerle el estilo.
-   *
-   * El orden importa, y es la trampa que hizo falsa la primera version de este archivo:
-   * **el entorno memoriza el estilo calculado de cada elemento** la primera vez que se le
-   * pide, y `focus()` no invalida esa memoria. Medido dentro de un solo documento jsdom: a un
-   * campo leido antes de enfocarlo le sigue saliendo "" despues de enfocarlo, y despues de
-   * volver a enfocarlo; otro campo del mismo documento, enfocado sin lectura previa, si
-   * devuelve el anillo.
-   *
-   * Una prueba escrita en el orden natural —leer, enfocar, releer— concluye que la regla no
-   * existe teniendola delante. Fue exactamente lo que paso, y de ahi salio la afirmacion
-   * falsa de que jsdom no aplicaba pseudo-clases.
-   */
-  const campoEnfocado = () => {
-    const campo = document.createElement("input");
-    document.body.appendChild(campo);
-    campo.focus();
-    return campo;
-  };
-
-  it("un input enfocado recibe el anillo `0 0 0 3px #D3EBFA`", () => {
-    const estilo = getComputedStyle(campoEnfocado());
-    expect(resolverVar(estilo.boxShadow)).toBe("0 0 0 3px #D3EBFA");
-  });
-
-  it("y ademas tine el borde de azul y se quita el `outline` del navegador", () => {
-    const estilo = getComputedStyle(campoEnfocado());
-    expect(resolverVar(estilo.borderColor)).toBe("#005284");
-    expect(estilo.outline).toBe("none");
-  });
-
-  it("un input SIN foco no lo recibe", () => {
-    // Es la mitad que hace falta: sin ella, un `box-shadow` puesto a todos los campos
-    // —enfocados o no— pasaria la prueba de arriba.
-    const suelto = document.createElement("input");
-    document.body.appendChild(suelto);
-    expect(getComputedStyle(suelto).boxShadow).toBe("");
-  });
-
-  /**
-   * Las dos mitades de lo que jsdom hace, medidas y no supuestas.
-   *
-   * La version anterior de este archivo tenia aqui una prueba que miraba `navigator.userAgent`
-   * y comprobaba que dijera «HappyDOM». Eso **no podia fallar por el motivo que decia
-   * comprobar**: era un comentario disfrazado de verificacion, y sostenia ademas una
-   * afirmacion falsa sobre jsdom.
-   *
-   * Esta si mide, y es la que justifica que `resolverVar` exista: jsdom **si** aplica la
-   * pseudo-clase, y **no** sustituye `var()`. El dia que sustituya, la segunda mitad se pone
-   * roja sola y el ayudante se puede borrar.
-   */
-  it("jsdom aplica `:focus` y no sustituye `var()`, que es por lo que existe `resolverVar`", () => {
-    const hoja = document.createElement("style");
-    hoja.textContent = ".anillo-literal:focus { box-shadow: 0 0 0 3px #D3EBFA }";
-    document.head.appendChild(hoja);
-
-    const conLiteral = document.createElement("input");
-    conLiteral.className = "anillo-literal";
-    document.body.appendChild(conLiteral);
-    conLiteral.focus();
-
-    // 1. La pseudo-clase SE aplica. Esto es lo que la primera version negaba por escrito.
-    expect(getComputedStyle(conLiteral).boxShadow).toBe("0 0 0 3px #D3EBFA");
-
-    // 2. Y el token llega sin resolver, que es la unica diferencia real que se midio.
-    expect(getComputedStyle(campoEnfocado()).boxShadow).toBe("0 0 0 3px var(--anillo-campo)");
   });
 });
 
