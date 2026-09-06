@@ -10,7 +10,7 @@ import type { Destino } from "@/marco/destino";
 import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import { DialogoDeCambios } from "@/marco/DialogoDeCambios";
 import { FilaDelTitulo } from "@/marco/FilaDelTitulo";
-import { MarcadorDeSeccion, type Pantalla } from "@/marco/MarcadorDeSeccion";
+import type { Pantalla } from "@/marco/MarcadorDeSeccion";
 import { PestanaAjena } from "@/marco/PestanaAjena";
 import {
   esSeccionPropia,
@@ -24,6 +24,7 @@ import { SinPestanas } from "@/marco/SinPestanas";
 import { usarAtajos } from "@/marco/usarAtajos";
 import { usarPestanas } from "@/marco/usarPestanas";
 import { PaletaDeComandos } from "@/paleta/PaletaDeComandos";
+import { PantallaDeSeccion } from "@/pantallas/PantallaDeSeccion";
 
 /**
  * El marco de `caja-web`: la barra global, el arbol de modulos, las pestanas y lo que hay
@@ -41,12 +42,17 @@ import { PaletaDeComandos } from "@/paleta/PaletaDeComandos";
  * abierto, lo activo, lo sucio y lo que se pregunta cerrar— vive en `usarPestanas`, que es el
  * mismo objeto de estado del artboard con sus transiciones al lado.
  *
- * <h2>Las cuatro pantallas no estan, y la ranura por la que entraran si</h2>
+ * <h2>La ranura por la que entran las cuatro pantallas</h2>
  *
- * `Pantalla` es el componente que dibuja la seccion activa. Por omision es
- * `MarcadorDeSeccion`, que dice que la pantalla llega despues; cuando se porten, se sustituye
- * ahi y el marco no se entera. Es tambien lo que hace observable `fijarCampo`, la unica forma
- * de ensuciar una pestana.
+ * `Pantalla` es el componente que dibuja la seccion activa, y por omision es
+ * {@link PantallaDeSeccion}: el reparto de las cuatro secciones propias, con el Panel portado
+ * y las otras tres todavia en el marcador. El marco no sabe cual es cual —lo unico que cambia
+ * con la seccion es el titulo, y eso lo calcula `rotulos.ts`—, asi que portar una pantalla mas
+ * no toca este archivo.
+ *
+ * Es tambien la ranura por la que las pruebas del marco enchufan una pantalla que edita un
+ * campo, que es lo unico que hace observable `fijarCampo` y la unica forma de ensuciar una
+ * pestana.
  */
 
 /** El texto del toast al cambiar de ejercicio. Artboard, linea 1496. */
@@ -90,7 +96,7 @@ export interface AppProps {
   readonly Pantalla?: Pantalla;
 }
 
-export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
+export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
   const [abierto, fijarAbierto] = useState<LoQueEstaAbierto>(AL_ARRANCAR);
 
   /**
@@ -110,9 +116,10 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
   /**
    * Con que estado se abre la seccion activa: el `extra` del `ir(dest, extra)` del artboard.
    *
-   * Se recibe y **todavia no se dibuja**, porque las cuatro pantallas llegan despues. Se expone
-   * en los `data-` de la raiz, que es lo unico que lo hace observable: un estado que nadie puede
-   * ver no se puede verificar. Lo que hay dentro y por que se reemplaza entero, en
+   * Se le pasa entero a la pantalla que se dibuja, y ademas se expone en los `data-` de la
+   * raiz. Los `data-` siguen valiendo la pena mientras tres de las cuatro pantallas sean el
+   * marcador: son lo unico que hace observable el destino de una navegacion cuyo destino nadie
+   * dibuja todavia. Lo que hay dentro y por que se reemplaza entero, en
    * {@link import("@/marco/destino").Destino}.
    */
   const [destino, fijarDestino] = useState<Destino>(SIN_EXTRAS);
@@ -292,6 +299,8 @@ export function App({ Pantalla = MarcadorDeSeccion }: AppProps = {}) {
           {activa !== null && esSeccionPropia(activa) && (
             <Pantalla
               seccion={activa}
+              destino={destino}
+              irA={irA}
               fijarCampo={pestanas.fijarCampo}
               valorDeCampo={pestanas.valorDeCampo}
             />

@@ -18,6 +18,7 @@
  * | `tarifario.ts` | `VAL` | 1139-1168 |
  * | `barra.ts` | `anios`, la ficha de sesion y el aviso de servicio | 1495, 168-175, 431 y 1681-1682 |
  * | `cola.ts` | `cola`, la del pie del arbol de modulos | 1823-1830 |
+ * | `panel.ts` | `cifras`, `bandeja`, `cobertura` y `actividad` | 1813-1860 |
  *
  * <h2>Los importes son texto</h2>
  *
@@ -62,6 +63,8 @@ export {
   ICONOS_POR_MODULO,
   MI_MODULO,
   MODULOS,
+  SECCION_DE_CAJAS,
+  SECCION_DE_RECIBOS,
   SECCIONES,
 } from "./navegacion";
 
@@ -85,3 +88,19 @@ export { AVISO, EJERCICIOS, OPCIONES_DE_SESION, SESION } from "./barra";
 
 export type { EntradaDeCola, TonoDeCola } from "./cola";
 export { COLA } from "./cola";
+
+export type {
+  ActividadDelPanel,
+  CifraDelPanel,
+  EsperaDelPanel,
+  LineaDeArqueo,
+} from "./panel";
+export {
+  ACTIVIDAD,
+  BANDEJA,
+  CIFRAS,
+  COBERTURA,
+  CUADRA,
+  DESDE_DONDE_CUADRA,
+  NODO_DE_MI_CAJA,
+} from "./panel";

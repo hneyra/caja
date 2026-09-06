@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import { ARBOL, COLA, ICONOS_POR_MODULO, MI_MODULO } from "@/datos";
+import { ARBOL, COLA, ICONOS_POR_MODULO, MI_MODULO, SECCION_DE_CAJAS } from "@/datos";
 
 /**
  * El arbol de modulos de la izquierda: el filtro, los doce modulos con sus cuatro submodulos y
@@ -43,14 +43,6 @@ export interface DestinoDelArbol {
   /** El indice del nodo de «Cajas y arqueo» que se abre. Es una posicion, no una cantidad. */
   readonly nodo?: number;
 }
-
-/**
- * La seccion a la que lleva la cola de trabajo: «Cajas y arqueo», cuyo hash es `#cajas`.
- *
- * La clave es `territorio` y no `cajas` porque es la del artboard, y renombrarla obligaria a
- * renombrarla tambien en `SECCIONES` y en el hash — esta explicado en `datos/navegacion.ts`.
- */
-const SECCION_DE_CAJAS = "territorio";
 
 export interface ArbolDeModulosProps {
   /** Las claves de los submodulos abiertos en pestanas. Es lo que cuenta la pastilla del modulo. */

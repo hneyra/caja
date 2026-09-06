@@ -158,6 +158,17 @@ export const SECCIONES: readonly Seccion[] = [
   { clave: "valores", label: "Tarifario y cierre", pastilla: "", slug: "tarifario" },
 ];
 
+/**
+ * Las dos claves de seccion que otras pantallas nombran, en un solo sitio.
+ *
+ * `territorio` es «Cajas y arqueo» —hash `#cajas`— y `predios` es «Recibos». Los nombres son
+ * los del artboard y **no se traducen**, como explica {@link ICONOS_DE_SECCION}; lo que estas
+ * dos constantes evitan es que el literal se escriba suelto en cada sitio que navega hacia
+ * ellas: la cola del arbol, las filas del panel y, manana, las de las otras pantallas.
+ */
+export const SECCION_DE_CAJAS: ClaveDeSeccion = "territorio";
+export const SECCION_DE_RECIBOS: ClaveDeSeccion = "predios";
+
 /** Un submodulo del arbol: la clave con la que se abre y su rotulo. */
 export interface Submodulo {
   readonly clave: string;
