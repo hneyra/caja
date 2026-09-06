@@ -61,6 +61,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
    eso va literal: darle un token seria ampliar la paleta del diseno desde aqui. */
 .hov-arbol:hover { background: #EFF7FC !important }
 
+/* —— Los `style-hover` del marco de pestanas ——
+   El aspa de una pestana (linea 396), el boton primario —«Cobrar» de la 410 y
+   «Guardar y cerrar» de la 881—, los dos botones de borde (462 y 880) y el que
+   descarta (879). `#7E96A8` y `#A8321E` no son constantes del artboard, asi que
+   van literales por lo mismo que `#EFF7FC`: darles un token seria ampliar la
+   paleta del diseno desde aqui. */
+.hov-aspa:hover { background: var(--linea-2) !important; color: var(--tinta) !important }
+.hov-primario:hover { background: var(--azul-osc) !important }
+.hov-borde:hover { border-color: #7E96A8 !important }
+.hov-borde-rojo:hover { border-color: #A8321E !important }
+
 /* —— Los cortes responsive del producto (lineas 33-38) —— */
 @media (max-width: 1240px) { [data-lista] { flex: 0 0 320px !important; width: 320px !important } }
 @media (max-width: 900px) {

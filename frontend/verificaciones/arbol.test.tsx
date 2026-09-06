@@ -18,13 +18,20 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { ArbolDeModulos, recuentoDelFiltro } from "../src/arbol/ArbolDeModulos";
 import { ARBOL, COLA, MI_MODULO, NODOS } from "../src/datos";
 import "../src/ds/global.css";
 
 afterEach(cleanup);
+
+/**
+ * El hash es global del documento y `App` lo escribe al montarse, asi que una prueba que
+ * abriera «Cajas y arqueo» dejaria a la siguiente arrancando alli. Se limpia antes de cada una:
+ * es lo que hace que `--sequence.shuffle` no cambie el resultado.
+ */
+beforeEach(() => window.history.replaceState(null, "", window.location.pathname));
 
 const arbol = () => screen.getByRole("complementary", { name: "Módulos y submódulos" });
 
@@ -347,7 +354,7 @@ describe("el estado de cada submodulo", () => {
   });
 });
 
-describe("pulsar un submodulo llama al `alIr` inyectado, y nada mas", () => {
+describe("pulsar un submodulo llama al `alIr` inyectado, y eso ya abre la pestana", () => {
   it("con su clave, sin nodo", () => {
     const alIr = vi.fn();
     render(<ArbolDeModulos abiertas={[]} activa={null} alIr={alIr} />);
@@ -355,16 +362,21 @@ describe("pulsar un submodulo llama al `alIr` inyectado, y nada mas", () => {
     expect(alIr.mock.calls).toEqual([["predios"]]);
   });
 
-  it("y en la aplicacion no abre ninguna pestana: solo queda anotado el destino", () => {
-    // El limite del issue: la barra de pestanas y el enrutado por hash son del siguiente.
+  it("y en la aplicacion abre la pestana, la activa y escribe su hash", () => {
+    // Hasta el issue de las pestanas esto solo anotaba el destino en un `data-`, porque no
+    // habia donde abrirlo. Ahora el `alIr` inyectado es el enchufe de verdad: el arbol sigue
+    // sin navegar —avisa— y quien abre es el marco.
     const { container } = render(<App />);
     const raiz = container.firstElementChild as HTMLElement;
-    expect(raiz.getAttribute("data-ir")).toBe("");
+    expect(raiz.getAttribute("data-ir")).toBe("panel");
 
     fireEvent.click(arbol().querySelector('[data-submodulo="territorio"]') as HTMLElement);
     expect(raiz.getAttribute("data-ir")).toBe("territorio");
     expect(raiz.getAttribute("data-ir-nodo")).toBe("");
-    expect(window.location.hash).toBe("");
+    expect(window.location.hash).toBe("#cajas");
+    expect(
+      arbol().querySelector('[data-submodulo="territorio"]')?.getAttribute("aria-current"),
+    ).toBe("true");
   });
 });
 
