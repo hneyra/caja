@@ -83,8 +83,10 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 #      `30-tune-worker-processes.sh` hace `sed -i.bak` sobre `nginx.conf`, y
 #      `10-listen-on-ipv6-by-default.sh` empieza por un `touch` de `default.conf`. Sin permiso
 #      los dos abortan con un mensaje de error por consola en cada arranque. (Ese segundo guion
-#      no llega a tocar nuestro archivo aunque pueda: compara su sha1 con el del paquete y sale
-#      en cuanto ve que difiere — 565a608f… el suyo, 3ace25ca… el nuestro.)
+#      no llega a tocar nuestro archivo aunque pueda: compara su sha1 con el que `apk manifest`
+#      declara para el `default.conf` DEL PAQUETE —`565a608f…`— y sale en cuanto ve que difiere.
+#      El nuestro no se escribe aqui a proposito: cambia con cada edicion de `nginx.conf`, y una
+#      cifra que se queda vieja sola es peor que ninguna. Lo que no cambia es que difiera.)
 #   3. El pid, que por omision va a `/run/nginx.pid`. Se manda a `/tmp`, escribible por cualquiera.
 #
 # El `chown` es a `nginx:0` y el `chmod` a `g=u` —por GRUPO y no por usuario— para que siga
