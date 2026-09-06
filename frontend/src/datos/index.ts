@@ -17,6 +17,7 @@
  * | `arqueo.ts` | `NODOS`, `DETERMINACIONES` | 1066-1137 |
  * | `tarifario.ts` | `VAL` | 1139-1168 |
  * | `barra.ts` | `anios`, la ficha de sesion y el aviso de servicio | 1495, 168-175, 431 y 1681-1682 |
+ * | `cola.ts` | `cola`, la del pie del arbol de modulos | 1823-1830 |
  *
  * <h2>Los importes son texto</h2>
  *
@@ -81,3 +82,6 @@ export { TARIFARIO } from "./tarifario";
 
 export type { AvisoDelSistema, Sesion } from "./barra";
 export { AVISO, EJERCICIOS, SESION } from "./barra";
+
+export type { EntradaDeCola, TonoDeCola } from "./cola";
+export { COLA } from "./cola";

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { ENTIDAD, MODULO, NOMBRE_DE_LA_APLICACION } from "@/aplicacion";
+import { ArbolDeModulos, type DestinoDelArbol } from "@/arbol/ArbolDeModulos";
 import { AvisoDelSistema } from "@/barra/AvisoDelSistema";
 import { BarraGlobal } from "@/barra/BarraGlobal";
 import { Toast, usarToast } from "@/barra/Toast";
 import { EJERCICIOS } from "@/datos";
 
 /**
- * El armazon de `caja-web`: la barra global, el aviso de servicio y el toast.
+ * El armazon de `caja-web`: la barra global, el aviso de servicio, el arbol de modulos y el toast.
  *
- * Debajo todavia no hay ninguna pantalla —llegan en los issues siguientes, portadas desde
- * `TesoreriaV6.dc.html`—, y por eso el cuerpo es un marcador de posicion que lo dice.
+ * A la derecha del arbol todavia no hay ninguna pantalla —llegan en los issues siguientes,
+ * portadas desde `TesoreriaV6.dc.html`—, y por eso el cuerpo es un marcador de posicion que lo
+ * dice.
  *
  * <h2>Donde vive el estado</h2>
  *
@@ -41,21 +43,43 @@ interface LoQueEstaAbierto {
 }
 
 /**
- * El arbol arranca cerrado, y a proposito.
+ * El arbol arranca **desplegado**, como el artboard (`secOpen: true`, linea 1219).
  *
- * El artboard arranca con `secOpen: true` (linea 1219), pero el arbol llega en el issue
- * siguiente y un `aria-expanded="true"` sobre una region que no existe no es un detalle
- * cosmetico: un lector de pantalla lo anuncia. Cuando el arbol entre, esto vuelve a `true`.
+ * Hasta el issue del arbol arrancaba cerrado, y con su motivo escrito aqui: un
+ * `aria-expanded="true"` sobre una region que no existe lo anuncia un lector de pantalla. Ahora
+ * la region existe —el `<aside aria-label="Módulos y submódulos">`—, asi que la deuda se paga.
  */
-const NADA_ABIERTO: LoQueEstaAbierto = {
-  modulos: false,
+const AL_ARRANCAR: LoQueEstaAbierto = {
+  modulos: true,
   paleta: false,
   lanzador: false,
   sesion: false,
 };
 
+/**
+ * Las pestanas abiertas al arrancar y cual es la activa: `abiertas: ['panel']` y `dest: 'panel'`
+ * del artboard (linea 1219).
+ *
+ * Son **constantes y no estado**, y eso es el limite de este issue: el arbol las dibuja —la
+ * pastilla de cuantas hay abiertas por modulo, el realce de la activa y la marca «abierta»— pero
+ * abrirlas y cerrarlas es la barra de pestanas, que llega en el issue siguiente. Un `useState`
+ * aqui seria empezar a escribir `ir()` sin la mitad que lo usa.
+ */
+const ABIERTAS_AL_ARRANCAR: readonly string[] = ["panel"];
+const ACTIVA_AL_ARRANCAR = "panel";
+
 export function App() {
-  const [abierto, fijarAbierto] = useState<LoQueEstaAbierto>(NADA_ABIERTO);
+  const [abierto, fijarAbierto] = useState<LoQueEstaAbierto>(AL_ARRANCAR);
+
+  /**
+   * El ultimo destino que el arbol pidio.
+   *
+   * No abre nada: aqui no hay pestanas ni enrutado por hash todavia. Se guarda por el mismo
+   * motivo que `data-paleta` —un estado que nadie puede observar no se puede verificar—, de modo
+   * que la prueba pueda afirmar que pulsar un submodulo llama al `alIr` inyectado con su clave, y
+   * que la cola de trabajo llama con el nodo de «Cajas y arqueo» que le toca.
+   */
+  const [destino, fijarDestino] = useState<{ clave: string; nodo?: number } | null>(null);
 
   /**
    * Los dos booleanos del aviso, como en el artboard (linea 1225): `aviso` es si sigue vivo y
@@ -69,11 +93,17 @@ export function App() {
 
   const { toast, avisar } = usarToast();
 
+  /** Lo que el arbol llama al pulsar un submodulo o una entrada de la cola. */
+  const alIr = (clave: string, extra?: DestinoDelArbol) =>
+    fijarDestino({ clave, ...(extra?.nodo === undefined ? {} : { nodo: extra.nodo }) });
+
   return (
     <div
       // El estado de la paleta no se ve todavia —su dialogo es de otro issue—, asi que se
       // expone aqui: un estado que nadie puede observar no se puede verificar, y este si.
       data-paleta={abierto.paleta ? "abierta" : "cerrada"}
+      data-ir={destino?.clave ?? ""}
+      data-ir-nodo={destino?.nodo === undefined ? "" : String(destino.nodo)}
       style={{ display: "flex", flexDirection: "column", height: "100vh" }}
     >
       <BarraGlobal
@@ -108,30 +138,44 @@ export function App() {
         />
       )}
 
-      <main
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: "auto",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 14,
-          padding: 24,
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: "var(--peso-fuerte)" }}>
-          {NOMBRE_DE_LA_APLICACION}
-        </h1>
-        <p style={{ margin: 0, color: "var(--tinta-2)" }}>
-          {MODULO} · {ENTIDAD}
-        </p>
-        <p style={{ margin: 0, maxWidth: 440, textAlign: "center", color: "var(--tinta-3)" }}>
-          Arriba está la barra global. Debajo todavía no hay ninguna pantalla: el árbol de
-          módulos, las pestañas y las cuatro pantallas llegan en los issues siguientes.
-        </p>
-      </main>
+      {/* La fila de la linea 204 del artboard: el arbol a la izquierda y el resto a la derecha.
+          El arbol **empuja** el contenido en vez de taparlo, que es lo que dice el issue de la
+          barra global, y por eso es una fila y no una capa flotante. */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
+        {abierto.modulos && (
+          <ArbolDeModulos
+            abiertas={ABIERTAS_AL_ARRANCAR}
+            activa={ACTIVA_AL_ARRANCAR}
+            alIr={alIr}
+          />
+        )}
+
+        <main
+          style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 14,
+            padding: 24,
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: "var(--peso-fuerte)" }}>
+            {NOMBRE_DE_LA_APLICACION}
+          </h1>
+          <p style={{ margin: 0, color: "var(--tinta-2)" }}>
+            {MODULO} · {ENTIDAD}
+          </p>
+          <p style={{ margin: 0, maxWidth: 440, textAlign: "center", color: "var(--tinta-3)" }}>
+            A la izquierda está el árbol de módulos y arriba la barra global. Aquí todavía no hay
+            ninguna pantalla: las pestañas y las cuatro pantallas llegan en los issues siguientes.
+          </p>
+        </main>
+      </div>
 
       {toast !== "" && <Toast texto={toast} />}
     </div>
