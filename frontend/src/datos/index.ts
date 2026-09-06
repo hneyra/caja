@@ -16,6 +16,7 @@
  * | `recibos-del-turno.ts` | `PREDIOS` | 1047-1063 |
  * | `arqueo.ts` | `NODOS`, `DETERMINACIONES` | 1066-1137 |
  * | `tarifario.ts` | `VAL` | 1139-1168 |
+ * | `barra.ts` | `anios`, la ficha de sesion y el aviso de servicio | 1495, 168-175, 431 y 1681-1682 |
  *
  * <h2>Los importes son texto</h2>
  *
@@ -77,3 +78,6 @@ export { DETERMINACIONES, NODOS } from "./arqueo";
 
 export type { PestanaDeTarifario } from "./tarifario";
 export { TARIFARIO } from "./tarifario";
+
+export type { AvisoDelSistema, Sesion } from "./barra";
+export { AVISO, EJERCICIOS, SESION } from "./barra";

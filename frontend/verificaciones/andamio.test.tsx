@@ -8,6 +8,11 @@ import { ENTIDAD, MODULO, NOMBRE_DE_LA_APLICACION } from "../src/aplicacion";
  *
  * Es la prueba mas barata que existe y aun asi mide algo que ninguna otra mide: que la cadena
  * React → JSX → alias → jsdom esta entera. Rota cualquier pieza de esa cadena, esto sale rojo.
+ *
+ * **El escudo ya no esta aqui**: desde el issue de la barra global lo pinta la barra, con el
+ * `alt` literal del artboard, y quien lo comprueba —incluida la peticion de verdad contra el
+ * servidor de Vite— es `barra.test.tsx`. Dos escudos en la misma pagina no eran fidelidad al
+ * diseno, eran un resto del andamio.
  */
 afterEach(cleanup);
 
@@ -22,9 +27,8 @@ describe("el andamio de caja-web", () => {
     expect(screen.getByText(`${MODULO} · ${ENTIDAD}`)).toBeDefined();
   });
 
-  it("pinta el escudo con su texto alternativo", () => {
+  it("dice que debajo de la barra todavia no hay pantalla", () => {
     render(<App />);
-    const escudo = screen.getByAltText(`Escudo de la ${ENTIDAD}`);
-    expect(escudo.getAttribute("src")).toBe("/escudo-catacaos.png");
+    expect(screen.getByText(/todavía no hay ninguna pantalla/)).toBeDefined();
   });
 });
