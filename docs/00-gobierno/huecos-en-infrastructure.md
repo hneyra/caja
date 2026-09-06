@@ -199,6 +199,33 @@ todavía una pieza legítima. Un rojo que miente se acaba silenciando, y con él
 comprobaciones que sí protegían algo — que es el hallazgo del `paths:` mudo de #17 por el otro
 lado.
 
+### Y lo que esto significa hoy: `despliegue/compose.yaml` no lo vigila nadie
+
+Es la consecuencia incómoda de los dos apartados anteriores, y conviene decirla entera.
+
+**Ningún flujo de CI de este repositorio lee `despliegue/compose.yaml`.** Comprobado con un `grep`
+sobre `.github/workflows/`, `infrastructure/verificaciones/`, `frontend/verificaciones/` y los
+guiones de `docs/00-gobierno/`: las dos únicas apariciones son **comentarios** de
+`descriptor.test.ts` que hablan del nombre del motor. `infraestructura.yml` no lo nombra en su
+`paths:` —y haría poco, porque su suite verifica el descriptor, no el compose— y `frontend.yml`
+tampoco.
+
+La guarda que sí lo lee vive en `infrastructure`, es
+`infra/verificaciones/compose-de-los-sistemas.test.ts`, **y hoy no puede correr** por el hueco 0.
+De modo que este archivo, que es configuración de despliegue, está ahora mismo **sin ninguna
+verificación automática viva**: lo único que lo mide es `docker compose config`, ejecutado a mano.
+
+No se arregla aquí —duplicar esa guarda en los cuatro repositorios es exactamente lo que su
+cabecera argumenta que no hay que hacer: «una guarda repetida cuatro veces se corrige tres»—, pero
+queda escrito, porque un archivo sin guarda que **parece** tenerla es peor que uno que se sabe
+desnudo.
+
+> Al lado de esto hay un hueco pequeño y de este repositorio: `RUTAS_DE_CODIGO` de
+> `docs/00-gobierno/verificar-fila-del-registro.mjs` son `backend/*/src/main/`,
+> `infrastructure/src/` y `frontend/src/`, así que un PR que **sólo** toque el compose no necesita
+> fila en el registro. Medido sobre este mismo PR: «Cierra #18 y no toca codigo de produccion: la
+> fila no se exige». La de #18 se escribió igual.
+
 ### Y un cuarto sitio, que NO se rompe: comprobado
 
 `infra/verificaciones/imagenes-publicadas.test.ts:154` compara `SISTEMAS_CON_IMAGEN`
