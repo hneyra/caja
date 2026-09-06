@@ -266,11 +266,16 @@ services:
       - "${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}:8080"
     # SIN `healthcheck`, y tampoco es un olvido: `frontend/Dockerfile:126` ya
     # declara el suyo —`wget --spider -q http://127.0.0.1:8080/`, en 127.0.0.1 y no
-    # `localhost` porque este nginx escucha solo en IPv4— y Compose hereda el
-    # `HEALTHCHECK` de la imagen, de modo que `up --wait` espera igual. El monolito
-    # lo escribe en su compose porque su `frontend/Dockerfile` no trae ninguno
-    # (comprobado: `grep HEALTHCHECK` no encuentra nada alli). Copiarlo aqui seria
-    # un segundo sitio con la misma verdad, y el que envejece sin ponerse rojo.
+    # `localhost` porque este nginx escucha solo en IPv4—, y Docker aplica el
+    # `HEALTHCHECK` de la imagen al contenedor, que es de donde `up --wait` lee la
+    # salud. **Eso ultimo NO se ha comprobado aqui**: esta maquina no tiene demonio
+    # y `docker compose config` no lo puede decir; es el comportamiento documentado
+    # y se anota como tal, no como medido.
+    #
+    # El monolito si lo escribe en su compose, y por un motivo concreto: su
+    # `frontend/Dockerfile` no trae ninguno (comprobado con `grep HEALTHCHECK`, que
+    # no encuentra nada alli). Copiarlo aqui seria un segundo sitio con la misma
+    # verdad, y el que envejece sin ponerse rojo.
 
 # La red de la plataforma, QUE YA EXISTE. `external: true` es lo que impide que
 # este compose cree una segunda con el mismo nombre y deje a los servicios sin
