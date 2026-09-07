@@ -40,12 +40,24 @@ import tools.jackson.databind.json.JsonMapper;
  * MUERTO por un motivo que no es el suyo — y un evento muerto dispara una alerta a una persona, asi
  * que confundirlas cuesta el tiempo de alguien.
  *
- * <h2>El token</h2>
+ * <h2>El token, y por que un 401 NO es un rechazo (#21)</h2>
  *
  * <p>El publicador corre <b>sin usuario delante</b>: no hay peticion en curso de la que sacar un
- * {@code Authorization}. Asi que se manda una credencial de servicio configurada, y si no la hay la
- * llamada sale sin credencial y el destino la rechaza — que es deliberado. ADR-0028 §2 dice como se
- * cierra esto de verdad, con un token delegado; <b>no esta construido</b>, y queda declarado.
+ * {@code Authorization}. Manda una credencial de servicio configurada, que desde #21 es la de una
+ * cuenta de Keycloak por sistema y municipalidad (ADR-0028 §2) y no una cadena aleatoria.
+ *
+ * <p><b>Y eso obliga a separar los 4xx en dos, que es el defecto que #21 cierra.</b> Hasta este
+ * issue, {@code publicar} clasificaba <b>todo</b> 4xx como {@link
+ * BuzonDelSistemaDeOrigen.Rechazado}, y {@code EntregarEventos} marca un rechazo MUERTO <b>sin
+ * gastar ninguno de los ocho reintentos</b>. Con la credencial ausente o caducada, el destino
+ * contesta <b>401</b>: cobrado, impreso, y el pago muerto al primer intento — el libro sin
+ * enterarse y una alerta a una persona por un motivo que no es el suyo.
+ *
+ * <p>El criterio es el del propio puerto: {@code Rechazado} es «el motivo no va a cambiar solo». Un
+ * 401 o un 403 <b>si</b> cambia solo —en cuanto la credencial se emite, se renueva o se le concede
+ * el acceso—, y se arregla del lado del despliegue, que es literalmente la definicion de {@link
+ * BuzonDelSistemaDeOrigen.NoContesta}. Un 422 no cambia solo: ese sigue siendo un rechazo, y
+ * seguirlo reintentando gastaria los ocho intentos para acabar en el mismo sitio.
  */
 @Component
 public class ClienteHttpDelSistemaDeOrigen {
@@ -101,6 +113,9 @@ public class ClienteHttpDelSistemaDeOrigen {
             // dispararia una alerta por un pago que SI se registro.
             return;
         }
+        if (esDeCredencial(estado)) {
+            throw new BuzonDelSistemaDeOrigen.NoContesta(faltaLaCredencial(sistema, estado));
+        }
         if (estado >= 400 && estado < 500) {
             throw new BuzonDelSistemaDeOrigen.Rechazado(
                     "«"
@@ -124,6 +139,13 @@ public class ClienteHttpDelSistemaDeOrigen {
                         .GET();
         conCredencial(peticion);
         HttpResponse<String> respuesta = enviar(peticion, sistema, que);
+        if (esDeCredencial(respuesta.statusCode())) {
+            // Aqui el 401 ya se reintentaba —TODO lo que no es 200 es `NoContesta`—, asi que lo
+            // que #21 anade no es el reintento sino el diagnostico: «contesto 401 al traer el
+            // buzon» manda a mirar el buzon, y lo que falta es una credencial.
+            throw new BuzonDelSistemaDeOrigen.NoContesta(
+                    faltaLaCredencial(sistema, respuesta.statusCode()) + " (al " + que + ")");
+        }
         if (respuesta.statusCode() != 200) {
             throw new BuzonDelSistemaDeOrigen.NoContesta(
                     "«" + sistema + "» contesto " + respuesta.statusCode() + " al " + que);
@@ -156,6 +178,33 @@ public class ClienteHttpDelSistemaDeOrigen {
             Thread.currentThread().interrupt();
             throw new BuzonDelSistemaDeOrigen.NoContesta("Se interrumpio al " + que, interrumpido);
         }
+    }
+
+    /**
+     * Un 401 o un 403 no hablan de este pago: hablan de quien llama.
+     *
+     * <p>Se distinguen por el codigo y no por el cuerpo a proposito: el cuerpo lo escribe el otro
+     * sistema y cambiar de redaccion no puede cambiar si un pago se reintenta.
+     */
+    private static boolean esDeCredencial(int estado) {
+        return estado == 401 || estado == 403;
+    }
+
+    /** Lo que hay que mirar, dicho en el mensaje que acaba en {@code pago_evento.ultimo_error}. */
+    private String faltaLaCredencial(SistemaDeOrigen sistema, int estado) {
+        String queFalta =
+                credencial.isBlank()
+                        ? "y esta caja no manda ninguna: `kamayuk.caja.credencial` esta vacia"
+                        : "y la que esta caja manda no vale";
+        return "«"
+                + sistema
+                + "» contesto "
+                + estado
+                + " "
+                + queFalta
+                + ". NO es un rechazo del pago: es la identidad de servicio, asi que se REINTENTA"
+                + " — se arregla del lado del despliegue (la cuenta «kamayuk-caja-servicio-<ubigeo>»"
+                + " de Keycloak y su secreto), y los pagos encolados salen solos (ADR-0028 §2, #21)";
     }
 
     private static String recorte(String cuerpo) {
