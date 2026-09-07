@@ -99,7 +99,7 @@ describe("criterio 1 · el atajo la abre, la vuelve a cerrar, y `Esc` tambien", 
     escape();
     expect(screen.queryByRole("dialog", { name: "Módulos del sistema" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Sesión de/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sesión — / }));
     expect(screen.queryByRole("menu", { name: "Sesión" })).not.toBeNull();
     escape();
     expect(screen.queryByRole("menu", { name: "Sesión" })).toBeNull();

@@ -13,7 +13,7 @@ import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
 import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import type { PropsDePantalla } from "@/marco/pantalla";
 import { MENSAJE_DE_COBRO_NUEVO } from "@/marco/rotulos";
-import { BORRADOR_DESCARTADO, reciboEmitido } from "@/pantallas/CobroNuevo";
+import { BORRADOR_DESCARTADO, reciboNoEmitido } from "@/pantallas/CobroNuevo";
 import { FichaDelRecibo } from "@/pantallas/FichaDelRecibo";
 
 /**
@@ -340,11 +340,14 @@ export function Recibos({
    * diseno no trae. Lo que el cajero ve es el toast con su numero, que es lo que el criterio pide.
    *
    * Lo escrito **no** se tira, que es lo que hace el artboard: su emision no lleva `vals: {}`.
+   *
+   * Y desde #44 el toast dice lo unico cierto de todo esto: que ese recibo **no se emitio**. Ver
+   * `reciboNoEmitido`, que es donde estaba la peor frase de esta interfaz.
    */
   const emitir = (codigo: string) => {
     irA(SECCION_DE_RECIBOS, { recibo: codigo });
     fijarPaso(0);
-    avisar(reciboEmitido(codigo));
+    avisar(reciboNoEmitido(codigo));
   };
 
   return (

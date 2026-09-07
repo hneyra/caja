@@ -132,6 +132,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--azul); box-shado
      inferior de acciones. En papel ninguna lleva a ninguna parte. */
   [data-cromo] { display: none !important }
 
+  /* Y la banda de maqueta SOBREVIVE a la regla de arriba, que es una decision explicita y no un
+     descuido de marcado (#44, AC-2). No lleva `data-cromo` —no es marco: es lo unico del
+     documento que dice que ese papel no vale nada—, y ademas se fija aqui por su nombre para que
+     quitarla del papel tenga que ser un cambio en esta linea y no un atributo que alguien anada
+     de paso. `print-color-adjust` porque Chromium no imprime fondos por omision: sin el, la banda
+     queda en un texto rojo suelto sobre blanco y deja de leerse como una banda. */
+  [data-banda-de-maqueta] {
+    display: flex !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
   /* El contenido deja de estar encerrado. En pantalla vive dentro de contenedores de alto fijo
      con `overflow:hidden` —la raiz es `height:100vh`—, y en papel eso recortaria todo menos la
      primera pantalla: saldria una hoja con el principio de la lista y nada mas. `max-height`

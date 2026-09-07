@@ -340,9 +340,9 @@ function deploymentDeLaInterfaz() {
   return d!;
 }
 
-function rutasDelIngreso() {
+function rutasDelIngreso(entorno: EntornoDelDescriptor = ENTORNO) {
   const todas = caja
-    .ingreso(ENTORNO)
+    .ingreso(entorno)
     .filter((m) => m.kind === "IngressRoute")
     .flatMap((m) => m.spec.routes);
   return {
@@ -351,6 +351,23 @@ function rutasDelIngreso() {
     todas,
   };
 }
+
+/**
+ * El MISMO ambiente, con `ambiente` y lo que de el se deriva puestos en `prod` (#44).
+ *
+ * Se compone a partir de `ENTORNO` y no se escribe de cero a proposito: lo unico que estas
+ * pruebas quieren variar es **el ambiente**, y un segundo objeto escrito a mano acabaria
+ * separandose del primero en algun otro campo, con lo que un rojo dejaria de decir cual de las
+ * dos diferencias lo produjo.
+ */
+const ENTORNO_DE_PRODUCCION: EntornoDelDescriptor = {
+  ...ENTORNO,
+  ambiente: "prod",
+  namespace: "kamayuk-caja-prod",
+  dominio: "kamayuk.example",
+  etiquetas: { ...ENTORNO.etiquetas, ambiente: "prod" },
+  secretoDe: (c) => `kamayuk-caja-prod-${c}`,
+};
 
 describe("#17 — la interfaz se despliega, y no se llama como el backend", () => {
   /**
@@ -775,5 +792,115 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
   it("desde #37 no queda ninguna, y el escaner lo dice habiendo mirado", () => {
     expect(absolutasEnSrc().map((a) => `${a.archivo}: ${a.ruta}`)).toEqual([]);
     expect(cuantasFuentesDeLaInterfaz()).toBeGreaterThan(30);
+  });
+});
+
+/**
+ * #44 — la interfaz de ventanilla **no se ruta en `prod`**, y si en `stg`.
+ *
+ * <h2>Que decide esto, y por que se fija aqui</h2>
+ *
+ * `caja-web` no habla con su backend: sin `fetch`, sin reenvio en `nginx.conf` y con
+ * `cero-red.mjs` midiendo 0 peticiones de conexion. Los datos que dibuja son los del artboard.
+ * Servida en `https://<dominio>/caja` sin pedir credenciales, no se distingue del sistema — y el
+ * primer dano que eso hace, una cifra plausible y falsa copiada a un informe, **no lo evita
+ * ninguna banda si el dominio es el de produccion**. La decision entera, con las tres salidas y
+ * su coste, vive en `AMBIENTE_SIN_INTERFAZ` del descriptor, que es donde se aplica.
+ *
+ * <h2>Las dos afirmaciones, y por que una sola no vale</h2>
+ *
+ * AC-5 pide que `manifiestosDe(caja, prod)` no traiga la ruta de la interfaz. Esa afirmacion
+ * sola **no separa las hipotesis**: un descriptor que no la declarara en ningun ambiente —o al
+ * que se le hubiera borrado la interfaz entera— la cumpliria igual de bien. Por eso al lado va
+ * la contraria, que en `stg` **si** esta, con su `Middleware` y su prioridad.
+ *
+ * <h2>Lo que sigue existiendo en `prod`, y se afirma para que no se retire de paso</h2>
+ *
+ * El `Deployment` y el `Service` de la interfaz. La imagen se sigue construyendo y publicando, y
+ * el pod sigue arrancando con sus sondas: lo unico que desaparece es la ruta publica. Sin esta
+ * tercera asercion, «en prod no esta la ruta» lo cumpliria tambien un descriptor que hubiera
+ * dejado de desplegar la interfaz, que es un cambio mucho mayor y no es el que este issue pide.
+ */
+describe("#44 — que se sirve en cada ambiente", () => {
+  it("en `prod` el ingreso NO declara la ruta de la interfaz", () => {
+    const { api, interfaz, todas } = rutasDelIngreso(ENTORNO_DE_PRODUCCION);
+
+    expect(
+      interfaz,
+      "en `prod` hay una ruta que no es la de la API: la maqueta de ventanilla se esta " +
+        "sirviendo en el dominio de produccion, sin autenticacion y con los datos del artboard",
+    ).toBeUndefined();
+    expect(todas).toHaveLength(1);
+    expect(api.services.map((s) => s.name)).toEqual([NOMBRE_DEL_BACKEND]);
+
+    // Y con la ruta se va su `Middleware`: uno que nadie referencia es una declaracion muerta,
+    // y una declaracion muerta es lo que manana alguien vuelve a enganchar sin leer por que
+    // estaba.
+    expect(
+      caja.ingreso(ENTORNO_DE_PRODUCCION).filter((m) => m.kind === "Middleware"),
+    ).toHaveLength(0);
+
+    // La otra mitad del criterio 3 de la lista de «lo que NO entra»: ningun manifiesto del
+    // ingreso de `prod` nombra al servicio de la interfaz, ni siquiera de refilon.
+    expect(JSON.stringify(caja.ingreso(ENTORNO_DE_PRODUCCION))).not.toContain(
+      NOMBRE_DE_LA_INTERFAZ,
+    );
+  });
+
+  it("y en `stg` SI, con su middleware y su prioridad", () => {
+    const { api, interfaz, todas } = rutasDelIngreso(ENTORNO);
+
+    expect(
+      interfaz,
+      "sin esta mitad, un descriptor que no declarara NUNCA la ruta de la interfaz pasaria la " +
+        "prueba de arriba: las dos hacen falta para separar las hipotesis",
+    ).toBeDefined();
+    expect(todas).toHaveLength(2);
+    expect(interfaz.services.map((s) => s.name)).toEqual([NOMBRE_DE_LA_INTERFAZ]);
+    expect(interfaz.match).toContain("PathPrefix(`/caja`)");
+    expect(interfaz.priority!).toBeLessThan(api.priority!);
+    expect((interfaz.middlewares ?? []).map((m) => m.name)).toEqual([
+      "kamayuk-caja-quitar-prefijo",
+    ]);
+  });
+
+  it("el pod de la interfaz sigue desplegandose en `prod`: lo que se va es la ruta", () => {
+    const enProduccion = caja.despliegue(ENTORNO_DE_PRODUCCION);
+    // Por prefijo y no por igualdad: su `ConfigMap` se llama `…-interfaz-nginx`.
+    const suyos = enProduccion.filter((m) => m.metadata.name.startsWith(NOMBRE_DE_LA_INTERFAZ));
+
+    expect(
+      suyos.map((m) => m.kind).sort(),
+      "retirar el `Deployment` seria dejar de ejercitar en `prod` justo lo que hay que tener " +
+        "listo el dia que la interfaz se conecte; #44 no lo pide y no se hace",
+      ).toEqual(["ConfigMap", "Deployment", "Service"]);
+
+    // Y sus dos politicas de red tambien: la que deja entrar a Traefik y la de DNS.
+    expect(
+      caja
+        .egreso(ENTORNO_DE_PRODUCCION)
+        .filter((p) => p.metadata.name.startsWith(NOMBRE_DE_LA_INTERFAZ)),
+    ).toHaveLength(2);
+  });
+
+  /**
+   * La decision escrita **donde se aplica**, que es lo que AC-1 pide con esas palabras.
+   *
+   * No es una prueba de estilo: un `if (e.ambiente === "prod")` sin explicacion se lee como un
+   * descuido o como un apano temporal, y el dia que alguien lo borre para «unificar los dos
+   * ambientes» habra deshecho una decision sin haberla leido. Lo que se exige es que el
+   * descriptor nombre las tres salidas y diga cual se eligio; lo que la decision *dice* no lo
+   * puede leer una maquina, y eso lo lee la revision.
+   */
+  it("y la decision esta escrita en el descriptor, no solo en el PR", () => {
+    const fuente = delRepositorio("infrastructure/src/descriptor.ts");
+    expect(fuente).toContain("AMBIENTE_SIN_INTERFAZ");
+    for (const dice of [
+      "no se ruta",
+      "Se elige la (2)",
+      "No retira el `Deployment` ni el `Service`",
+    ]) {
+      expect(fuente, `el descriptor no dice «${dice}»`).toContain(dice);
+    }
   });
 });

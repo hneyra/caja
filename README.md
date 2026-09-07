@@ -52,6 +52,14 @@ hace cierto que la pantalla se dibuje en un municipio sin salida a internet, y e
 hay que cambiar el dia que lea un dato real (ver
 [`docs/00-gobierno/huecos-en-infrastructure.md`](docs/00-gobierno/huecos-en-infrastructure.md) §3).
 
+**Y desde #44 lo dice la propia pantalla**, que es lo que separa servir una maqueta de servir el
+sistema: una banda permanente arriba del todo —en las cuatro secciones **y en el papel**—, los
+toast de las acciones que escribirian diciendo que **no escribieron nada**, y una ficha de sesion
+que **no inventa a ninguna persona**. Por lo mismo, el descriptor **no ruta esta interfaz en
+`prod`**: una cifra plausible y falsa copiada a un informe no la evita ninguna banda si el dominio
+es el de produccion. El `Deployment` y el `Service` siguen en su sitio; lo que cambia es a que
+ambiente llega su ruta.
+
 La salida real de `yarn verificar`, ejecutado en este repositorio:
 
 ```
@@ -61,8 +69,8 @@ $ eslint .
 $ tsc --noEmit
 $ vitest run
 …
- Test Files  21 passed (21)
-      Tests  648 passed (648)
+ Test Files  22 passed (22)
+      Tests  664 passed (664)
    Duration  81.23s
 ```
 
@@ -72,10 +80,10 @@ Y la de `yarn build`:
 $ yarn build
 $ tsc -b && vite build
 vite v6.4.3 building for production...
-✓ 70 modules transformed.
+✓ 72 modules transformed.
 dist/index.html                   1.38 kB │ gzip:  0.76 kB
-dist/assets/index-FJrOTcaG.css    3.42 kB │ gzip:  1.39 kB
-dist/assets/index-DGWPq6eb.js   292.34 kB │ gzip: 85.80 kB
+dist/assets/index-DPIdrlRS.css    3.55 kB │ gzip:  1.43 kB
+dist/assets/index-DS_nv2HZ.js   293.14 kB │ gzip: 86.04 kB
 ✓ built in 2.25s
 ```
 
@@ -84,9 +92,10 @@ dist/assets/index-DGWPq6eb.js   292.34 kB │ gzip: 85.80 kB
 cualquier peticion a `/`. Es la mitad que le toca a Vite; la otra es el `stripPrefix` del
 `IngressRoute` (#17), y **ninguna de las dos basta sola**.
 
-**Los cinco arneses de navegador** miden lo que un emulador de DOM no puede decir —disposicion,
-foco real, impresion y peticiones de red—, y no entran en `yarn verificar` porque necesitan un
-servidor levantado (y los cuatro primeros, un Chromium). Se lanzan contra `yarn dev` o contra el
+**Los seis arneses** miden lo que un emulador de DOM no puede decir —disposicion, foco real,
+impresion, peticiones de red y lo que el `dist/` lleva dentro—, y no entran en `yarn verificar`
+porque necesitan un servidor levantado o el artefacto construido (y cuatro de ellos, un
+Chromium). Se lanzan contra `yarn dev` o contra el
 `dist/` servido con `vite preview`, con `CAJA_BASE` apuntando al puerto **y al prefijo**
 (`CAJA_BASE=http://localhost:5182/caja`), y su detalle esta en
 [DEV-02 §7](docs/D0-desarrollo/pruebas.md).
@@ -98,6 +107,7 @@ servidor levantado (y los cuatro primeros, un Chromium). Se lanzan contra `yarn 
 | `yarn mirar` | Las cuatro secciones: cortes, arbol, teclado y papel, con capturas y PDF |
 | `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada, y que **todas cuelgan de `/caja`** |
 | `yarn prefijo` | Que el `dist/` no pide nada a la raiz del dominio y que `/caja/` y `/caja/recibos` sirven la aplicacion **con su tipo**. No necesita Chromium, y **solo vale contra el `dist/` servido**: apuntado a `yarn dev` lo dice y sale |
+| `yarn maqueta` | Que el artefacto **se declara maqueta** —la banda de #44 viaja en el paquete y en la hoja, con su regla de `@media print`—, que **no nombra a nadie** («Cárdenas»: 0 apariciones, como I-1 de `rentas`) y que ningun toast afirma una escritura que nunca ocurre. No necesita Chromium ni servidor: le basta `yarn build` |
 
 ### Levantarla como se despliega
 

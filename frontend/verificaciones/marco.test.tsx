@@ -23,7 +23,7 @@ import { ROTULO_DEL_DIALOGO, tituloDelDialogo } from "../src/marco/DialogoDeCamb
 import type { PropsDePantalla } from "../src/marco/pantalla";
 import {
   MENSAJE_DE_COBRO_NUEVO,
-  mensajeDeGuardado,
+  mensajeDeCierreSinGuardar,
   pestanasDe,
   SUBTITULOS,
   subtituloDe,
@@ -255,13 +255,19 @@ describe("criterio 7 · una pestana sucia no se cierra a la primera", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("«Guardar y cerrar» la cierra y saca el toast «Cambios guardados en Panel.»", () => {
+  it("«Guardar y cerrar» la cierra y el toast dice que no se guardo nada de Panel", () => {
     render(<App Pantalla={PantallaQueEdita} />);
     ensuciar();
     fireEvent.click(screen.getByRole("button", { name: /^Cerrar Panel/ }));
     fireEvent.click(screen.getByRole("button", { name: "Guardar y cerrar" }));
     expect(claves()).toEqual([]);
-    expect(screen.getByRole("status").textContent).toBe(mensajeDeGuardado("Panel"));
+    expect(screen.getByRole("status").textContent).toBe(mensajeDeCierreSinGuardar("Panel"));
+    // Y el literal al lado: hasta #44 decia «Cambios guardados en Panel.», que afirmaba una
+    // escritura que nunca ocurrio —cerrar la pestana tira lo escrito igual que «Descartar y
+    // cerrar»—.
+    expect(screen.getByRole("status").textContent).toBe(
+      "No se guardó nada de Panel: esta interfaz no está conectada a ningún sistema.",
+    );
   });
 
   it("la salida primaria es «Guardar y cerrar», y la que pierde va aparte y en rojo", () => {

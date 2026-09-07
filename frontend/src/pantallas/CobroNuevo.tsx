@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { CAJAS, CAJAS_CERRADAS, nombreCortoDe } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
+import { nadaSeRegistro } from "@/marco/maqueta";
 
 /**
  * Lo que **solo existe en un cobro nuevo**: la barra de caja y contribuyente, y el resumen.
@@ -158,11 +159,42 @@ export const noSePuedeTodavia = (motivo: string) => `No se puede cobrar todavía
 
 /** El rotulo del boton que emite (linea 2013) y el toast que saca (linea 2022). */
 export const COBRAR_Y_EMITIR = "Cobrar y emitir el recibo";
-export const reciboEmitido = (codigo: string) =>
-  `Recibo ${codigo} emitido. La cuota ya está descontada de la cuenta corriente.`;
 
-/** El toast de avanzar de seccion en un borrador (linea 2026) y la nota del pie (linea 2030). */
-export const GUARDADO_EN_EL_BORRADOR = "Guardado en el borrador.";
+/**
+ * El toast de la emision. **Aqui es donde estaba la peor frase de esta interfaz** (#44, AC-3).
+ *
+ * Decia: «Recibo 0003-0041193 emitido. La cuota ya está descontada de la cuenta corriente.» —
+ * dos hechos falsos sobre el dinero de un contribuyente, seguidos, en una pantalla que no ha
+ * hablado con nadie. Ningun recibo se emitio y ninguna cuota se descontó: no hay `fetch` en
+ * `src/`, no hay reenvio en `nginx.conf` y `cero-red.mjs` mide **0 peticiones de conexion**.
+ *
+ * El numero se conserva —es lo que el cajero acaba de ver en el resumen, y quitarlo dejaria el
+ * toast sin decir de que recibo habla—, pero lo que se afirma de el es lo unico cierto: que no
+ * se emitio. El motivo lo pone {@link nadaSeRegistro}, una sola vez para las cinco acciones que
+ * en el sistema de verdad escribirian.
+ */
+export const reciboNoEmitido = (codigo: string) =>
+  nadaSeRegistro(`El recibo ${codigo} no se emitió`);
+
+/**
+ * El toast de avanzar de seccion en un borrador (linea 2026).
+ *
+ * Decia «Guardado en el borrador.» (#44, AC-3), y **este no lo encontro leyendo el codigo nadie**:
+ * lo encontro medir la cobertura del recorrido de `maqueta.test.tsx`, que no llegaba hasta aqui.
+ * Un borrador no se guarda en ninguna parte —vive en el mapa de campos de la pestana, y cerrarla
+ * lo tira, que es justo lo que el dialogo de cambios sin guardar avisa—, asi que «guardado» era
+ * la misma afirmacion que las otras cuatro, solo que mas facil de pasar por alto.
+ */
+export const BORRADOR_EN_LA_PANTALLA = nadaSeRegistro("El borrador se queda en esta pantalla");
+
+/**
+ * La nota del pie del paso (linea 2030). **Se queda como la escribe el artboard**, y va dicho.
+ *
+ * AC-3 habla de los **toast** —lo que la pantalla afirma *despues* de una accion— y esto es una
+ * nota del formulario: describe lo que el boton va a hacer, no lo que hizo, y dentro de la
+ * pantalla es cierto (avanzar conserva lo escrito en el mapa de campos de la pestana). Cambiarla
+ * seria reescribir prosa del diseno sin necesidad, que es lo que `PORTAR.md` regla 1 evita.
+ */
 export const NOTA_DEL_BORRADOR = "El borrador se guarda al avanzar.";
 export const NOTA_DE_LA_EMISION =
   "Al cobrar, la cuota se descuenta y el importe entra al turno de la caja.";

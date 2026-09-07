@@ -32,6 +32,8 @@
  * (RNF-055): ninguno pasa por `number`.
  */
 
+import { SIN_SESION } from "@/marco/maqueta";
+
 /**
  * Lo que una casilla guarda cuando esta marcada.
  *
@@ -61,7 +63,9 @@ export const SIN_MARCAR = "";
 export const VALORES_DEL_RECIBO: Readonly<Record<string, string>> = {
   // —— Operación ——
   caja: "C-3",
-  cajero: "Cárdenas Vega, José",
+  // El artboard escribe «Cárdenas Vega, José». Es la sesion, no un caso de ejemplo: ver `CAJERO`
+  // en `cobro-nuevo.ts`, donde esta el motivo entero (#44, AC-4).
+  cajero: SIN_SESION.nombre,
   turno: "Mañana",
   fechaOp: "2026-09-05",
   horaOp: "09:41",

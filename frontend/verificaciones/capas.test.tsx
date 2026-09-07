@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App";
-import { MI_MODULO, MODULOS, OPCIONES_DE_SESION, SECCIONES, SESION } from "../src/datos";
+import { MI_MODULO, MODULOS, OPCIONES_DE_SESION, SECCIONES } from "../src/datos";
+import { SIN_SESION } from "../src/marco/maqueta";
 import {
   abririaElModulo,
   NOTA_DEL_LANZADOR,
@@ -37,7 +38,7 @@ const modulo = (nombre: string) =>
     `[data-modulo-del-lanzador="${nombre}"]`,
   ) as HTMLElement;
 
-const fichaDeSesion = () => screen.getByRole("button", { name: `Sesión de ${SESION.nombre}` });
+const fichaDeSesion = () => screen.getByRole("button", { name: `Sesión — ${SIN_SESION.nombre}` });
 const menu = () => screen.queryByRole("menu", { name: "Sesión" });
 const opciones = () => within(menu() as HTMLElement).getAllByRole("menuitem");
 const opcion = (label: string) =>
@@ -227,9 +228,9 @@ describe("criterio 7 · el menu de sesion", () => {
     render(<App />);
     fireEvent.click(fichaDeSesion());
     const texto = (menu() as HTMLElement).textContent ?? "";
-    expect(texto).toContain(SESION.nombre);
-    expect(texto).toContain(SESION.puesto);
-    expect(texto).toContain(SESION.iniciales);
+    expect(texto).toContain(SIN_SESION.nombre);
+    expect(texto).toContain(SIN_SESION.puesto);
+    expect(texto).toContain(SIN_SESION.iniciales);
   });
 
   it("son tres opciones, con sus rotulos y sus iconos", () => {

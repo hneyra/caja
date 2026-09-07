@@ -74,6 +74,7 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | **Construir el artefacto de la pantalla** | `yarn build` → `frontend/dist/` | `frontend/` |
 | Los cuatro arneses de navegador | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | `frontend/`, con `yarn dev` levantado |
 | Que la interfaz sea alcanzable bajo `/caja` | `yarn prefijo` | `frontend/`, con el `dist/` servido (`yarn build && yarn preview`) — **no vale contra `yarn dev`**, y lo dice |
+| Que el artefacto se declare maqueta y no invente a nadie | `yarn maqueta` | `frontend/`, con `yarn build` hecho. No necesita servidor ni Chromium |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
 | Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml up -d --build --wait` | la raíz |
 | Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |

@@ -90,6 +90,15 @@ const ANCHO_DEL_ARBOL = 252;
  */
 const ANCHO_A4 = 703;
 
+/**
+ * Lo que la banda de maqueta tiene que decir, en pantalla y en papel (#44, AC-2).
+ *
+ * Las dos mitades, y hacen falta las dos: «no está conectada» sola dejaría pensar que los datos
+ * son reales y están cacheados; «los datos son de diseño» sola dejaría pensar que se conecta y
+ * hoy trae datos de prueba.
+ */
+const LO_QUE_LA_BANDA_DICE = ["Maqueta sin conexión", "Los datos son de diseño"];
+
 /** El acento del artboard (`--acento`, línea 24), en la forma en que Chromium lo devuelve. */
 const ANILLO = "rgb(82, 189, 239)";
 /** El anillo de los campos (`--anillo-campo`, línea 25) y su borde. */
@@ -147,6 +156,45 @@ async function abrir(pagina, seccion) {
       fallar(`#${seccion}: el area de contenido esta practicamente vacia (${cuerpo.trim().length} caracteres)`);
     }
     if (quejas.length) fallar(`#${seccion}: la pagina se quejo\n      ${quejas.join("\n      ")}`);
+
+    // La banda de maqueta (#44, AC-2): permanente y en las CUATRO secciones. No se lee el JSX
+    // ni la declaracion: se pregunta si esta dibujada y que dice. Una banda enganchada a una
+    // pantalla concreta —o retirada al abrir una ficha— pasaria cualquier prueba de unidad y
+    // dejaria tres pantallas sin ella.
+    const laBanda = await pagina.evaluate((debeDecir) => {
+      const e = document.querySelector("[data-banda-de-maqueta]");
+      if (e === null) return null;
+      const c = getComputedStyle(e);
+      return {
+        display: c.display,
+        alto: e.getBoundingClientRect().height,
+        arriba: e.getBoundingClientRect().top,
+        // `textContent` y NO `innerText`: en Chromium `innerText` aplica `text-transform`, y el
+        // rotulo de la banda va en versalitas, asi que alli sale «MAQUETA SIN CONEXIÓN» y la
+        // comparacion contra la cadena del codigo falla. Medido: la primera version de esta
+        // sonda dio 8 rojos sobre una banda correcta.
+        texto: (e.textContent ?? "").replace(/\s+/g, " ").trim(),
+        falta: debeDecir.filter((d) => !(e.textContent ?? "").includes(d)),
+      };
+    }, LO_QUE_LA_BANDA_DICE);
+    if (laBanda === null) {
+      fallar(`#${seccion}: no hay ninguna banda de maqueta — la pantalla no dice que no lo es`);
+    } else if (laBanda.display === "none" || laBanda.alto < 10) {
+      fallar(
+        `#${seccion}: la banda de maqueta esta pero no se ve (display: ${laBanda.display}, ` +
+          `${laBanda.alto} px de alto)`,
+      );
+    } else if (laBanda.falta.length) {
+      fallar(`#${seccion}: la banda no dice ${laBanda.falta.map((d) => `«${d}»`).join(" ni ")}`);
+    } else if (laBanda.arriba > 4) {
+      fallar(
+        `#${seccion}: la banda empieza a ${laBanda.arriba} px del borde: no es lo primero que ` +
+          "se ve, y AC-2 pide algo que salga en una captura de pantalla",
+      );
+    } else {
+      contar(`#${seccion}: banda de maqueta de ${laBanda.alto} px arriba del todo`);
+    }
+
     contar(`#${seccion}: ${cuerpo.trim().length} caracteres de contenido, 0 quejas`);
   }
   await contexto.close();
@@ -437,10 +485,26 @@ for (const ancho of [1400, 1000]) {
         .map((e) => ({ e, r: e.getBoundingClientRect() }))
         .filter(({ r }) => r.width > 0 && r.right > anchoA4 + 1)
         .map(({ e, r }) => `${e.tagName.toLowerCase()} hasta x=${Math.round(r.right)}`);
+      const b = document.querySelector("[data-banda-de-maqueta]");
+      const cb = b === null ? null : getComputedStyle(b);
       return {
         cromo: Object.fromEntries(
           ["barra", "arbol", "pestanas", "acciones"].map((k) => [k, dibujado(`[data-cromo="${k}"]`)]),
         ),
+        // La banda, en papel. Se mide lo que la impresion podria haberle hecho: retirarla con el
+        // cromo, o dejarla sin fondo. Chromium no imprime fondos por omision, y sin
+        // `print-color-adjust: exact` la banda queda en un texto rojo suelto sobre blanco.
+        banda:
+          b === null
+            ? null
+            : {
+                display: cb.display,
+                alto: b.getBoundingClientRect().height,
+                fondo: cb.backgroundColor,
+                ajuste: cb.printColorAdjust ?? cb.webkitPrintColorAdjust ?? "",
+                // `textContent`, por lo mismo que arriba: `innerText` aplica `text-transform`.
+                texto: (b.textContent ?? "").replace(/\s+/g, " ").trim(),
+              },
         texto: (document.querySelector("[data-seccion]")?.innerText ?? "").trim().length,
         desbordan: [...new Set(desbordan)].slice(0, 6),
         cuantosDesbordan: desbordan.length,
@@ -471,6 +535,38 @@ for (const ancho of [1400, 1000]) {
         fallar(`#${seccion}: en impresion el cromo «${pieza}» sigue dibujandose (display: ${display})`);
       }
     }
+    // Y la banda de maqueta SOBREVIVE a esa retirada, que es la decision explicita de #44: es lo
+    // unico del documento que dice que ese papel no vale nada. Sin ella, lo que sale de la
+    // impresora es una hoja con numero de recibo, titular e importe, con la forma de un recibo
+    // de verdad y sin una sola marca.
+    if (v.banda === null) {
+      fallar(`#${seccion}: en impresion no hay ninguna banda de maqueta en la pagina`);
+    } else if (v.banda.display === "none" || v.banda.alto < 10) {
+      fallar(
+        `#${seccion}: en impresion la banda de maqueta desaparece (display: ${v.banda.display}, ` +
+          `${v.banda.alto} px) — el papel sale sin decir que no vale nada`,
+      );
+    } else {
+      const faltan = LO_QUE_LA_BANDA_DICE.filter((d) => !v.banda.texto.includes(d));
+      if (faltan.length) {
+        fallar(`#${seccion}: en papel la banda no dice ${faltan.map((d) => `«${d}»`).join(" ni ")}`);
+      }
+      // El fondo tiene que llegar a la hoja: si no, la banda deja de leerse como una banda.
+      if (v.banda.fondo === "rgba(0, 0, 0, 0)" || v.banda.fondo === "transparent") {
+        fallar(`#${seccion}: en impresion la banda pierde su fondo (${v.banda.fondo})`);
+      }
+      if (v.banda.ajuste !== "exact") {
+        fallar(
+          `#${seccion}: la banda declara \`print-color-adjust: ${v.banda.ajuste}\`: Chromium no ` +
+            "imprime fondos por omision y la banda saldria en un texto rojo suelto sobre blanco",
+        );
+      }
+      contar(
+        `#${seccion} en papel: banda de ${v.banda.alto} px sobre ${v.banda.fondo} ` +
+          `(print-color-adjust: ${v.banda.ajuste})`,
+      );
+    }
+
     // La mitad que hace falta al lado de la anterior: retirarlo TODO tambien deja el cromo
     // fuera, y dejaria una hoja en blanco.
     if (v.texto < 80) {

@@ -261,7 +261,7 @@ describe("nada de lo que se dibuja se queda sin nombre", () => {
     // La sesion ANTES que el lanzador, y no al reves: `abrirSesion` apaga el lanzador (linea
     // 1685) y `abrirLanzador` solo apaga la paleta (1759) — la asimetria del artboard que #9
     // porto y fijo. En el otro orden se queda uno solo abierto y este escaner mira menos.
-    fireEvent.click(screen.getByRole("button", { name: /^Sesión de/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sesión — / }));
     fireEvent.click(screen.getByRole("button", { name: "Ver todos los módulos" }));
   }
 
