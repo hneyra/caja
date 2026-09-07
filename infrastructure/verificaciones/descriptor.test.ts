@@ -680,20 +680,24 @@ describe("#17 — criterio 7: ninguna etiqueta de imagen escrita a mano", () => 
  * Las tres piezas, medidas contra el nginx real de `nginx:1.31.4-alpine` con el `nginx.conf` de
  * este repositorio y el `dist/` que `yarn build` produce:
  *
- *   1. `frontend/nginx.conf` sirve en la RAIZ (`root …/html; location / { try_files … }`) y no
- *      declara ningun `location /caja`. Luego el ingreso tiene que quitar el prefijo, o nginx
- *      recibe `/caja/assets/index-<huella>.js`, no encuentra el archivo, cae en el `try_files` y
- *      contesta **200 text/html de 1 383 B** — el `index.html`, donde el navegador esperaba un
- *      modulo. La pantalla queda en blanco sin un solo error en el servidor.
- *   2. Quitado el prefijo, nginx sirve bien todo lo que le llega: `200 application/javascript`
- *      para el paquete y `200 image/png` para el escudo.
- *   3. Pero el navegador solo pide bajo `/caja` lo que el `index.html` diga. Con `base` sin
- *      declarar en `frontend/vite.config.ts`, `dist/index.html` dice `src="/assets/…"`, o sea la
- *      raiz del dominio: una ruta que `PathPrefix(/caja)` no casa y que este descriptor **no
- *      puede reclamar** (prohibicion (a)).
+ *   1. `frontend/nginx.conf` sirve en la RAIZ (`root …/html; location / { try_files … }`), que es
+ *      lo que le llega cuando el ingreso ya quito el prefijo: `200 application/javascript` para el
+ *      paquete y `200 image/png` para el escudo.
+ *   2. Y desde #42 sirve **tambien** `/caja/`, con un `rewrite ... last` que devuelve la peticion
+ *      a la busqueda de `location` sin el prefijo. Hasta entonces, quien llegaba sin ingreso
+ *      delante —el puerto que publica `despliegue/compose.yaml`— pedia
+ *      `/caja/assets/index-<huella>.js`, nginx no encontraba el archivo, caia en el `try_files` y
+ *      contestaba **200 text/html de 1 383 B**: el `index.html` donde el navegador esperaba un
+ *      modulo, y la pantalla en blanco sin un solo error en el servidor.
+ *   3. Y el navegador solo pide bajo `/caja` lo que el `index.html` diga. Sin `base` declarado en
+ *      `frontend/vite.config.ts`, `dist/index.html` diria `src="/assets/…"`, o sea la raiz del
+ *      dominio: una ruta que `PathPrefix(/caja)` no casa y que este descriptor **no puede
+ *      reclamar** (prohibicion (a)). Lo declara desde #37.
  *
- * De modo que **las dos salidas no son alternativas**: el middleware es necesario y no suficiente,
- * y `base` es necesario y no suficiente. Y habia una tercera pieza, que es la que impidio cerrar
+ * De modo que **las dos salidas no eran alternativas**: el middleware era necesario y no
+ * suficiente, y `base` es necesario y no suficiente. Con #42, la que dejo de ser necesaria es la
+ * primera —nginx sirve las dos entradas, asi que el middleware es redundante en efecto—, y aun asi
+ * se queda: ver el docblock de `ingreso()`. Y habia una tercera pieza, que es la que impidio cerrar
  * esto en #17: `frontend/src/` escribia una ruta absoluta a la raiz en un literal de JavaScript, y
  * **Vite no reescribe eso**. Medido entonces y vuelto a medir en #37: con `base: "/caja/"`,
  * `dist/index.html` decia `/caja/escudo-catacaos.png` y el paquete seguia diciendo
@@ -744,15 +748,39 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
     return hallazgos;
   }
 
-  it("nginx sirve en la raiz, asi que el ingreso tiene que quitar el prefijo", () => {
+  it("nginx sirve las dos entradas: la raiz y `/caja/`, que reescribe a la raiz", () => {
     const conf = nginx();
+
+    // La entrada del CLUSTER: aqui llega lo que el `stripPrefix` ya limpio.
     expect(conf).toContain("root /usr/share/nginx/html;");
     expect(conf).toContain("location / {");
+
+    // La entrada de quien NO tiene un ingreso delante (#42). Se exige la forma exacta porque lo
+    // que la hace valer es que reescriba **a la raiz**: un `location /caja/` que sirviera por su
+    // cuenta seria un segundo camino, y dos caminos se separan.
     expect(
       conf,
-      "si nginx pasara a servir bajo /caja, el middleware que quita el prefijo sobraria",
-    ).not.toContain("location /caja");
+      "sin esto, `/caja/assets/...` cae en el `try_files` y sale 200 `text/html`: la pantalla en " +
+        "blanco del compose (#42)",
+    ).toMatch(/location \/caja\/ \{\s*rewrite \^\/caja\/\(\.\*\)\$ \/\$1 last;\s*\}/);
 
+    // Y la propiedad que ata las dos entradas a un solo camino de servicio: **una** directiva
+    // `try_files` y **un** `location /assets/`. Es lo que impide el arreglo por copia, que es el
+    // que envejece: duplicar los bloques bajo el prefijo dejaria las dos rutas sirviendo bien hoy
+    // y con cabeceras distintas el dia que alguien toque una sola.
+    //
+    // Se cuentan DIRECTIVAS y no menciones —al principio de linea, que es donde nginx las lee—
+    // porque la cabecera de ese archivo las nombra al explicar por que hay una sola: contarlas a
+    // secas da 4 y la guarda se pondria roja por su propia prosa, que es la leccion del escaner
+    // del Panel (#10) y la del conteo del reenvio en ese mismo archivo.
+    expect(
+      (conf.match(/^\s*try_files\s/gm) ?? []).length,
+      "dos `try_files` son dos caminos de servicio que pueden separarse",
+    ).toBe(1);
+    expect((conf.match(/^\s*location \/assets\/ \{/gm) ?? []).length).toBe(1);
+
+    // El middleware del ingreso NO se retira, aunque con lo de arriba sea redundante en efecto:
+    // ver el docblock de `ingreso()`.
     const { interfaz } = rutasDelIngreso();
     expect((interfaz.middlewares ?? []).length).toBe(1);
   });
@@ -902,5 +930,94 @@ describe("#44 — que se sirve en cada ambiente", () => {
     ]) {
       expect(fuente, `el descriptor no dice «${dice}»`).toContain(dice);
     }
+  });
+});
+
+/**
+ * #42 — los comentarios que decian quien quita el prefijo, y decian algo falso.
+ *
+ * Tres archivos vivos explicaban, **en presente y con esas palabras**, que
+ * `frontend/vite.config.ts` no declara `base`: la seccion «El prefijo `/caja`» de
+ * `frontend/nginx.conf`, el docblock de `ingreso()` en `infrastructure/src/descriptor.ts` y el
+ * comentario del puerto publicado en `despliegue/compose.yaml`. Lo declara desde #37, asi que los
+ * tres mandaban a quien fuera a entender el prefijo exactamente al reves de como funciona.
+ *
+ * No es cosmetica: los tres son los sitios donde alguien mira para decidir quien tiene que quitar
+ * el prefijo, y de esa decision cuelga que la pantalla se vea o salga en blanco.
+ *
+ * <h2>Por que se busca ESA frase y no «base»</h2>
+ *
+ * La afirmacion falsa tiene una forma concreta —el sujeto `vite.config.ts` seguido de «no declara
+ * `base`»— y solo esa se prohibe. Los mismos archivos escriben **condicionales** que son ciertas y
+ * tienen que poder escribirse: «Sin `base` declarado, `dist/index.html` diria…», «mientras haya un
+ * literal absoluto en `src/`, `base` tiene que estar sin declarar». Un escaner que buscara «base»
+ * y «declara» cerca las pondria rojas todas, y una guarda que grita en lo correcto se acaba
+ * apagando (#437). Por eso el detector se prueba **en las dos direcciones**, con una muestra que
+ * tiene que disparar y una contramuestra que no.
+ *
+ * <h2>Y la otra mitad: que `base` siga declarado</h2>
+ *
+ * Sin ella, la prohibicion se cumpliria tambien quitando `base` de `vite.config.ts` —entonces la
+ * frase seria cierta y bastaria con borrarla—. Que valga `/caja/` lo exige ademas la guarda
+ * bidireccional de mas arriba; aqui se afirma porque es la premisa de esta.
+ */
+describe("#42 — ningun archivo vivo dice que `vite.config.ts` no declara `base`", () => {
+  /**
+   * La frase prohibida: el sujeto y, pegado a el, la negacion. Se normalizan antes los prefijos
+   * de comentario (`#`, `*`, `//`) y los saltos de linea, porque la frase se parte en dos lineas
+   * segun donde caiga el margen y una guarda que dependa de eso no vigila nada.
+   */
+  const LA_FRASE = /vite\.config\.ts`?\**\s*\**(?:no|tampoco)\s+declara\s+\**`?base`?/i;
+
+  /** Tal como estaba escrita en `descriptor.ts` hasta #42. Si esto no dispara, no se mide nada. */
+  const MUESTRA = "`frontend/vite.config.ts` **no declara `base`**, asi que el `index.html`";
+
+  /** Cierta y necesaria: una condicional sobre lo que pasaria sin `base`. No puede disparar. */
+  const CONTRAMUESTRA = "Sin `base` declarado en `frontend/vite.config.ts`, `dist/index.html` diria";
+
+  /** Un archivo, sin prefijos de comentario y en una sola linea. */
+  const aplanado = (ruta: string) =>
+    delRepositorio(ruta)
+      .split("\n")
+      .map((l) => l.replace(/^\s*(?:#|\*|\/\/)\s?/, ""))
+      .join(" ")
+      .replace(/\s+/g, " ");
+
+  /**
+   * Los tres archivos vivos. `CLAUDE.md` **no entra a proposito**: sus filas son el registro de lo
+   * que se midio el dia que se midio, y una fila historica no se reescribe —la de #37 dice esa
+   * frase porque entonces era verdad, y decia ademas que quedaba pendiente—.
+   */
+  const ARCHIVOS = [
+    "frontend/nginx.conf",
+    "infrastructure/src/descriptor.ts",
+    "infrastructure/src/nginx-de-la-interfaz.ts",
+    "despliegue/compose.yaml",
+  ];
+
+  it("el detector dispara con la frase y no con la condicional", () => {
+    expect(LA_FRASE.test(MUESTRA), "el detector no ve la frase que existio: no mide nada").toBe(
+      true,
+    );
+    expect(
+      LA_FRASE.test(CONTRAMUESTRA),
+      "el detector dispara con una condicional cierta: gritaria en lo correcto y acabaria apagado",
+    ).toBe(false);
+  });
+
+  it("y ninguno de los archivos vivos la escribe", () => {
+    const culpables = ARCHIVOS.filter((r) => LA_FRASE.test(aplanado(r)));
+    expect(
+      culpables,
+      "`vite.config.ts` declara `base: \"/caja/\"` desde #37, y de quien quita el prefijo cuelga " +
+        "que la pantalla se vea o salga en blanco (#42)",
+    ).toEqual([]);
+    // Y que se ha leido algo: una ruta que se quede vieja devolveria un archivo vacio y la lista
+    // saldria vacia por no haber mirado. Un grep vacio no es prueba de ausencia.
+    for (const r of ARCHIVOS) expect(aplanado(r).length, `«${r}» esta vacio`).toBeGreaterThan(1000);
+  });
+
+  it("y `base` sigue declarado, que es la premisa de lo anterior", () => {
+    expect(/^\s*base:\s*"\/caja\/"/m.test(delRepositorio("frontend/vite.config.ts"))).toBe(true);
   });
 });

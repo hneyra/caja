@@ -16,7 +16,9 @@ name: Infraestructura
 #     `base` que Vite hornea son dos mitades de una sola decision y tienen que moverse juntas;
 #   · `frontend/Dockerfile`, porque `runAsNonRoot` solo lo puede comprobar el kubelet si el `USER`
 #     de la imagen es un numero;
-#   · `Api.java`, porque la ruta que NO se le quita a la API es su `RAIZ`.
+#   · `Api.java`, porque la ruta que NO se le quita a la API es su `RAIZ`;
+#   · y desde #42 `despliegue/compose.yaml`, porque es el tercer sitio donde estaba escrito quien
+#     quita el prefijo —y el que lo decia mal— y hay una guarda que lo lee.
 #
 # Sin estas lineas, editar solo uno de esos archivos dejaria la comprobacion vieja **en verde**: la
 # guarda no se rompe, deja de correr. Es el mismo modo de fallo silencioso que la fila que nadie
@@ -34,6 +36,7 @@ on:
       - "frontend/Dockerfile"
       - "frontend/src/**"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"
   pull_request:
     paths:
@@ -43,6 +46,7 @@ on:
       - "frontend/Dockerfile"
       - "frontend/src/**"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"
 
 # Sin permisos de escritura: este trabajo lee y verifica, no publica nada.

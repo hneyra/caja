@@ -250,14 +250,21 @@ services:
     image: kamayuk-caja-interfaz:compose
     # EL UNICO SERVICIO DE ESTE COMPOSE QUE PUBLICA UN PUERTO, y hace falta.
     #
-    # A los tres de arriba se entra por Traefik, bajo `/caja`. Aqui NO se puede
-    # todavia: `vite.config.ts` no declara `base`, asi que el `index.html` fija sus
-    # recursos en absoluto (`/assets/...`, `/escudo-catacaos.png`) y detras del
-    # prefijo el navegador los pediria a la raiz del dominio, que `PathPrefix(/caja)`
-    # ya no casa. Es el issue #37, con su tabla de medicion dentro. Mientras siga
-    # abierto, el puerto publicado es la unica forma de mirar esta pantalla — y por
-    # eso este servicio tampoco lleva etiquetas de Traefik: dos enrutadores
-    # reclamando `PathPrefix(/caja)` no dan error, se lo reparten.
+    # A los tres de arriba se entra por Traefik, bajo `/caja`. Aqui se entra por el
+    # puerto, y este servicio NO lleva etiquetas de Traefik: el de arriba ya reclama
+    # `PathPrefix(/caja)` y dos enrutadores con la misma regla no dan error, se lo
+    # reparten — o sea una peticion que a veces llega a quien no era.
+    #
+    # Y ENTRAR POR EL PUERTO ES ENTRAR SIN QUE NADIE QUITE EL PREFIJO. El
+    # `index.html` que `vite build` emite pide `/caja/assets/index-<huella>.js`
+    # —`vite.config.ts` declara `base: "/caja/"` desde #37—, y aqui no hay ningun
+    # `stripPrefix` delante. Hasta #42 eso no daba un error: `frontend/nginx.conf`
+    # servia solo en la raiz, la peticion caia en su `try_files` y contestaba **200
+    # `text/html`** con el `index.html` dentro. `curl -sf` en verde y navegador en
+    # blanco. Desde #42 ese archivo sirve tambien bajo `/caja/`, reescribiendo a la
+    # raiz, asi que las dos entradas —con ingreso delante y sin el— acaban en el
+    # mismo sitio; se mide levantando nginx de verdad, en
+    # `frontend/verificaciones/sin-traefik.mjs`.
     #
     # LA VARIABLE NO ES `KAMAYUK_PUERTO_INTERFAZ`, y no es capricho. Ese nombre ya
     # lo usa la interfaz del monolito —`infrastructure/despliegue/compose.yaml:252`

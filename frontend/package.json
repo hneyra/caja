@@ -16,6 +16,7 @@
     "pegajosa": "node verificaciones/pegajosa.mjs",
     "mirar": "node verificaciones/mirar.mjs",
     "prefijo": "node verificaciones/prefijo.mjs",
+    "sin-traefik": "node verificaciones/sin-traefik.mjs",
     "cero-red": "node verificaciones/cero-red.mjs",
     "maqueta": "node verificaciones/maqueta.mjs"
   },

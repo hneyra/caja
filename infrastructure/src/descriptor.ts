@@ -781,37 +781,31 @@ export const caja: DescriptorDeSistema = {
    *
    * Ver `PRIORIDAD_DE_LA_API`: el fallo que esto impide devuelve **200** y por eso no grita.
    *
-   * ## Por que el middleware quita `/caja`, medido contra el nginx de verdad
+   * ## Que quita el prefijo, y por que este middleware se queda
    *
-   * `frontend/nginx.conf` sirve en la raiz (`root /usr/share/nginx/html; location / { try_files
-   * $uri /index.html; }`), asi que lo que le llegue tiene que venir **sin** el prefijo. Levantando
-   * el nginx de `nginx:1.31.4-alpine` con ese archivo y el `dist/` real:
+   * Las tres piezas estan medidas contra el nginx real de `nginx:1.31.4-alpine` con el
+   * `nginx.conf` de este repositorio y el `dist/` que `yarn build` produce:
    *
-   *   - con el prefijo quitado, `/assets/index-<huella>.js` sale `200 application/javascript`
-   *     (292 327 B) y `/escudo-catacaos.png` sale `200 image/png`;
-   *   - **sin quitarlo**, `/caja/assets/index-<huella>.js` sale `200 text/html` de 1 383 B — el
-   *     `index.html` otra vez, por el `try_files`. El navegador rechaza el modulo por su tipo y la
-   *     pantalla queda en blanco: **otro 200 que miente**, el mismo modo de fallo que la
-   *     precedencia de arriba.
+   *   1. `frontend/vite.config.ts` declara `base: "/caja/"` desde #37, asi que el `index.html`
+   *      pide sus recursos **con el prefijo dentro**: `/caja/assets/index-<huella>.js`. Sin eso,
+   *      el navegador los pediria a la raiz del dominio, que `PathPrefix(/caja)` ya no casa y que
+   *      este descriptor **no puede reclamar** —es la prohibicion (a) de `infrastructure`—.
+   *   2. Este middleware quita `/caja`, de modo que a nginx le llega `/assets/index-<huella>.js`.
+   *   3. Y desde #42 `frontend/nginx.conf` sirve **las dos entradas**: la raiz —lo que llega con
+   *      el prefijo ya quitado— y `/caja/`, que reescribe a la raiz con un `rewrite ... last`. Sin
+   *      esa segunda, quien no tenga un ingreso delante —`despliegue/compose.yaml`, que publica el
+   *      puerto del contenedor— recibe `200 text/html` de 1 383 B donde pidio un modulo: el
+   *      `index.html` colandose por el `try_files`, y la pantalla en blanco sin un solo error.
+   *      **Otro 200 que miente**, el mismo modo de fallo que la precedencia de arriba.
    *
-   * ## Lo que este middleware NO arregla, y esta medido
+   * O sea que con #42 este middleware pasa a ser **redundante en efecto**: las dos URL acaban en
+   * el mismo sitio. Se queda, y por dos motivos que no son inercia. El primero es que la ruta del
+   * cluster no cambia ni un byte respecto de lo que #17 midio, que es lo que hace que aquel cambio
+   * no pueda regresionar este despliegue. El segundo es que lo que este ingreso decide **no es
+   * como sirve nginx sino quien contesta**: su `priority` es lo que manda `/caja/api/v1` al
+   * backend, y eso ningun `nginx.conf` lo puede arreglar.
    *
-   * `frontend/vite.config.ts` **no declara `base`**, asi que el `index.html` que `vite build` emite
-   * fija sus recursos en absoluto: `src="/assets/index-<huella>.js"`. Servida bajo `/caja/`, la
-   * pantalla carga y el navegador pide despues `/assets/...` **a la raiz del dominio**, que es una
-   * ruta que `PathPrefix(/caja)` ya no casa — y que este descriptor **no puede reclamar**: es la
-   * prohibicion (a) de `infrastructure`.
-   *
-   * O sea que las dos salidas que se planteaban —quitar el prefijo aqui, o declarar `base` alli—
-   * **no son alternativas: hacen falta las dos**, y ninguna basta sola. Se hace aqui la que es de
-   * este repositorio y de este issue.
-   *
-   * Y aun con las dos faltaria una tercera, tambien medida: `src/barra/BarraGlobal.tsx` escribe
-   * `src="/escudo-catacaos.png"` en el JSX, y **Vite no reescribe un literal de cadena de
-   * JavaScript** — con `base: "/caja/"`, `dist/index.html` pasa a decir `/caja/escudo-catacaos.png`
-   * y el paquete sigue diciendo `/escudo-catacaos.png`, comprobado sobre el `dist/`. Bajo cualquier
-   * prefijo, esa peticion se va a la raiz del dominio y no llega. La coherencia entre las tres la
-   * vigila `descriptor.test.ts`; cerrarla es trabajo de `frontend/`, no de un descriptor.
+   * La coherencia entre las tres la vigila `descriptor.test.ts`, en los dos sentidos.
    */
   ingreso(e): Manifiesto[] {
     const quitarElPrefijo = `kamayuk-${SISTEMA}-quitar-prefijo`;
