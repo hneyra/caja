@@ -273,6 +273,42 @@ class CierreYRecaudacionControllerTest {
     }
 
     @Test
+    @DisplayName("#45 — la peticion que `rentas` hace de verdad: el rango de un dia, y su forma")
+    void laPeticionDelAvanceDelDia() throws Exception {
+        // Es la URL que `AvanceDeCajaHttp` compone desde `rentas`#27: el dia es este rango con
+        // los dos extremos iguales. Hasta #45 pedia `?dia=&aLaFecha=` y esta caja contestaba
+        // «422 Parametros desconocidos», con el panel de recaudacion de aquel sistema en 500.
+        MvcResult resultado =
+                mvc.perform(
+                                MockMvcRequestBuilders.get("/caja/api/v1/recaudacion/avance")
+                                        .param("desde", "2026-03-15")
+                                        .param("hasta", "2026-03-15"))
+                        .andReturn();
+
+        assertThat(resultado.getResponse().getStatus()).isEqualTo(200);
+        String cuerpo = resultado.getResponse().getContentAsString();
+
+        assertThat(cuerpo)
+                .as("el rango que vuelve es el que se pidio: el consumidor lo comprueba y aborta")
+                .contains("\"desde\":\"2026-03-15\"")
+                .contains("\"hasta\":\"2026-03-15\"")
+                .contains("\"aLaFecha\":\"2026-03-15\"");
+
+        // Y LA FORMA, que es la mitad que `rentas`#41 midio: lo cobrado y lo anulado son
+        // OBJETOS y no escalares. Leerlos con `path("cobrado").asString("0")` no falla —un
+        // ObjectNode no es un escalar, asi que devuelve el valor por omision— y el panel
+        // publicaria «0,00 cobrado hoy» con la ventanilla cobrando, sin un solo error.
+        assertThat(cuerpo)
+                .as("`cobrado` es {importe, actualizadoA}, no un escalar: leerlo mal es MUDO")
+                .contains("\"cobrado\":{\"importe\":")
+                .contains("\"anulado\":{\"importe\":");
+        assertThat(cuerpo)
+                .as("cada cifra viaja con su fecha (regla 9, RNF-075), y con la misma")
+                .doesNotContain("\"cobrado\":\"")
+                .doesNotContain("\"anulado\":\"");
+    }
+
+    @Test
     @DisplayName("con caja y cajero, el avance trae ademas el arqueo en vivo del turno")
     void elAvanceEnVivoDelTurno() throws Exception {
         MvcResult resultado =

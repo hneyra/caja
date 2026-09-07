@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ import kamayuk.caja.nucleo.aplicacion.CerrarTurno;
 import kamayuk.caja.nucleo.aplicacion.CobrarOrdenes;
 import kamayuk.caja.nucleo.aplicacion.CobrarTasa;
 import kamayuk.caja.nucleo.aplicacion.ConsultaDeRecaudacion;
+import kamayuk.caja.nucleo.dominio.ArqueoDelTurno;
 import kamayuk.caja.nucleo.dominio.CierreDeTurno;
 import kamayuk.caja.nucleo.dominio.CierreDeTurnoRepository;
 import kamayuk.caja.nucleo.dominio.CriterioDeRecaudacion;
@@ -94,6 +96,17 @@ class CierreDeCajaJdbcTest {
     private static final Clock RELOJ =
             Clock.fixed(Instant.parse("2026-03-15T18:00:00Z"), ZoneId.of("America/Lima"));
 
+    /**
+     * Las nueve de la noche del mismo dia en Lima, que en UTC ya es el dia siguiente (#45 AC-2).
+     *
+     * <p>No es un artificio: es la jornada de tarde de una ventanilla. Sirve para separar dos cosas
+     * que el resto de esta clase no puede separar, porque {@code RELOJ} deja el instante del recibo
+     * y la fecha de su turno en el mismo dia UTC — el dia del <b>turno</b> y el dia del
+     * <b>instante</b> del recibo.
+     */
+    private static final Clock RELOJ_DE_NOCHE =
+            Clock.fixed(Instant.parse("2026-03-16T02:00:00Z"), ZoneId.of("America/Lima"));
+
     private static final SistemaDeOrigen RENTAS = SistemaDeOrigen.de("rentas");
     private static final Pagador PAGADOR = new Pagador("12345678", "TITULAR, PRUEBA", 7L);
 
@@ -119,6 +132,7 @@ class CierreDeCajaJdbcTest {
     private static OrdenDeCobroRepositoryJdbc ordenes;
     private static BuzonDeSalidaJdbc buzon;
     private static CobrarOrdenes cobrarOrdenes;
+    private static CobrarOrdenes cobrarOrdenesDeNoche;
     private static CobrarTasa cobrarTasa;
     private static AnularRecibo anularRecibo;
     private static CerrarTurno cerrarTurno;
@@ -160,6 +174,16 @@ class CierreDeCajaJdbcTest {
                 envolver(
                         new CobrarOrdenes(
                                 abrirCaja, ordenes, recibos, buzon, eventos, auditoria, RELOJ));
+        cobrarOrdenesDeNoche =
+                envolver(
+                        new CobrarOrdenes(
+                                abrirCaja,
+                                ordenes,
+                                recibos,
+                                buzon,
+                                eventos,
+                                auditoria,
+                                RELOJ_DE_NOCHE));
         cobrarTasa = envolver(new CobrarTasa(abrirCaja, tasas, recibos, auditoria, RELOJ));
         anularRecibo =
                 envolver(
@@ -900,6 +924,125 @@ class CierreDeCajaJdbcTest {
         }
     }
 
+    @Nested
+    @DisplayName("#45 AC-2 — el avance de un dia son los TURNOS de ese dia, no los instantes")
+    class DelDiaDelTurno {
+
+        /**
+         * La propiedad que {@code AvanceDeCaja} protegia, medida <b>en la ruta que lo
+         * sustituye</b>.
+         *
+         * <p>#45 retira aquel puerto y deja que {@code rentas} pregunte por {@code GET
+         * /recaudacion/avance?desde=D&hasta=D}. Su AC-2 exige que el «dia del turno y no el del
+         * reloj» se conserve o se retire con su motivo escrito: <b>se conserva</b>, y no de rebote
+         * — es la misma propiedad y el mismo mecanismo, porque aquel puerto ya delegaba en {@code
+         * CriterioDeRecaudacion.delDia(dia)}, que es este rango con los dos extremos iguales. Lo
+         * sostiene el {@code JOIN cierre_caja t} de {@code RecaudacionRepositoryJdbc} con su {@code
+         * t.fecha BETWEEN :desde AND :hasta}: {@code cierre_caja.fecha} es una {@code date} y
+         * {@code recibo.fecha} un {@code timestamptz}.
+         *
+         * <p>Lo que este caso monta es la frontera de la medianoche de verdad, no un artificio: un
+         * cajero cobrando a las nueve de la noche en Lima, cuyo recibo lleva un instante que <b>en
+         * UTC ya es del dia siguiente</b>. Si el rango se aplicara sobre ese instante, el cobro
+         * saldria del avance de su dia y apareceria en el del siguiente — y las dos cifras serian
+         * plausibles, que es lo que hace que este defecto no se vea mirando.
+         */
+        @Test
+        @DisplayName(
+                "un cobro de las 21:00 en Lima cuenta en SU dia, aunque en UTC sea el siguiente")
+        void elRangoSeAplicaSobreLaFechaDelTurno() {
+            String cajero = cajero("medianoche");
+            Recibo recibo =
+                    cobrarLaOrdenDeNoche(
+                            "D45-01", Dinero.de("310.00"), cajero, FormaDePago.EFECTIVO);
+
+            // La premisa, comprobada antes de afirmar nada: si las dos fechas coincidieran, lo de
+            // abajo se cumpliria con las dos implementaciones y este caso no habria medido la
+            // distincion que existe para medir.
+            assertThat(recibo.emitidoEn().atZone(ZoneOffset.UTC).toLocalDate())
+                    .as(
+                            "si el instante del recibo cayera en el mismo dia UTC que su turno, las"
+                                    + " dos lecturas darian igual y este caso no mediria nada")
+                    .isEqualTo(HOY.plusDays(1));
+            assertThat(fechaDelTurno(recibo.turnoId()))
+                    .as("y su turno es el del dia anterior: eso es lo unico que las separa")
+                    .isEqualTo(HOY);
+
+            ConsultaDeRecaudacion.Avance suDia =
+                    consulta.avance(
+                            CriterioDeRecaudacion.delDia(HOY).enLaCajaDe("C-36", cajero), HOY);
+            ConsultaDeRecaudacion.Avance elSiguiente =
+                    consulta.avance(
+                            CriterioDeRecaudacion.delDia(HOY.plusDays(1))
+                                    .enLaCajaDe("C-36", cajero),
+                            HOY.plusDays(1));
+
+            assertThat(suDia.totalCobrado())
+                    .as(
+                            "el avance de un dia son los recibos de sus TURNOS: sobre `recibo.fecha`"
+                                    + " este cobro desapareceria del dia en que se cobro")
+                    .isEqualTo(Dinero.de("310.00"));
+            assertThat(elSiguiente.totalCobrado())
+                    .as(
+                            "y no aparece en el siguiente, que es donde lo pondria la frontera de la"
+                                    + " medianoche en UTC")
+                    .isEqualTo(Dinero.CERO);
+        }
+
+        /**
+         * La cifra del dia, contrastada con el arqueo de su turno (#45 AC-7, la mitad medible
+         * aqui).
+         *
+         * <p>AC-7 pide que la cifra que {@code rentas} publica se compruebe <b>contra el arqueo del
+         * turno</b>. Esa comprobacion no necesita las dos aplicaciones levantadas: lo que se afirma
+         * es que las dos lecturas de esta caja —la que contesta {@code GET /recaudacion/avance}
+         * para un dia y la que la pantalla de cierre llama «Cuadrar»— salen de lo mismo y no pueden
+         * discrepar.
+         *
+         * <p>Importa porque son <b>dos consultas distintas</b>: el avance agrega {@code
+         * recibo_detalle} por rango de turnos y el arqueo lo hace por {@code turno_id}. Que hoy den
+         * lo mismo es una propiedad, no una casualidad, y sin medirla el panel de {@code rentas}
+         * podria publicar una cifra que el cajero no reconoce al cerrar — plausible, distinta, y
+         * sin nada que diga cual de las dos es.
+         *
+         * <p>Se mide sobre el cobro de las nueve de la noche a proposito: es el unico caso de esta
+         * clase donde el instante del recibo y la fecha del turno caen en dias UTC distintos, asi
+         * que si alguna de las dos lecturas se apoyara en el instante, las dos dejarian de cuadrar
+         * <b>aqui</b> y en ningun otro sitio.
+         */
+        @Test
+        @DisplayName("y esa cifra es la del arqueo de su turno: dos consultas, un solo numero")
+        void laCifraDelDiaCuadraConElArqueoDelTurno() {
+            String cajero = cajero("cuadra-con-arqueo");
+            cobrarLaOrdenDeNoche("D45-02", Dinero.de("120.00"), cajero, FormaDePago.EFECTIVO);
+            cobrarLaOrdenDeNoche("D45-03", Dinero.de("80.50"), cajero, FormaDePago.EFECTIVO);
+
+            ConsultaDeRecaudacion.Avance delDia =
+                    consulta.avance(
+                            CriterioDeRecaudacion.delDia(HOY).enLaCajaDe("C-36", cajero), HOY);
+            ArqueoDelTurno arqueo =
+                    consulta.delTurno("C-36", cajero, HOY, HOY)
+                            .orElseThrow(
+                                    () ->
+                                            new AssertionError(
+                                                    "sin turno no hay nada que contrastar: esta"
+                                                            + " prueba no habria medido nada"))
+                            .arqueo();
+
+            assertThat(delDia.totalCobrado())
+                    .as(
+                            "la premisa: si el dia saliera en cero, lo de abajo cuadraria con dos ceros")
+                    .isEqualTo(Dinero.de("200.50"));
+            assertThat(arqueo.totalCobrado())
+                    .as(
+                            "el avance del dia y el arqueo del turno son dos consultas distintas —por"
+                                    + " rango de turnos y por turno_id— y tienen que dar el mismo numero")
+                    .isEqualTo(delDia.totalCobrado());
+            assertThat(arqueo.totalAnulado()).isEqualTo(delDia.totalAnulado());
+            assertThat(arqueo.neto()).isEqualTo(delDia.neto());
+        }
+    }
+
     // ------------------------------------------------------------------
     // Utilidades
     // ------------------------------------------------------------------
@@ -940,6 +1083,31 @@ class CierreDeCajaJdbcTest {
                                 "C-36", cajero, List.of(orden), forma, HOY, null),
                         porQue())
                 .recibo();
+    }
+
+    /**
+     * Lo mismo, con el reloj de las nueve de la noche: el turno sigue siendo {@code HOY} y el
+     * instante del recibo cae en el dia UTC siguiente (#45 AC-2).
+     */
+    private static Recibo cobrarLaOrdenDeNoche(
+            String sufijo, Dinero importe, String cajero, FormaDePago forma) {
+        long orden = sembrarOrden(sufijo, importe);
+        return cobrarOrdenesDeNoche
+                .cobrar(
+                        new CobrarOrdenes.Cobranza(
+                                "C-36", cajero, List.of(orden), forma, HOY, null),
+                        porQue())
+                .recibo();
+    }
+
+    /** El dia del turno contra el que se cobro, leido de la base. */
+    private static LocalDate fechaDelTurno(long turnoId) {
+        return enTransaccion(
+                () ->
+                        jdbc.sql("SELECT fecha FROM cierre_caja WHERE id = :turno")
+                                .param("turno", turnoId)
+                                .query(LocalDate.class)
+                                .single());
     }
 
     private static Recibo cobrarLaTasa(

@@ -48,7 +48,21 @@ public record CriterioDeRecaudacion(
         cajero = vacioAnulo(cajero);
     }
 
-    /** El rango de un solo dia. */
+    /**
+     * El rango de un solo dia.
+     *
+     * <p>Es exactamente lo que {@code GET /recaudacion/avance?desde=D&hasta=D} compone, y por eso
+     * «el avance del dia» que {@code rentas} pide no necesita ni ruta ni puerto propios (#45).
+     *
+     * <p><b>Desde #45 no la llama nadie en {@code src/main}</b>, y se dice en vez de descubrirse:
+     * su unico llamador de produccion era {@code AvanceDeCajaTesoreria}, el adaptador del puerto
+     * huerfano que ese issue retiro. Se conserva porque es el <b>nombre</b> de esa pregunta y es
+     * como la expresan las pruebas que la miden —{@code CierreDeCajaJdbcTest}, nueve veces—;
+     * borrarla dejaria ese rango escrito a mano en cada una. Y por eso {@code
+     * PuertosSinLlamadorTest} vigila los <b>puertos del paquete raiz</b> y no toda fabrica sin
+     * llamador: una guarda sobre lo segundo gritaria el primer dia sobre constructores, {@code
+     * record}s y objetos de valor, y una guarda que grita en lo correcto se acaba apagando (#437).
+     */
     public static CriterioDeRecaudacion delDia(LocalDate dia) {
         return new CriterioDeRecaudacion(dia, dia, null, null, null, null);
     }

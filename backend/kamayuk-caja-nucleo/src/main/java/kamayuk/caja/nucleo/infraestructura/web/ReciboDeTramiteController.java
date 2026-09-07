@@ -26,10 +26,15 @@ import org.springframework.web.bind.annotation.RestController;
  * <h2>Las tres lecturas que `rentas` necesita, y por que existen</h2>
  *
  * <p>`rentas` no puede emitir una licencia de funcionamiento sin comprobar que el derecho de
- * tramite se pago (RF-110), ni cerrar su panel de recaudacion sin lo cobrado del dia. Hasta P5D eso
- * era una llamada a un puerto en el mismo proceso —{@code RecibosDeTramite}, {@code AvanceDeCaja},
- * {@code CobrosDeTasas}—; con la separacion, los puertos se quedan alli y lo que cambia es quien
- * los implementa: un cliente HTTP contra estas rutas.
+ * tramite se pago (RF-110). Hasta P5D eso era una llamada a un puerto en el mismo proceso —{@code
+ * RecibosDeTramite}, {@code CobrosDeTasas}—; con la separacion, los puertos se quedan alli y lo que
+ * cambia es quien los implementa: un cliente HTTP contra estas rutas.
+ *
+ * <p><b>Lo cobrado del dia NO sale por aqui</b>, y desde #45 tampoco por ningun puerto de este
+ * modulo: sale por {@code GET /recaudacion/avance} con el rango de un dia, que es la misma
+ * pregunta. El puerto que lo contestaba en cuatro escalares —{@code AvanceDeCaja}— llevaba desde
+ * P5D sin que lo llamara nadie y se retira con el; el motivo entero esta en {@link
+ * RecaudacionController#avance}.
  *
  * <p><b>Son de LECTURA y ninguna esta en el camino del cobro.</b> Si esta clase dejara de
  * contestar, `rentas` no podria emitir una licencia — y la ventanilla seguiria cobrando igual, que
