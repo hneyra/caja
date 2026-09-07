@@ -94,6 +94,23 @@ tasks.test {
             })
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // EL CONTRATO DEL CONSUMIDOR VIVE EN OTRO CLON, y sin declararlo esta tarea se queda
+    // UP-TO-DATE cuando cambia. `ContratoConRentasTest` lee
+    // `../../rentas/docs/50-api/contratos-que-consume/caja.json` —lo que `rentas` le pide a esta
+    // caja— y ese archivo no esta en ninguna entrada de Gradle por su cuenta: sin esta linea,
+    // anadirle un campo que esta caja no publica daria `BUILD SUCCESSFUL` con la tarea
+    // UP-TO-DATE, o sea **sin que la prueba corriera**. En CI corre fresco y muerde, que es la
+    // peor forma de enterarse. Es la leccion de #192 punto 2 en la frontera entre repositorios,
+    // y el mismo cierre que C-1 le puso a la direccion contraria.
+    //
+    // `optional()` porque el clon hermano puede no estar: si falta, la prueba falla con su propio
+    // mensaje —nombrando el archivo y el `git clone`—, que dice mas que un fallo de configuracion
+    // de Gradle.
+    inputs
+        .files(rootProject.file("../../rentas/docs/50-api/contratos-que-consume/caja.json"))
+        .optional()
+        .withPathSensitivity(PathSensitivity.NONE)
+
     // Las tres entradas de `rentas` —el contrato OpenAPI, el archivo de formas y el censo de
     // respuestas— NO estan aqui, y no es un olvido: `caja` no tiene contrato derivado. El
     // generador de `rentas` deriva del prototipo del manual (#312) y aqui no hay prototipo del que

@@ -55,6 +55,25 @@ jobs:
           # alcanza al suyo: sin esto, `Not Found` al pedir la rama por omision.
           token: ${{ secrets.GH_CLONE_KEY || github.token }}
 
+      # EL CONTRATO QUE `rentas` PUBLICA COMO CONSUMIDOR de esta caja. Lo lee
+      # `ContratoConRentasTest`, que comprueba que este backend siga publicando lo que su
+      # consumidor lee y leyendo los parametros que le manda (ADR-0030 §4, `rentas`#27). Sin este
+      # checkout esa prueba no se salta: falla nombrando el archivo y el `git clone` que falta —una
+      # prueba de contrato que no encuentra su contrato y pasa en verde es peor que ninguna—.
+      #
+      # `sparse-checkout` de un solo directorio: lo unico que hace falta es el archivo, y traer el
+      # repositorio entero por dos kilobytes seria pagar el clon de otro sistema en cada corrida.
+      - name: Traer el contrato que publica «rentas»
+        uses: actions/checkout@v4
+        with:
+          repository: hneyra/rentas
+          path: rentas
+          # Los cinco repositorios del producto son PRIVADOS y el `GITHUB_TOKEN` solo
+          # alcanza al suyo: sin esto, `Not Found` al pedir la rama por omision.
+          token: ${{ secrets.GH_CLONE_KEY || github.token }}
+          sparse-checkout: docs/50-api/contratos-que-consume
+          sparse-checkout-cone-mode: false
+
       # ADR-0001 fija Java 25. Se comprueba en vez de suponerse: si alguien cambiara la propiedad,
       # CI verificaria en silencio una version de Java distinta de la que se despliega.
       - name: La version de Java declarada es la que instala CI
