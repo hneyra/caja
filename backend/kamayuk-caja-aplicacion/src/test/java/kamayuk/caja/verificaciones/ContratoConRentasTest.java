@@ -16,9 +16,9 @@ import org.junit.jupiter.api.DisplayName;
  * cobros de tasas y las ordenes de cobro— no tenia contrato ni prueba: un parametro podia cambiar
  * de nombre en cualquiera de los dos lados y los dos CI seguian verdes.
  *
- * <p><b>Y no es hipotetico</b> (`rentas`#27): {@code AvanceDeCajaHttp} llevaba pidiendo {@code
- * GET /caja/api/v1/recaudacion/avance?dia=…&aLaFecha=…} contra un endpoint que admite {@code desde}
- * y {@code hasta}. Medido con las dos aplicaciones levantadas y hablando entre si: {@code 422
+ * <p><b>Y no es hipotetico</b> (`rentas`#27): {@code AvanceDeCajaHttp} llevaba pidiendo {@code GET
+ * /caja/api/v1/recaudacion/avance?dia=…&aLaFecha=…} contra un endpoint que admite {@code desde} y
+ * {@code hasta}. Medido con las dos aplicaciones levantadas y hablando entre si: {@code 422
  * «Parametros desconocidos: 'aLaFecha', 'dia'»}, y {@code GET
  * /rentas/api/v1/indicadores/recaudacion} en <b>500</b> — el panel de ese modulo no se podia
  * dibujar con esta caja levantada, autorizada y sana.
@@ -57,10 +57,10 @@ class ContratoConRentasTest extends ContratoConElConsumidorTestBase {
      * que ya no ocurre tambien.
      *
      * <p>Nace vacia porque `rentas`#27 y `rentas`#41 <b>arreglaron el consumidor</b> antes de
-     * publicar el contrato: pasa a pedir con {@code desde} y {@code hasta}, que es lo que esta
-     * caja ya admite, y a leer {@code cobrado.importe} en vez de un {@code cobrado} escalar que
-     * aqui nunca existio. Publicar el contrato con los nombres viejos habria dejado esta prueba
-     * roja el primer dia, y un rojo permanente es la forma segura de que nadie vuelva a mirarla.
+     * publicar el contrato: pasa a pedir con {@code desde} y {@code hasta}, que es lo que esta caja
+     * ya admite, y a leer {@code cobrado.importe} en vez de un {@code cobrado} escalar que aqui
+     * nunca existio. Publicar el contrato con los nombres viejos habria dejado esta prueba roja el
+     * primer dia, y un rojo permanente es la forma segura de que nadie vuelva a mirarla.
      */
     @Override
     protected Set<String> desajustesVivos() {
