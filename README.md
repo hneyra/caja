@@ -92,7 +92,7 @@ dist/assets/index-DS_nv2HZ.js   293.14 kB │ gzip: 86.04 kB
 cualquier peticion a `/`. Es la mitad que le toca a Vite; la otra es el `stripPrefix` del
 `IngressRoute` (#17), y **ninguna de las dos basta sola**.
 
-**Los seis arneses** miden lo que un emulador de DOM no puede decir —disposicion, foco real,
+**Los siete arneses** miden lo que un emulador de DOM no puede decir —disposicion, foco real,
 impresion, peticiones de red y lo que el `dist/` lleva dentro—, y no entran en `yarn verificar`
 porque necesitan un servidor levantado o el artefacto construido (y cuatro de ellos, un
 Chromium). Se lanzan contra `yarn dev` o contra el
@@ -107,6 +107,7 @@ Chromium). Se lanzan contra `yarn dev` o contra el
 | `yarn mirar` | Las cuatro secciones: cortes, arbol, teclado y papel, con capturas y PDF |
 | `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada, y que **todas cuelgan de `/caja`** |
 | `yarn prefijo` | Que el `dist/` no pide nada a la raiz del dominio y que `/caja/` y `/caja/recibos` sirven la aplicacion **con su tipo**. No necesita Chromium, y **solo vale contra el `dist/` servido**: apuntado a `yarn dev` lo dice y sale |
+| `yarn sin-traefik` | Que el **nginx que se despliega** sirve las dos entradas —la raiz, que es lo que llega con el prefijo ya quitado por el ingreso, y `/caja/`, que es lo que llega cuando no hay nadie delante— con el mismo tipo, el mismo cuerpo y el mismo `Cache-Control` (#42). Necesita Docker, o un nginx que ya exista en `CAJA_NGINX`; sin ninguno de los dos **no se omite: sale con codigo 2 diciendo que no midio** |
 | `yarn maqueta` | Que el artefacto **se declara maqueta** —la banda de #44 viaja en el paquete y en la hoja, con su regla de `@media print`—, que **no nombra a nadie** («Cárdenas»: 0 apariciones, como I-1 de `rentas`) y que ningun toast afirma una escritura que nunca ocurre. No necesita Chromium ni servidor: le basta `yarn build` |
 
 ### Levantarla como se despliega
@@ -118,7 +119,10 @@ Chromium). Se lanzan contra `yarn dev` o contra el
 docker compose -f ../infrastructure/despliegue/plataforma.compose.yaml up -d --wait
 
 docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait
-curl -sf http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/
+
+# La pantalla, bajo su prefijo (#42). La raiz tambien la sirve —es lo que le llega en el
+# cluster, con el prefijo ya quitado por el ingreso— pero lo que el `index.html` pide es esto:
+curl -sf http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/caja/
 ```
 
 Ese servicio construye `frontend/Dockerfile` y sirve `dist/` con nginx **sin root** (uid 101). **No
@@ -132,20 +136,23 @@ largo esta escrito en el propio [`despliegue/compose.yaml`](despliegue/compose.y
 > `nginx:1.31.4-alpine` sirviendo este mismo `dist/` con este mismo `nginx.conf`. Está en el PR
 > de #18, con sus cifras.
 
-> **Desde #37 esto se ha dado la vuelta, y hay que leerlo entero.** `vite.config.ts` declara
-> `base: "/caja/"`, asi que el `index.html` pide sus recursos bajo el prefijo y **la interfaz es
-> alcanzable bajo `/caja`** — que es lo que faltaba. Pero este `nginx.conf` sigue sirviendo en `/`
-> a proposito, porque quien quita el prefijo es Traefik; y **el puerto publicado de este compose no
-> tiene ningun Traefik delante**. Medido aplicando a mano el `try_files $uri /index.html` de este
-> archivo sobre el `dist/` de hoy: `GET /` devuelve el `index.html` (200 `text/html`, 1 383 B) y ese
-> HTML pide `/caja/assets/index-<huella>.js`, que **contesta 200 `text/html` de 1 383 B** — el
-> `index.html` otra vez, el 200 que miente — mientras `/assets/index-<huella>.js`, o sea lo que
-> nginx recibe **con el prefijo quitado**, contesta `200 text/javascript` de 292 338 B.
+> **Desde #37 la interfaz es alcanzable bajo `/caja`, y desde #42 tambien por este puerto.**
+> `vite.config.ts` declara `base: "/caja/"`, asi que el `index.html` pide sus recursos bajo el
+> prefijo. En el cluster ese prefijo lo quita el `stripPrefix` del ingreso (#17); **aqui no hay
+> ningun Traefik delante**, y hasta #42 eso dejaba la pantalla en blanco: el `index.html` cargaba,
+> pedia `/caja/assets/index-<huella>.js`, y ese recurso caia en el `try_files` y contestaba **200
+> `text/html`** — `curl -sf` en verde y navegador en blanco.
 >
-> O sea: `curl -sf http://localhost:8082/` sigue devolviendo 200, y **un navegador ve una pantalla
-> en blanco**. Es la fila C de la tabla de #37, y la unica salida es un Traefik —o cualquier proxy—
-> que quite `/caja` antes de este nginx. Queda **declarado y sin cerrar**: cerrarlo obliga a tocar
-> `frontend/nginx.conf`, y con el su copia byte a byte del `ConfigMap`.
+> `frontend/nginx.conf` sirve desde #42 **las dos entradas**: la raiz —lo que llega con el prefijo
+> ya quitado— y `/caja/`, que reescribe a la raiz. Medido contra el nginx real de
+> `nginx:1.31.4-alpine` con este `dist/`: por las dos entradas el paquete sale `200
+> application/javascript` de 293 135 B, la hoja `200 text/css` y el escudo `200 image/png`, con el
+> **mismo cuerpo y el mismo `Cache-Control`**; antes de #42, las tres salian `200 text/html` de
+> 1 383 B por la entrada con prefijo. Lo comprueba `yarn sin-traefik`.
+>
+> Asi que la direccion que se abre en el navegador es
+> **`http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/caja/`** — la raiz tambien sirve la
+> aplicacion, porque es lo que el cluster necesita, y `/caja` redirige a `/caja/`.
 
 ## El descriptor
 

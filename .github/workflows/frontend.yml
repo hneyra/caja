@@ -72,6 +72,18 @@ jobs:
       - name: El artefacto se declara maqueta y no inventa a nadie
         run: yarn maqueta
 
+      # Desde #42, y tambien detras del build: mide el NGINX QUE SE DESPLIEGA, con el `dist/`
+      # recien construido y el `nginx.conf` de este arbol montados sobre la imagen base que el
+      # `Dockerfile` nombra. Va aqui y no en `navegador` porque no necesita Chromium —son
+      # peticiones HTTP— y porque lo que protege es el artefacto que llega a un municipio.
+      #
+      # Necesita Docker, que `ubuntu-latest` trae de serie, y NO SE OMITE sin el: sale con codigo
+      # 2 diciendo que no midio. La doctrina es la de `verificarAislamiento` en los backends —una
+      # comprobacion que se salta a si misma deja el flujo en verde sin haber verificado nada— y
+      # la salida documentada es apuntarlo a un nginx que ya exista con `CAJA_NGINX`.
+      - name: El nginx sirve las dos entradas, con ingreso delante y sin el
+        run: yarn sin-traefik
+
   # POR QUE ESTE SEGUNDO TRABAJO EXISTE
   # `verificaciones/paleta.test.tsx` mide la paleta sobre un emulador de DOM en cada `yarn
   # verificar`, y hace falta. Lo que un emulador NO puede decir es que un navegador de verdad
