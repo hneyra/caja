@@ -74,6 +74,46 @@ public class RecaudacionController {
      *
      * <p>Si el cajero no ha abierto turno ese dia, 404: no hay nada que arquear, y devolver un
      * arqueo en ceros haria pensar que abrio y no cobro.
+     *
+     * <h2>El avance del dia lo pide `rentas` por aqui, y por que no hay una ruta aparte (#45)</h2>
+     *
+     * <p>Hasta #45 este modulo publicaba ademas un puerto {@code AvanceDeCaja} —con su {@code
+     * RecaudadoEnCaja} y su adaptador— para contestar «cuanto lleva cobrado la caja hoy» en cuatro
+     * escalares. <b>No lo llamaba nadie</b>: se escribio cuando {@code tesoreria} vivia en este
+     * proceso, {@code tesoreria} se fue a {@code rentas} en P5D y el puerto se quedo. Mientras
+     * tanto su consumidor pedia {@code ?dia=&aLaFecha=} contra esta ruta, que admite {@code desde}
+     * y {@code hasta}: {@code 422 «Parametros desconocidos»}, y el panel de recaudacion de {@code
+     * rentas} en <b>500</b> con esta caja levantada, autorizada y sana.
+     *
+     * <p>De las tres salidas que #45 planteaba se toma la <b>tercera</b> —el consumidor lee este
+     * {@code Avance}, y el puerto y su {@code record} se retiran por muertos—, con estos motivos:
+     *
+     * <ul>
+     *   <li><b>«El dia» ya es esta pregunta.</b> Este endpoint suma un rango de <b>turnos</b>, y el
+     *       dia es ese rango con los dos extremos iguales — que es literalmente lo que aquel
+     *       adaptador hacia: {@code CriterioDeRecaudacion.delDia(dia)}. Anadir un {@code dia}
+     *       propio seria una segunda forma de decir lo mismo, y dos formas de acotar el mismo
+     *       periodo acaban discrepando en el caso raro.
+     *   <li><b>Ensanchar la respuesta con un bloque escalar la partiria en dos verdades.</b> Aqui
+     *       todo importe viaja como {@code ImporteActualizado} (regla 9, RNF-075); publicar ademas
+     *       {@code cobrado} suelto obligaria a mantener las dos de acuerdo y dejaria al cliente
+     *       eligiendo cual lee.
+     *   <li><b>Un puerto con implementacion y sin llamadores acaba inyectandose por error</b>, y
+     *       nada lo veia: lo vigila desde #45 {@code PuertosSinLlamadorTest}.
+     * </ul>
+     *
+     * <p><b>Lo que NO se pierde al retirarlo</b> es la propiedad que aquel puerto escribia en su
+     * javadoc: el dia es el <b>del turno</b> y no el del reloj. La conserva {@link
+     * CriterioDeRecaudacion} —y la sostiene el {@code JOIN cierre_caja} de {@code
+     * RecaudacionRepositoryJdbc}, con su {@code t.fecha} de tipo {@code date}—, de modo que un
+     * cobro de las nueve de la noche cuenta en su dia aunque su instante en UTC sea ya el
+     * siguiente. Lo mide {@code CierreDeCajaJdbcTest}, que planta ese caso a proposito y ademas
+     * contrasta la cifra del dia con el arqueo de ese turno.
+     *
+     * <p>El {@code aLaFecha} sigue sin ser un parametro de la peticion, y tampoco eso cambia: es la
+     * fecha a la que esta caja leyo, la pone su reloj y viaja con la cifra (regla 9). Un consumidor
+     * que pudiera dictarla estaria pidiendo que la respuesta se fechara con un dia que no es el de
+     * la lectura.
      */
     @GetMapping("/avance")
     @RequiereAcceso(acceso = ACCESO_AVANCE, privilegio = Privilegio.LECTURA)

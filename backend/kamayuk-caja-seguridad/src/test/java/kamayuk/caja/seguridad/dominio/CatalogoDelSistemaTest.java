@@ -94,9 +94,19 @@ class CatalogoDelSistemaTest {
         assertThat(codigos).doesNotHaveDuplicates();
     }
 
+    /**
+     * La raiz del clon, subiendo hasta encontrar el {@code .git}.
+     *
+     * <p><b>{@code Files.exists} y no {@code Files.isDirectory}</b>: en un {@code git worktree} el
+     * {@code .git} de la raiz es un <b>archivo</b> con una linea {@code gitdir:} dentro, asi que
+     * con {@code isDirectory} el recorrido sube hasta {@code /} y esta prueba muere con «No se
+     * encontro la raiz». No es un rojo que hable de lo que la guarda vigila: es que la guarda <b>no
+     * se puede correr</b>, que es peor. Lo mismo se cerro en `catastro`#4, en `normativa` y en
+     * `rentas`#25; aqui seguia abierto.
+     */
     private static Path raizDelRepositorio() {
         Path candidato = Path.of("").toAbsolutePath();
-        while (candidato != null && !Files.isDirectory(candidato.resolve(".git"))) {
+        while (candidato != null && !Files.exists(candidato.resolve(".git"))) {
             candidato = candidato.getParent();
         }
         if (candidato == null) {
