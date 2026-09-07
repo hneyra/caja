@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 import { ENTIDAD } from "@/aplicacion";
 import { MenuDeSesion } from "@/barra/MenuDeSesion";
-import { AVISO, EJERCICIOS, SESION } from "@/datos";
+import { AVISO, EJERCICIOS } from "@/datos";
+import type { Sesion } from "@/marco/maqueta";
 
 /**
  * La barra global de 52 px: lo primero que se ve, y lo unico que esta en las cuatro pantallas.
@@ -136,6 +137,16 @@ export interface BarraGlobalProps {
   readonly cuantasSucias: number;
   /** El toast que sacan las tres opciones del menu. El reloj lo tiene el marco. */
   readonly alAvisar: (texto: string) => void;
+  /**
+   * Quien esta en la ventanilla, **sin valor por omision** (#44, AC-4).
+   *
+   * Hasta #44 la barra lo leia de `SESION`, en `src/datos/`, y ese dato era una persona: «J.
+   * Cárdenas Vega · Cajero · caja C-3». Servida en un dominio publico y sin pedir credenciales,
+   * eso es una identidad afirmada sin nadie detras. Ahora entra por aqui y **es obligatoria**:
+   * con un valor por omision, el dia que alguien monte la barra sin pasarla volveria a salir un
+   * nombre de la nada, que es exactamente como llego el de hoy. Sin el, no compila.
+   */
+  readonly sesion: Sesion;
 }
 
 export function BarraGlobal({
@@ -154,6 +165,7 @@ export function BarraGlobal({
   alCerrarSesion,
   cuantasSucias,
   alAvisar,
+  sesion,
 }: BarraGlobalProps) {
   return (
     <header
@@ -370,7 +382,7 @@ export function BarraGlobal({
           className="hov-sesion"
           onClick={alAlternarSesion}
           aria-expanded={sesionAbierta}
-          aria-label={`Sesión de ${SESION.nombre}`}
+          aria-label={`Sesión — ${sesion.nombre}`}
           style={{
             display: "flex",
             alignItems: "center",
@@ -396,7 +408,7 @@ export function BarraGlobal({
               flex: "0 0 auto",
             }}
           >
-            {SESION.iniciales}
+            {sesion.iniciales}
           </span>
           <span data-sm-hide="1" style={{ lineHeight: 1.2, textAlign: "left" }}>
             <span
@@ -407,10 +419,10 @@ export function BarraGlobal({
                 color: "#fff",
               }}
             >
-              {SESION.nombre}
+              {sesion.nombre}
             </span>
             <span style={{ display: "block", fontSize: 10.5, color: "#9FC6DF" }}>
-              {SESION.puesto}
+              {sesion.puesto}
             </span>
           </span>
           <span
@@ -445,6 +457,7 @@ export function BarraGlobal({
             alCerrar={alCerrarSesion}
             alAvisar={alAvisar}
             cuantasSucias={cuantasSucias}
+            sesion={sesion}
           />
         )}
       </div>

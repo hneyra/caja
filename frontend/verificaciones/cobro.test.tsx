@@ -30,6 +30,7 @@ import {
   AVISO_DEL_DOCUMENTO,
   BORRADOR,
   BORRADOR_DESCARTADO,
+  BORRADOR_EN_LA_PANTALLA,
   CAJA_CERRADA,
   CAJA_CERRADA_NO_EMITE,
   CAJA_EN_LA_QUE_SE_COBRA,
@@ -51,7 +52,7 @@ import {
   noEntraAlArqueo,
   noSePuedeTodavia,
   puedeCobrar,
-  reciboEmitido,
+  reciboNoEmitido,
   SIN_CODIGO,
   SIN_MEDIO_DE_PAGO,
   soloDigitos,
@@ -429,7 +430,7 @@ describe("criterio 4 · una caja cerrada BLOQUEA — el criterio central", () =>
     escribirDocumento("12345678");
     completarElBorrador();
     fireEvent.click(botonDerecho());
-    expect(toast()).toBe(reciboEmitido("0003-0041193"));
+    expect(toast()).toBe(reciboNoEmitido("0003-0041193"));
     expect(raiz().getAttribute("data-ir-recibo")).toBe("0003-0041193");
   });
 
@@ -697,10 +698,14 @@ describe("criterio 8 · con todo completo y la caja abierta, emite", () => {
     expect(botonDerecho().getAttribute("aria-disabled")).toBe("false");
     expect(botonDerecho().getAttribute("title")).toBe("");
     fireEvent.click(botonDerecho());
+    // El literal, ademas de la funcion que lo compone: comparar solo contra `reciboNoEmitido`
+    // seria comparar la pantalla consigo misma, y esta es la frase que #44 vino a quitar —decia
+    // «Recibo 0003-0041193 emitido. La cuota ya está descontada de la cuenta corriente.», dos
+    // hechos falsos sobre dinero seguidos—.
     expect(toast()).toBe(
-      "Recibo 0003-0041193 emitido. La cuota ya está descontada de la cuenta corriente.",
+      "El recibo 0003-0041193 no se emitió: esta interfaz no está conectada a ningún sistema.",
     );
-    expect(toast()).toBe(reciboEmitido("0003-0041193"));
+    expect(toast()).toBe(reciboNoEmitido("0003-0041193"));
     expect(raiz().getAttribute("data-ir-recibo")).toBe("0003-0041193");
   });
 
@@ -723,14 +728,19 @@ describe("criterio 8 · con todo completo y la caja abierta, emite", () => {
     completarElBorrador();
     expect(codigoQueSeEmitira().textContent).toBe("0003-0041185");
     fireEvent.click(botonDerecho());
-    expect(toast()).toBe(reciboEmitido("0003-0041185"));
+    expect(toast()).toBe(reciboNoEmitido("0003-0041185"));
   });
 
   it("avanzar de seccion en un borrador avisa distinto que en un recibo", () => {
     empezarCobro();
     fireEvent.click(botonDerecho());
     expect(seccionActiva()).toEqual(["deuda"]);
-    expect(toast()).toBe("Guardado en el borrador.");
+    // Hasta #44 decia «Guardado en el borrador.», que afirmaba una escritura que no ocurre: un
+    // borrador vive en el mapa de campos de la pestana y cerrarla lo tira.
+    expect(toast()).toBe(BORRADOR_EN_LA_PANTALLA);
+    expect(toast()).toBe(
+      "El borrador se queda en esta pantalla: esta interfaz no está conectada a ningún sistema.",
+    );
   });
 
   it("«Anterior» sigue apagado en la primera seccion, y encendido en la segunda", () => {

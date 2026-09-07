@@ -8,8 +8,16 @@
  * | Aqui | En el artboard | Lineas |
  * |---|---|---|
  * | `EJERCICIOS` | `anios` | 1495 |
- * | `SESION` | la ficha de sesion de la barra | 168-175 |
  * | `AVISO` | `avisosN`, `avisoAria` y el texto de la banda | 1681-1682 y 431 |
+ *
+ * <h2>Lo que este archivo tenia y ya no (#44)</h2>
+ *
+ * `SESION` —`iniciales: "JC"`, `nombre: "J. Cárdenas Vega"`, `puesto: "Cajero · caja C-3"`, de
+ * las lineas 168-175— **se fue**. Un recibo del artboard es un dato de diseno que la banda de
+ * maqueta declara como tal; una persona en la barra de una interfaz que no autentica a nadie es
+ * otra cosa: es una identidad afirmada **sin respaldo**, y no hay banda que la arregle. Lo que
+ * hay ahora vive en `src/marco/maqueta.ts` (`SIN_SESION`), que es de este repositorio y no del
+ * artboard, y entra en la barra por una prop **obligatoria**. Precedente: `rentas` I-1 (su #24).
  *
  * Esta aqui y no dentro del componente por el mismo motivo que lo demas: **una pantalla no
  * inventa un dato ni lo escribe en linea**. Ademas es lo que permite que la prueba compare
@@ -25,28 +33,6 @@
  * modos, asi que convertirlo a numero solo anadiria una conversion de vuelta.
  */
 export const EJERCICIOS: readonly string[] = ["2026", "2025", "2024", "2023"];
-
-/** Quien tiene la ventanilla abierta: lo que la ficha de sesion de la barra muestra. */
-export interface Sesion {
-  /** Las dos letras del avatar. */
-  readonly iniciales: string;
-  readonly nombre: string;
-  /** El puesto y la caja, tal como el artboard los junta en una sola linea. */
-  readonly puesto: string;
-}
-
-/**
- * La sesion del artboard.
- *
- * Es un dato del despliegue —vendra del token, como la municipalidad—, y hasta entonces esta
- * aqui la del diseno. Que este en `datos/` y no dentro de la barra es lo que hara que el dia
- * de conectarlo haya **un** sitio que cambiar.
- */
-export const SESION: Sesion = {
-  iniciales: "JC",
-  nombre: "J. Cárdenas Vega",
-  puesto: "Cajero · caja C-3",
-};
 
 /** Una entrada del menu que despliega la ficha de sesion. */
 export interface OpcionDeSesion {
@@ -67,9 +53,13 @@ export interface OpcionDeSesion {
 /**
  * Las tres opciones del menu de sesion (lineas 1694-1698).
  *
- * Ninguna hace nada de verdad, y es lo que el issue exige: **aqui no hay autenticacion** —ni
- * OIDC, ni Keycloak, ni token—, asi que la sesion es decorativa y las tres sacan su toast. El
- * dia que la haya, lo que cambia es lo que hacen; los rotulos y los iconos ya estan.
+ * Ninguna hace nada de verdad: **aqui no hay autenticacion** —ni OIDC, ni Keycloak, ni token—,
+ * asi que las tres sacan su toast. El dia que la haya, lo que cambia es lo que hacen; los
+ * rotulos y los iconos ya estan.
+ *
+ * Sus toast estan en condicional —«Abriría mi perfil.», «Cerraría la sesión.»— y por eso #44 no
+ * los toco: no afirman ningun hecho. Lo que si cambio es de quien es la ficha que este menu
+ * repite: ver `SIN_SESION` en `src/marco/maqueta.ts`.
  */
 export const OPCIONES_DE_SESION: readonly OpcionDeSesion[] = [
   {

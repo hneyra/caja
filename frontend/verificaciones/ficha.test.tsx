@@ -36,8 +36,8 @@ import {
   ANULAR_EL_RECIBO,
   AVISO_DE_LA_ANULACION,
   AVISO_DE_LA_CUENTA_CORRIENTE,
-  CAMBIOS_GUARDADOS,
-  CAMBIOS_GUARDADOS_EN_EL_RECIBO,
+  NADA_SE_GUARDO,
+  NADA_SE_GUARDO_EN_EL_RECIBO,
   CONTINUAR,
   contextoDe,
   GUARDAR_LOS_CAMBIOS,
@@ -564,12 +564,14 @@ describe("criterio 8 · la barra inferior", () => {
     expect(botonDeLaBarra(CONTINUAR)).toBeUndefined();
   });
 
-  it("avanzar cambia de seccion y saca «Cambios guardados.»", () => {
+  it("avanzar cambia de seccion y dice que no se guardo nada", () => {
     abrirFicha();
     fireEvent.click(botonDeLaBarra(CONTINUAR));
     expect(seccionActiva()).toEqual(["deuda"]);
-    expect(toast()).toBe(CAMBIOS_GUARDADOS);
-    expect(toast()).toBe("Cambios guardados.");
+    expect(toast()).toBe(NADA_SE_GUARDO);
+    expect(toast()).toBe(
+      "No se guardó ningún cambio: esta interfaz no está conectada a ningún sistema.",
+    );
   });
 
   it("«Anterior» retrocede, y en la primera no mueve nada", () => {
@@ -587,8 +589,11 @@ describe("criterio 8 · la barra inferior", () => {
     abrirFicha();
     irA("anulacion");
     fireEvent.click(botonDeLaBarra(GUARDAR_LOS_CAMBIOS));
-    expect(toast()).toBe(CAMBIOS_GUARDADOS_EN_EL_RECIBO);
-    expect(toast()).toBe("Cambios guardados en el recibo.");
+    expect(toast()).toBe(NADA_SE_GUARDO_EN_EL_RECIBO);
+    expect(toast()).toBe(
+      "No se guardó ningún cambio en el recibo: esta interfaz no está conectada a ningún " +
+        "sistema.",
+    );
     expect(seccionActiva()).toEqual(["anulacion"]);
   });
 

@@ -5,17 +5,19 @@ import { BarraGlobal } from "@/barra/BarraGlobal";
 import { LanzadorDeModulos } from "@/barra/LanzadorDeModulos";
 import { Toast, usarToast } from "@/barra/Toast";
 import { EJERCICIOS, HOJAS } from "@/datos";
+import { BandaDeMaqueta } from "@/marco/BandaDeMaqueta";
 import { BarraDePestanas } from "@/marco/BarraDePestanas";
 import type { Destino } from "@/marco/destino";
 import { COBRO_NUEVO, SIN_EXTRAS } from "@/marco/destino";
 import { DialogoDeCambios } from "@/marco/DialogoDeCambios";
 import { FilaDelTitulo } from "@/marco/FilaDelTitulo";
+import { SIN_SESION } from "@/marco/maqueta";
 import type { Pantalla } from "@/marco/pantalla";
 import { PestanaAjena } from "@/marco/PestanaAjena";
 import {
   esSeccionPropia,
   MENSAJE_DE_COBRO_NUEVO,
-  mensajeDeGuardado,
+  mensajeDeCierreSinGuardar,
   pestanasDe,
   subtituloDe,
   tituloDe,
@@ -207,7 +209,14 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
       data-ir-recibo={destino.recibo ?? ""}
       style={{ display: "flex", flexDirection: "column", height: "100vh" }}
     >
+      {/* Arriba del todo, por encima de la barra global: asi sale en las cuatro secciones sin que
+          ninguna tenga que acordarse, y sale en la primera hoja de cualquier impresion (#44). */}
+      <BandaDeMaqueta />
+
       <BarraGlobal
+        // Sin valor por omision en la barra: quien la monte tiene que decir quien esta. Y lo
+        // unico que esta interfaz puede afirmar sin token es que no hay nadie.
+        sesion={SIN_SESION}
         modulosVisibles={abierto.modulos}
         alAlternarModulos={() =>
           fijarAbierto((x) => ({ ...x, modulos: !x.modulos, lanzador: false, paleta: false }))
@@ -332,7 +341,7 @@ export function App({ Pantalla = PantallaDeSeccion }: AppProps = {}) {
           alDescartar={() => pestanas.cerrarPestana(porCerrar)}
           alSeguir={pestanas.cancelarCierre}
           alGuardar={() => {
-            avisar(mensajeDeGuardado(rotuloPorCerrar));
+            avisar(mensajeDeCierreSinGuardar(rotuloPorCerrar));
             pestanas.cerrarPestana(porCerrar);
           }}
         />

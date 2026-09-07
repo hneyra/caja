@@ -16,7 +16,8 @@
     "pegajosa": "node verificaciones/pegajosa.mjs",
     "mirar": "node verificaciones/mirar.mjs",
     "prefijo": "node verificaciones/prefijo.mjs",
-    "cero-red": "node verificaciones/cero-red.mjs"
+    "cero-red": "node verificaciones/cero-red.mjs",
+    "maqueta": "node verificaciones/maqueta.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

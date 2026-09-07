@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { OPCIONES_DE_SESION, SESION } from "@/datos";
+import { OPCIONES_DE_SESION } from "@/datos";
+import type { Sesion } from "@/marco/maqueta";
 
 /**
  * El menu que despliega la ficha de sesion de la barra.
@@ -61,9 +62,16 @@ export interface MenuDeSesionProps {
   readonly alAvisar: (texto: string) => void;
   /** Cuantas pestanas tienen cambios sin guardar. Con cero, el pie no se dibuja. */
   readonly cuantasSucias: number;
+  /**
+   * Quien esta en la ventanilla, **sin valor por omision** (#44, AC-4). Ver `BarraGlobal`.
+   *
+   * Aqui la ficha se repite entera —avatar, nombre y puesto—, asi que un valor por omision
+   * dejaria la identidad inventada en dos sitios y quitarla de uno solo no se veria.
+   */
+  readonly sesion: Sesion;
 }
 
-export function MenuDeSesion({ alCerrar, alAvisar, cuantasSucias }: MenuDeSesionProps) {
+export function MenuDeSesion({ alCerrar, alAvisar, cuantasSucias, sesion }: MenuDeSesionProps) {
   return (
     <>
       {/* El fondo de la linea 175: transparente, solo para cerrar pulsando fuera. */}
@@ -115,7 +123,7 @@ export function MenuDeSesion({ alCerrar, alAvisar, cuantasSucias }: MenuDeSesion
               flex: "0 0 auto",
             }}
           >
-            {SESION.iniciales}
+            {sesion.iniciales}
           </span>
           <span style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
             <span
@@ -128,10 +136,10 @@ export function MenuDeSesion({ alCerrar, alAvisar, cuantasSucias }: MenuDeSesion
                 whiteSpace: "nowrap",
               }}
             >
-              {SESION.nombre}
+              {sesion.nombre}
             </span>
             <span style={{ display: "block", fontSize: 11.5, color: "var(--tinta-3)" }}>
-              {SESION.puesto}
+              {sesion.puesto}
             </span>
           </span>
         </div>

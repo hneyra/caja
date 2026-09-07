@@ -64,6 +64,14 @@ jobs:
       - name: Construir el artefacto de produccion
         run: yarn build
 
+      # Desde #44, y va DETRAS del build a proposito: es lo unico que mira el `dist/`, que es lo
+      # que la imagen sirve y lo que llega a un municipio. `yarn verificar` no construye, asi que
+      # la suite no puede decir si la banda de maqueta viajo, si el nombre inventado se fue ni si
+      # algun toast se quedo afirmando una escritura que nunca ocurre. No necesita Chromium: es
+      # texto sobre el artefacto, como la primera mitad de `prefijo.mjs`.
+      - name: El artefacto se declara maqueta y no inventa a nadie
+        run: yarn maqueta
+
   # POR QUE ESTE SEGUNDO TRABAJO EXISTE
   # `verificaciones/paleta.test.tsx` mide la paleta sobre un emulador de DOM en cada `yarn
   # verificar`, y hace falta. Lo que un emulador NO puede decir es que un navegador de verdad

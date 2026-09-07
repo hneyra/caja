@@ -9,6 +9,7 @@ import {
 } from "@/datos";
 import type { Recibo, TablaDeCuotas } from "@/datos";
 import { INSIGNIAS, type TonoDeInsignia } from "@/ds/tokens";
+import { nadaSeRegistro } from "@/marco/maqueta";
 import { CampoDeFicha, faltan } from "@/pantallas/CampoDeFicha";
 import {
   BarraDeCajaYContribuyente,
@@ -22,7 +23,7 @@ import {
   contextoDeLaCaja,
   DESCARTAR,
   EL_RECIBO,
-  GUARDADO_EN_EL_BORRADOR,
+  BORRADOR_EN_LA_PANTALLA,
   GUARDAR_BORRADOR,
   lineasDelResumen,
   motivoDe,
@@ -108,9 +109,22 @@ export const ANTERIOR = "Anterior";
 export const CONTINUAR = "Continuar";
 export const GUARDAR_LOS_CAMBIOS = "Guardar los cambios";
 
-/** Los dos toasts de avanzar en un recibo existente (lineas 2025 y 2026). */
-export const CAMBIOS_GUARDADOS = "Cambios guardados.";
-export const CAMBIOS_GUARDADOS_EN_EL_RECIBO = "Cambios guardados en el recibo.";
+/**
+ * Los dos toast de avanzar y de guardar en un recibo existente (lineas 2025 y 2026).
+ *
+ * Decian «Cambios guardados.» y «Cambios guardados en el recibo.» (#44, AC-3): los dos afirman
+ * una escritura que no ocurre, y el segundo la afirma **sobre el recibo**, que es un registro.
+ * El segundo es ademas el que cierra la anulacion — «Anular el recibo» salta a la seccion 5 y el
+ * boton de la derecha de esa seccion es el que saca este toast—, o sea la accion que en el
+ * sistema de verdad devuelve la deuda a la cuenta corriente y deja bitacora.
+ *
+ * Siguen siendo **dos textos distintos** a proposito: uno es avanzar de seccion y el otro es el
+ * ultimo paso, y con la misma cadena `ficha.test.tsx` dejaria de poder distinguirlos.
+ */
+export const NADA_SE_GUARDO = nadaSeRegistro("No se guardó ningún cambio");
+export const NADA_SE_GUARDO_EN_EL_RECIBO = nadaSeRegistro(
+  "No se guardó ningún cambio en el recibo",
+);
 
 /** La nota del paso (lineas 2028-2031), en sus dos formas para un recibo existente. */
 export const NOTA_DEL_ULTIMO_PASO =
@@ -470,11 +484,11 @@ export function FichaDelRecibo({
       return;
     }
     if (esUltimo) {
-      avisar(CAMBIOS_GUARDADOS_EN_EL_RECIBO);
+      avisar(NADA_SE_GUARDO_EN_EL_RECIBO);
       return;
     }
     alIrAPaso(actual + 1);
-    avisar(nuevo ? GUARDADO_EN_EL_BORRADOR : CAMBIOS_GUARDADOS);
+    avisar(nuevo ? BORRADOR_EN_LA_PANTALLA : NADA_SE_GUARDO);
   };
 
   /** Las acciones de la cabecera (linea 1909): dos en un borrador, tres en un recibo. */

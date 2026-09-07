@@ -161,7 +161,7 @@ await paso("el lanzador de modulos", async () => {
   await pagina.keyboard.press("Escape");
 });
 await paso("el menu de sesion", async () => {
-  await pagina.getByRole("button", { name: /^Sesión de/ }).click();
+  await pagina.getByRole("button", { name: /^Sesión — / }).click();
   await pagina.waitForSelector("[role=menu]");
   await pagina.keyboard.press("Escape");
 });

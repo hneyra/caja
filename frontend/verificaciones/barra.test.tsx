@@ -23,7 +23,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import { AVISO, EJERCICIOS, SESION } from "../src/datos";
+import { AVISO, EJERCICIOS } from "../src/datos";
+import { SIN_SESION } from "../src/marco/maqueta";
 // Con `css: true` lo resuelve Vite siguiendo la cadena real de `@import`: lo que se mide es el
 // mismo CSS que se despliega, no una copia escrita aqui al lado.
 import "../src/ds/global.css";
@@ -216,7 +217,7 @@ describe("bajo 760 px se esconde lo que el artboard esconde", () => {
     render(<App />);
     // El nombre y el puesto del cajero cuelgan del mismo `data-sm-hide`, asi que lo que se
     // apaga es su envoltorio y no cada linea.
-    const ficha = screen.getByText(SESION.nombre).parentElement as HTMLElement;
+    const ficha = screen.getByText(SIN_SESION.nombre).parentElement as HTMLElement;
     expect(getComputedStyle(ficha).display).toBe("none");
     expect(getComputedStyle(screen.getByText("Municipalidad Distrital de Catacaos")).display).toBe(
       "block",
@@ -306,7 +307,7 @@ describe("los botones que abren lo que todavia no existe", () => {
 
   it("la ficha de sesion gira su chevron 180 grados al abrirse", () => {
     render(<App />);
-    const ficha = screen.getByRole("button", { name: `Sesión de ${SESION.nombre}` });
+    const ficha = screen.getByRole("button", { name: `Sesión — ${SIN_SESION.nombre}` });
     const chevron = () => ficha.querySelector("svg")?.parentElement as HTMLElement;
 
     expect(ficha.getAttribute("aria-expanded")).toBe("false");

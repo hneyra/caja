@@ -1,5 +1,6 @@
 import type { ClaveDeSeccion } from "@/datos";
 import { HOJAS, ICONOS_DE_SECCION, ICONOS_POR_MODULO, MI_MODULO, SECCIONES } from "@/datos";
+import { nadaSeRegistro } from "@/marco/maqueta";
 
 /**
  * Como se rotula lo que hay abierto: la barra de pestanas, el titulo y el subtitulo.
@@ -119,8 +120,17 @@ export function pestanasDe(
   });
 }
 
-/** El texto del toast al guardar y cerrar (linea 1650). */
-export const mensajeDeGuardado = (rotulo: string) => `Cambios guardados en ${rotulo}.`;
+/**
+ * El toast de «Guardar y cerrar» del dialogo de cambios sin guardar (linea 1650).
+ *
+ * Decia «Cambios guardados en Panel.» (#44, AC-3). El rotulo del boton no cambia —el diseno
+ * ofrece guardar, y ofrecerlo no es afirmar nada—, pero lo que sale despues **si afirmaba una
+ * escritura**, y ahi no hay ninguna: cerrar la pestana tira lo escrito igual que «Descartar y
+ * cerrar», con la unica diferencia del toast. Que las dos salidas hicieran lo mismo diciendo
+ * cosas distintas es justo el modo de fallo que este issue existe para quitar.
+ */
+export const mensajeDeCierreSinGuardar = (rotulo: string) =>
+  nadaSeRegistro(`No se guardó nada de ${rotulo}`);
 
 /** El toast del boton «Cobrar» (linea 2077). */
 export const MENSAJE_DE_COBRO_NUEVO = "Cobro nuevo: elija la caja abierta y el contribuyente.";

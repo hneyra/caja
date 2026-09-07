@@ -1,3 +1,4 @@
+import { SIN_SESION } from "@/marco/maqueta";
 import { CAJAS } from "./cajas";
 
 /**
@@ -32,8 +33,20 @@ import { CAJAS } from "./cajas";
  * ninguno trae una cantidad.
  */
 
-/** El cajero que atiende la ventanilla (artboard, linea 1371). */
-export const CAJERO = "Cárdenas Vega, José";
+/**
+ * Quien atiende la ventanilla (artboard, linea 1371) — y por eso **ya no es un dato del diseno**.
+ *
+ * El artboard escribe aqui «Cárdenas Vega, José», que es la misma persona que hasta #44 firmaba
+ * la barra. Un titular de recibo inventado es un caso de ejemplo, y la banda de maqueta lo
+ * declara como tal; **el cajero no es un caso: es quien opera la pantalla**, o sea la sesion, y
+ * el argumento de AC-4 vale igual aqui — o sale del token, o dice que no hay sesion. Con la
+ * diferencia de que este campo ademas **se imprime en el recibo**.
+ *
+ * Sale de `SIN_SESION` y no de una cadena copiada al lado para que haya **un** sitio que cambiar
+ * el dia que haya token, que es lo mismo que buscaba la nota de `SESION` cuando vivia en este
+ * directorio.
+ */
+export const CAJERO = SIN_SESION.nombre;
 
 /** Lo que se lee donde todavia no hay cifra ni dato: el guion largo del artboard. */
 export const SIN_DATO = "—";

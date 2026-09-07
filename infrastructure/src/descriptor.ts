@@ -463,6 +463,69 @@ const PRIORIDAD_DE_LA_API = 20;
 const PRIORIDAD_DE_LA_INTERFAZ = 10;
 
 /**
+ * El ambiente en el que la interfaz de ventanilla **no se ruta** (#44, AC-1).
+ *
+ * ## La decision, escrita donde se aplica y no solo en un PR
+ *
+ * Desde #17 el ingreso ruta `PathPrefix(/caja)` a `kamayuk-caja-interfaz` en todos los
+ * ambientes, y esa interfaz **no habla con su backend**: `frontend/eslint.config.mjs` prohibe
+ * `fetch` y `XMLHttpRequest`, `frontend/nginx.conf` no reenvia a ningun sitio y
+ * `frontend/verificaciones/cero-red.mjs` mide **0 peticiones de conexion** en un Chromium de
+ * verdad. Los datos que dibuja salen de `frontend/src/datos/`, copiados del artboard: numeros de
+ * recibo con forma real, nombres de contribuyentes e importes.
+ *
+ * Cada mitad esta decidida y argumentada por separado (ADR-0010, #17). Lo que nadie habia
+ * decidido es **que las dos ocurran a la vez**: servida en `https://<dominio>/caja`, con el
+ * escudo de la entidad y sin pedir credenciales, esa pantalla no se distingue del sistema.
+ *
+ * Las tres salidas defendibles, con su coste:
+ *
+ *   1. **No desplegarla hasta que tenga identidad.** Coste: se pierde poder verla en cualquier
+ *      sitio que no sea el puesto de quien la escribe, y con ella la unica forma de que alguien
+ *      la juzgue antes de conectarla.
+ *   2. **`stg` si, `prod` no la ruta.** Coste: hay que decidir dos veces —hoy y el dia que haya
+ *      identidad—, y el descriptor deja de ser el mismo para los dos ambientes.
+ *   3. **Los dos, haciendola inconfundible** (banda permanente, toast honestos, sesion sin
+ *      nombre). Coste: eso no evita el dano de «un tercero desde fuera ve la maqueta de la
+ *      recaudacion municipal», porque el dominio es el mismo y el escudo tambien.
+ *
+ * **Se elige la (2), y ademas se hace la (3).** El motivo de la (2) es que el primer dano —una
+ * cifra plausible y falsa copiada a un informe— **no lo evita ninguna banda si el dominio es el
+ * de produccion**. El motivo de hacer tambien la (3) es que no depende del ambiente: una
+ * pantalla que dice «la cuota ya esta descontada de la cuenta corriente» sin haber hablado con
+ * nadie afirma un hecho falso sobre el dinero de un contribuyente, y eso no mejora por estar en
+ * `stg`. La (3) vive en `frontend/src/marco/maqueta.ts`.
+ *
+ * Es ademas la mas barata de revertir: el dia que haya identidad, `prod` vuelve a rutar
+ * borrando esta constante y su uso, y la banda y los toast se retiran con la prueba que los fija
+ * en rojo delante.
+ *
+ * ## Lo que esto NO hace
+ *
+ * **No retira el `Deployment` ni el `Service`.** La imagen se sigue construyendo y publicando
+ * —`publicar-imagenes.yml` publica las tres sin filtro `paths:`—, el pod sigue arrancando en
+ * `prod` y sus sondas siguen diciendo si el artefacto esta sano. Lo unico que desaparece alli es
+ * **la ruta publica**: nadie de fuera del clúster llega a ella. Retirar el despliegue seria dejar
+ * de ejercitar en `prod` justo lo que hay que tener listo para el dia que se conecte.
+ *
+ * ## Por que este archivo ramifica por el ambiente, que es lo que no suele hacer
+ *
+ * `EntornoDelDescriptor.ambiente` lleva escrito «un descriptor **no** ramifica por esto: recibe
+ * lo que cambia», y es una buena regla: lo que cambia entre ambientes —el dominio, el
+ * namespace, la etiqueta de la imagen, a quien se avisa— entra como dato, y asi los dos
+ * ambientes se componen con el mismo codigo.
+ *
+ * Aqui no se puede cumplir, y conviene decir por que en vez de disimularlo. Lo que cambia no es
+ * un valor: es **si un manifiesto existe o no**, y el tipo no tiene ningun campo con el que
+ * `infrastructure` pueda decirlo —anadirselo es cambiar el repositorio hermano, que este issue
+ * declara fuera—. La asimetria queda entonces escrita aqui, con su motivo, para que no se lea
+ * como un descuido; y `verificaciones/descriptor.test.ts` la fija **por los dos lados**, porque
+ * una sola de las dos afirmaciones no separa las hipotesis: un descriptor que no declarara nunca
+ * la ruta de la interfaz pasaria «en prod no esta» igual de bien.
+ */
+const AMBIENTE_SIN_INTERFAZ = "prod";
+
+/**
  * DNS, y va primero en toda politica de egreso porque todo lo demas depende de el.
  *
  * Una politica de egreso convierte a los pods que selecciona en «solo lo declarado», y `postgres`,
@@ -752,15 +815,25 @@ export const caja: DescriptorDeSistema = {
    */
   ingreso(e): Manifiesto[] {
     const quitarElPrefijo = `kamayuk-${SISTEMA}-quitar-prefijo`;
+    // Ver `AMBIENTE_SIN_INTERFAZ`: en `prod` la ruta de la interfaz **no se declara**, y con
+    // ella se va su `Middleware` —un `Middleware` que nadie referencia es una declaracion
+    // muerta, y una declaracion muerta es lo que manana alguien vuelve a enganchar sin leer por
+    // que estaba—. El `Deployment` y el `Service` de la interfaz siguen en su sitio: el pod
+    // arranca y sus sondas contestan; lo que no existe alli es la ruta publica.
+    const laRutaDeLaInterfaz = e.ambiente !== AMBIENTE_SIN_INTERFAZ;
     return [
-      {
-        apiVersion: "traefik.io/v1alpha1",
-        kind: "Middleware",
-        metadata: { name: quitarElPrefijo, namespace: e.namespace, labels: e.etiquetas },
-        // Traefik reenvia lo que queda y anade `X-Forwarded-Prefix`, asi que quien quiera
-        // reconstruir la URL publica puede; nginx no lo necesita para servir un archivo.
-        spec: { stripPrefix: { prefixes: [`/${SISTEMA}`] } },
-      },
+      ...(laRutaDeLaInterfaz
+        ? [
+            {
+              apiVersion: "traefik.io/v1alpha1" as const,
+              kind: "Middleware" as const,
+              metadata: { name: quitarElPrefijo, namespace: e.namespace, labels: e.etiquetas },
+              // Traefik reenvia lo que queda y anade `X-Forwarded-Prefix`, asi que quien quiera
+              // reconstruir la URL publica puede; nginx no lo necesita para servir un archivo.
+              spec: { stripPrefix: { prefixes: [`/${SISTEMA}`] } },
+            },
+          ]
+        : []),
       {
         apiVersion: "traefik.io/v1alpha1",
         kind: "IngressRoute",
@@ -776,13 +849,17 @@ export const caja: DescriptorDeSistema = {
               priority: PRIORIDAD_DE_LA_API,
               services: [{ name: `kamayuk-${SISTEMA}-web`, port: 80 }],
             },
-            {
-              match: `Host(\`${e.dominio}\`) && PathPrefix(\`/${SISTEMA}\`)`,
-              kind: "Rule",
-              priority: PRIORIDAD_DE_LA_INTERFAZ,
-              services: [{ name: NOMBRE_DE_LA_INTERFAZ, port: 80 }],
-              middlewares: [{ name: quitarElPrefijo }],
-            },
+            ...(laRutaDeLaInterfaz
+              ? [
+                  {
+                    match: `Host(\`${e.dominio}\`) && PathPrefix(\`/${SISTEMA}\`)`,
+                    kind: "Rule" as const,
+                    priority: PRIORIDAD_DE_LA_INTERFAZ,
+                    services: [{ name: NOMBRE_DE_LA_INTERFAZ, port: 80 }],
+                    middlewares: [{ name: quitarElPrefijo }],
+                  },
+                ]
+              : []),
           ],
           tls: { certResolver: "letsencrypt" },
         },
