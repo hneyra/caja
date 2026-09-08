@@ -1,5 +1,8 @@
 package kamayuk.caja.web;
 
+import java.time.LocalDate;
+import kamayuk.caja.autorizacion.Privilegio;
+import kamayuk.caja.autorizacion.ComprobadorDeAcceso;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
@@ -47,7 +50,19 @@ class ConfiguracionDeLaConsultaTest {
         // En el orden contrario al que tienen que quedar, a proposito: lo que los ordena es el
         // `order` que cada configuracion declara, no el orden en que Spring cree sus beans.
         new ConfiguracionDeLaConsulta().addInterceptors(registro);
-        new ConfiguracionDeAutorizacion((usuario, acceso, privilegio, fecha) -> true, RELOJ)
+        new ConfiguracionDeAutorizacion(new ComprobadorDeAcceso() {
+
+                    @Override
+                    public boolean autoriza(
+                            String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean conoceAlUsuario(String usuario) {
+                        return true;
+                    }
+                }, RELOJ)
                 .addInterceptors(registro);
 
         assertThat(interceptoresDe(registro).stream().map(ConfiguracionDeLaConsultaTest::tipo))
