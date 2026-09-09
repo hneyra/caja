@@ -40,6 +40,7 @@ import kamayuk.caja.nucleo.infraestructura.BuzonHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.CajaRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
+import kamayuk.caja.nucleo.infraestructura.CredencialDeServicio;
 import kamayuk.caja.nucleo.infraestructura.OrdenDeCobroRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.ReciboRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.TurnoDeCajaRepositoryJdbc;
@@ -134,7 +135,7 @@ class ConciliacionDeNDiasTest {
                 new ClienteHttpDelSistemaDeOrigen(
                         new tools.jackson.databind.json.JsonMapper(),
                         Map.of("rentas", "http://127.0.0.1:" + origen.puerto()),
-                        "");
+                        CredencialDeServicio.fija(""));
 
         registrar = envolver(new RegistrarOrdenDeCobro(ordenes, auditoria, relojDe(PRIMER_DIA)));
         entregar =

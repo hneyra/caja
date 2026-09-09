@@ -32,12 +32,22 @@ kamayuk:
     # despliegue de la caja.
     # Entrecomillado: el valor lleva dos puntos dentro y YAML lo leeria como un mapa.
     origenes: "${KAMAYUK_CAJA_ORIGENES:{rentas: 'http://rentas:8080/rentas/api/v1'}}"
-    # La credencial de servicio con que el publicador llama. El publicador corre SIN
-    # usuario delante -no hay peticion de la que sacar un token-, asi que sin esto la
-    # llamada sale sin credencial y el destino la rechaza. Es deliberado: ADR-0028 §2
-    # dice como se cierra de verdad, con un token delegado por RFC 8693, y ESO NO ESTA
-    # CONSTRUIDO (hueco declarado de P5D).
+    # La CLAVE del cliente confidencial con que el publicador pide su token (#21 AC-2).
+    # NO es el token: el publicador corre sin usuario delante -no hay peticion de la que
+    # sacar uno-, asi que lo pide el mismo con `client_credentials` (ADR-0028 §2). Hasta
+    # #21 lo que se mandaba aqui era lo que `bootstrap-secretos.sh` genera, o sea un
+    # valor aleatorio que ningun emisor firmo, y el destino contestaba 401.
     credencial: ${KAMAYUK_CAJA_CREDENCIAL:}
+    identidad:
+      # A donde se le pide, por la red INTERNA. Es una direccion, no una identidad: el
+      # emisor publico (`KAMAYUK_OIDC_EMISOR`) es lo que se compara con el `iss` del
+      # token que se RECIBE; esto es a donde se va a buscarlo. Pedirlo al publico haria
+      # salir al ingreso para volver a entrar, y la politica de egreso no lo permite.
+      token: ${KAMAYUK_CAJA_IDENTIDAD_TOKEN:}
+      # Y con que cliente: `kamayuk-caja-servicio-<ubigeo>`, uno por municipalidad. La
+      # cuenta de servicio de ESE cliente es la que lleva `municipalidad_id`, y por eso
+      # no puede haber uno solo para todas (ADR-0028 §2).
+      cliente: ${KAMAYUK_CAJA_IDENTIDAD_CLIENTE:}
     entrega:
       # Cuantas veces se reintenta antes de dar el pago por MUERTO. Un evento muerto es
       # dinero cobrado sin registrar y dispara alerta a una persona; con este numero

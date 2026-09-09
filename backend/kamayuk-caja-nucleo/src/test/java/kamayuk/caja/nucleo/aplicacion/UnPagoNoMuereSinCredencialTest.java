@@ -27,6 +27,7 @@ import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.nucleo.infraestructura.BuzonHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen;
+import kamayuk.caja.nucleo.infraestructura.CredencialDeServicio;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -92,7 +93,7 @@ class UnPagoNoMuereSinCredencialTest {
                 new ClienteHttpDelSistemaDeOrigen(
                         JsonMapper.builder().build(),
                         Map.of("rentas", servidor.raiz()),
-                        credencial));
+                        CredencialDeServicio.fija(credencial)));
     }
 
     /**
