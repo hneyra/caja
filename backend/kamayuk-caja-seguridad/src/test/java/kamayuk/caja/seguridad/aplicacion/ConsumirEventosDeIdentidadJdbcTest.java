@@ -296,7 +296,9 @@ class ConsumirEventosDeIdentidadJdbcTest {
     }
 
     private ConsumirEventosDeIdentidad consumidorCon(AplicarUnEventoDeIdentidad aplicador) {
-        return envolver(new ConsumirEventosDeIdentidad(buzon, aplicador, alerta));
+        return envolver(
+                new ConsumirEventosDeIdentidad(
+                        buzon, aplicador, alerta, Clock.fixed(AHORA, ZoneOffset.UTC)));
     }
 
     @SuppressWarnings("unchecked")
@@ -402,6 +404,14 @@ class ConsumirEventosDeIdentidadJdbcTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             avisos.add(evento.tipoPublicado() + ": " + motivo + " apartados=" + apartados);
+        }
+
+        @Override
+        public void hayEventosPospuestos(
+                List<EventoDeIdentidadRecibido> pospuestos,
+                java.time.Instant ahora,
+                java.time.Duration umbral) {
+            avisos.add("POSPUESTOS: " + pospuestos.size());
         }
     }
 }

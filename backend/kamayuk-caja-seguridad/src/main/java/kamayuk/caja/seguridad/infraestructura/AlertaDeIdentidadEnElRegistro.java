@@ -1,5 +1,9 @@
 package kamayuk.caja.seguridad.infraestructura;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.StringJoiner;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import org.slf4j.Logger;
@@ -64,5 +68,39 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                 apartados,
                 responsable,
                 canal);
+    }
+
+    @Override
+    public void hayEventosPospuestos(
+            List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
+        StringJoiner lista = new StringJoiner("; ");
+        for (EventoDeIdentidadRecibido evento : pospuestos) {
+            lista.add(
+                    evento.tipoPublicado()
+                            + " sujeto "
+                            + evento.sujetoId()
+                            + ", secuencia "
+                            + evento.secuencia()
+                            + ", lleva "
+                            + enMinutos(Duration.between(evento.creadoEn(), ahora)));
+        }
+        REGISTRO.error(
+                "LA COPIA LOCAL DE LA AUTORIZACION ESTA DESATRASADA: {} evento(s) de `identidad`"
+                        + " llevan mas de {} sin poder aplicarse porque falta aquello de lo que"
+                        + " dependen, y siguen en el buzon. No se han perdido —la corrida acaba"
+                        + " bien y la siguiente los vuelve a intentar—, pero mientras esten ahi"
+                        + " alguien tiene en `identidad` un permiso, una cuenta o una afiliacion"
+                        + " que en esta caja no rige, y ninguna cifra lo delata (ADR-0039 etapa 4,"
+                        + " ADR-0026 §4). Son: {}. Responsable: {} <{}>",
+                pospuestos.size(),
+                enMinutos(umbral),
+                lista,
+                responsable,
+                canal);
+    }
+
+    /** La edad en minutos, que es la unidad en que se lee una ventana de cinco. */
+    private static String enMinutos(Duration edad) {
+        return edad.toMinutes() + " min";
     }
 }

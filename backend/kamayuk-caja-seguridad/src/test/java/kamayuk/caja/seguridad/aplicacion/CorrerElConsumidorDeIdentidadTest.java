@@ -3,11 +3,16 @@ package kamayuk.caja.seguridad.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.plataforma.RecorridoPorMunicipalidades;
+import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import org.junit.jupiter.api.AfterEach;
@@ -77,7 +82,8 @@ class CorrerElConsumidorDeIdentidadTest {
         AplicadorQueCuenta aplicador = new AplicadorQueCuenta();
         CorrerElConsumidorDeIdentidad runner =
                 new CorrerElConsumidorDeIdentidad(
-                        new ConsumirEventosDeIdentidad(buzon, aplicador, (e, m, a) -> {}),
+                        new ConsumirEventosDeIdentidad(
+                                buzon, aplicador, new AlertaQueAnota(), Clock.systemUTC()),
                         registroCon("200105", CATACAOS),
                         "kamayuk-caja-servicio-200105");
 
@@ -112,7 +118,10 @@ class CorrerElConsumidorDeIdentidadTest {
         CorrerElConsumidorDeIdentidad runner =
                 new CorrerElConsumidorDeIdentidad(
                         new ConsumirEventosDeIdentidad(
-                                caido, new AplicadorQueCuenta(), (e, m, a) -> {}),
+                                caido,
+                                new AplicadorQueCuenta(),
+                                new AlertaQueAnota(),
+                                Clock.systemUTC()),
                         registroCon("200105", CATACAOS),
                         "kamayuk-caja-servicio-200105");
 
@@ -123,7 +132,166 @@ class CorrerElConsumidorDeIdentidadTest {
         assertThat(TenantContext.actualSiHay()).isEmpty();
     }
 
+    @Test
+    @DisplayName(
+            "un pospuesto que lleva mas de 15 minutos se avisa UNA vez por corrida, y la corrida"
+                    + " termina bien (H7)")
+    void unPospuestoViejoSeAvisaUnaVezPorCorrida() {
+        AlertaQueAnota alerta = new AlertaQueAnota();
+        EventoDeIdentidadRecibido viejo = afiliacion(41, AHORA.minus(Duration.ofMinutes(16)));
+        BuzonQuePosponeSiempre buzon = new BuzonQuePosponeSiempre(viejo, 3);
+        CorrerElConsumidorDeIdentidad runner = runnerCon(buzon, alerta);
+
+        runner.run(new DefaultApplicationArguments());
+
+        assertThat(buzon.lecturas)
+                .as(
+                        "el pospuesto vuelve en cada vuelta porque no se acusa, y hay algo mas que si"
+                                + " progresa")
+                .isEqualTo(4);
+        assertThat(alerta.pospuestos)
+                .as(
+                        "[H7: un pospuesto que persiste no le llegaba a NADIE — en la medida"
+                                + " sobrevivio dos corridas con su WARN por vuelta y cero avisos. Uno"
+                                + " por corrida, no uno por vuelta: cuatro pospuestos por cuatro ticks"
+                                + " a la hora serian 96 avisos al dia diciendo lo mismo]")
+                .hasSize(1);
+        assertThat(alerta.pospuestos.getFirst())
+                .as("y con el evento dentro, no con una cuenta")
+                .containsExactly(viejo);
+        assertThat(TenantContext.actualSiHay()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("CONTRASTE: uno de dos minutos no se avisa, porque eso se arregla solo")
+    void unPospuestoNuevoNoSeAvisa() {
+        AlertaQueAnota alerta = new AlertaQueAnota();
+        BuzonQuePosponeSiempre buzon =
+                new BuzonQuePosponeSiempre(afiliacion(42, AHORA.minus(Duration.ofMinutes(2))), 3);
+
+        runnerCon(buzon, alerta).run(new DefaultApplicationArguments());
+
+        assertThat(alerta.pospuestos)
+                .as(
+                        "[un evento que llega antes que su dependencia es CORRIENTE: el emisor"
+                                + " sirve por secuencia y una pagina se corta donde se corta. Avisar al"
+                                + " primer tick es avisar de lo que se arregla solo, y un canal que"
+                                + " grita en lo corriente se deja de mirar]")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("CONTRASTE: una corrida sin ningun pospuesto tampoco avisa")
+    void unaCorridaSinPospuestosNoAvisa() {
+        AlertaQueAnota alerta = new AlertaQueAnota();
+
+        runnerCon(new BuzonDeMentira(3), alerta).run(new DefaultApplicationArguments());
+
+        assertThat(alerta.pospuestos).isEmpty();
+    }
+
     // ------------------------------------------------------------------
+
+    private static final Instant AHORA = Instant.parse("2026-09-09T23:00:00Z");
+
+    private static EventoDeIdentidadRecibido afiliacion(long secuencia, Instant creadoEn) {
+        return new EventoDeIdentidadRecibido(
+                UUID.randomUUID(),
+                secuencia,
+                "MIEMBRO_AFILIADO",
+                7L,
+                "{}",
+                "a".repeat(64),
+                creadoEn);
+    }
+
+    private static CorrerElConsumidorDeIdentidad runnerCon(
+            FuenteDeEventosDeIdentidad buzon, AlertaDeEventosSinAplicar alerta) {
+        return new CorrerElConsumidorDeIdentidad(
+                new ConsumirEventosDeIdentidad(
+                        buzon,
+                        new AplicadorQuePospone(),
+                        alerta,
+                        Clock.fixed(AHORA, ZoneOffset.UTC)),
+                registroCon("200105", CATACAOS),
+                "kamayuk-caja-servicio-200105");
+    }
+
+    /** Anota lo que se avisa, sin componer ninguna prosa. */
+    private static final class AlertaQueAnota implements AlertaDeEventosSinAplicar {
+        private final List<List<EventoDeIdentidadRecibido>> pospuestos = new ArrayList<>();
+
+        @Override
+        public void hayUnEventoSinAplicar(
+                EventoDeIdentidadRecibido evento, String motivo, long apartados) {
+            throw new AssertionError("un pospuesto no se aparta: " + motivo);
+        }
+
+        @Override
+        public void hayEventosPospuestos(
+                List<EventoDeIdentidadRecibido> lista, Instant ahora, Duration umbral) {
+            pospuestos.add(List.copyOf(lista));
+        }
+    }
+
+    /**
+     * Sirve el MISMO pospuesto en cada vuelta —que es lo que hace el emisor con lo que no se acusa—
+     * y ademas un evento nuevo, para que la vuelta progrese y se den varias.
+     */
+    private static final class BuzonQuePosponeSiempre implements FuenteDeEventosDeIdentidad {
+        private final EventoDeIdentidadRecibido pospuesto;
+        private int paginas;
+        private int lecturas;
+
+        BuzonQuePosponeSiempre(EventoDeIdentidadRecibido pospuesto, int paginas) {
+            this.pospuesto = pospuesto;
+            this.paginas = paginas;
+        }
+
+        @Override
+        public Lote pendientes(int limite) {
+            lecturas++;
+            if (paginas == 0) {
+                return new Lote(List.of(pospuesto), 1);
+            }
+            paginas--;
+            return new Lote(
+                    List.of(
+                            pospuesto,
+                            new EventoDeIdentidadRecibido(
+                                    UUID.randomUUID(),
+                                    100 + lecturas,
+                                    "GRUPO_DADO_DE_ALTA",
+                                    1L,
+                                    "{}",
+                                    "a".repeat(64),
+                                    AHORA)),
+                    paginas + 1L);
+        }
+
+        @Override
+        public Acuse acusar(List<UUID> eventoIds) {
+            return new Acuse(eventoIds.size(), eventoIds.size(), paginas);
+        }
+    }
+
+    /** Pospone las afiliaciones y aplica todo lo demas. No toca ninguna base. */
+    private static final class AplicadorQuePospone extends AplicarUnEventoDeIdentidad {
+        AplicadorQuePospone() {
+            super(
+                    JdbcClient.create(new DriverManagerDataSource()),
+                    tools.jackson.databind.json.JsonMapper.builder().build(),
+                    Clock.systemUTC());
+        }
+
+        @Override
+        public Aplicacion aplicar(EventoDeIdentidadRecibido evento) {
+            if ("MIEMBRO_AFILIADO".equals(evento.tipoPublicado())) {
+                throw new TodaviaNo("el grupo que nombra no esta en esta copia todavia");
+            }
+            return Aplicacion.APLICADO;
+        }
+    }
 
     private static RecorridoPorMunicipalidades registroCon(String ubigeo, long id) {
         DriverManagerDataSource sinBase = new DriverManagerDataSource();

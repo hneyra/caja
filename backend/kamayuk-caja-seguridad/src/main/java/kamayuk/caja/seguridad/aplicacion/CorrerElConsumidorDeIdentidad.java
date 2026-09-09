@@ -1,10 +1,14 @@
 package kamayuk.caja.seguridad.aplicacion;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.plataforma.RecorridoPorMunicipalidades;
+import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +45,19 @@ import org.springframework.stereotype.Component;
  *
  * <p>Como mucho {@value #VUELTAS_MAXIMAS} paginas por corrida, y se para antes en cuanto una vuelta
  * no progresa. Un proceso que no acaba no es un consumidor: es un pod que nadie mira.
+ *
+ * <h2>Y al terminar, quien lleva demasiado pospuesto</h2>
+ *
+ * <p>Lo que quedo pospuesto se junta de TODAS las vueltas —sin repetir, porque el emisor lo vuelve
+ * a servir en cada una— y se pasa una sola vez a {@link
+ * ConsumirEventosDeIdentidad#avisarDeLosPospuestosQueLlevanDemasiado}. La corrida termina igual de
+ * bien: un pospuesto no es un fallo de la corrida, y salir en rojo por el convertiria un retraso en
+ * un `Job` fallido cada cinco minutos. Lo que no puede seguir pasando es que no se entere nadie
+ * (hallazgo H7 de la medida de AC-5/AC-6).
+ *
+ * <p>El aviso va DENTRO del {@code try} y despues del bucle, asi que una corrida que muere porque
+ * {@code identidad} no contesta no lo manda: ahi lo que hay que mirar es otra cosa, y el rojo de la
+ * corrida ya lo dice.
  */
 @Component
 @Profile("batch")
@@ -77,18 +94,30 @@ public class CorrerElConsumidorDeIdentidad implements ApplicationRunner {
         long municipalidadId = municipalidadDe(clienteDeServicio, registro);
         TenantContext.fijar(new MunicipalidadId(municipalidadId));
         try {
+            // Sin repetir y en el orden en que se leyeron: el emisor sirve el pospuesto otra vez
+            // en cada vuelta —no se acusa, a proposito—, asi que una lista a secas diria que hay
+            // tantos como vueltas se dieron.
+            Map<UUID, EventoDeIdentidadRecibido> pospuestos = new LinkedHashMap<>();
+            boolean seAgotaron = true;
             for (int vuelta = 1; vuelta <= VUELTAS_MAXIMAS; vuelta++) {
                 ConsumirEventosDeIdentidad.Vuelta resultado = consumidor.consumir();
                 log.info("Vuelta {} del consumidor de identidad: {}", vuelta, resultado);
+                for (EventoDeIdentidadRecibido pospuesto : resultado.pospuestos()) {
+                    pospuestos.putIfAbsent(pospuesto.eventoId(), pospuesto);
+                }
                 if (resultado.sinProgreso()) {
-                    return;
+                    seAgotaron = false;
+                    break;
                 }
             }
-            log.warn(
-                    "Se agotaron las {} vueltas y el buzon de `identidad` sigue teniendo eventos."
-                            + " No es un fallo: la corrida acaba a proposito en vez de no acabar,"
-                            + " y la siguiente sigue por donde esta se quedo",
-                    VUELTAS_MAXIMAS);
+            if (seAgotaron) {
+                log.warn(
+                        "Se agotaron las {} vueltas y el buzon de `identidad` sigue teniendo"
+                                + " eventos. No es un fallo: la corrida acaba a proposito en vez"
+                                + " de no acabar, y la siguiente sigue por donde esta se quedo",
+                        VUELTAS_MAXIMAS);
+            }
+            consumidor.avisarDeLosPospuestosQueLlevanDemasiado(pospuestos.values());
         } finally {
             TenantContext.limpiar();
         }

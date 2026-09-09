@@ -1,5 +1,6 @@
 package kamayuk.caja.seguridad.infraestructura;
 
+import java.time.Clock;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import kamayuk.caja.seguridad.aplicacion.AplicarUnEventoDeIdentidad;
@@ -26,11 +27,16 @@ import org.springframework.context.annotation.Profile;
 @ConditionalOnProperty("kamayuk.identidad.url")
 public class ConfiguracionDelConsumidorDeIdentidad {
 
+    /**
+     * El {@code Clock} es el mismo bean que usa el aplicador, y hace falta para una sola cosa: la
+     * EDAD de un evento pospuesto, que se mide contra el {@code creadoEn} que sirve `identidad`.
+     */
     @Bean
     ConsumirEventosDeIdentidad consumirEventosDeIdentidad(
             FuenteDeEventosDeIdentidad fuente,
             AplicarUnEventoDeIdentidad aplicador,
-            AlertaDeEventosSinAplicar alerta) {
-        return new ConsumirEventosDeIdentidad(fuente, aplicador, alerta);
+            AlertaDeEventosSinAplicar alerta,
+            Clock reloj) {
+        return new ConsumirEventosDeIdentidad(fuente, aplicador, alerta, reloj);
     }
 }
