@@ -308,6 +308,14 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                     name: "KAMAYUK_CAJA_IDENTIDAD_CLIENTE",
                     value: `kamayuk-${SISTEMA}-servicio-${e.implantacion.ubigeo}`,
                   },
+                  // Y la CLAVE de ese cliente. Es lo unico de los tres que es un secreto, y por
+                  // eso es lo unico que sale de un `secretKeyRef`.
+                  {
+                    name: "KAMAYUK_CAJA_CREDENCIAL",
+                    valueFrom: {
+                      secretKeyRef: { name: e.secretoDe("rentas"), key: "clave" },
+                    },
+                  },
                   // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
                   // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
                   // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
@@ -1004,6 +1012,24 @@ export const caja: DescriptorDeSistema = {
       rol: "kamayuk_owner",
       rotacion: "anual",
       proposito: `migrar la base de ${SISTEMA}; es el unico rol con DDL`,
+    },
+    {
+      // El destino va en el NOMBRE, y de ahi lo deriva `credencialesDeServicio()` de
+      // `infrastructure`: el cliente confidencial se pide por PAR (origen, destino), y declarar
+      // «a quien se llama» aparte seria el sitio que se quedaria viejo.
+      nombre: e.secretoDe("rentas"),
+      clave: "clave",
+      // `emisor: "keycloak"` es lo que la separa de una clave de PostgreSQL (#21). Su valor NO lo
+      // genera `bootstrap-secretos.sh` por su cuenta: es la clave del cliente confidencial
+      // `kamayuk-caja-servicio-<ubigeo>`, que el Job de identidad le FIJA a Keycloak, y llega aqui
+      // como espejo del `Secret` de la plataforma. Sin declararlo, «un valor aleatorio con nombre
+      // de credencial» y «la credencial con la que se pide un token» son la misma linea del
+      // inventario — y la segunda existe, arranca el pod y recibe 401.
+      emisor: "keycloak",
+      rotacion: "trimestral",
+      proposito:
+        "pedir el token con el que se le entrega a `rentas` el evento de cada pago (ADR-0026 §3)." +
+        " No es el token: es la clave del cliente confidencial con la que se pide",
     },
   ],
 };
