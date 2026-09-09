@@ -155,6 +155,19 @@ services:
       # buscara el JWKS en si mismo y todo token seria invalido por un motivo que
       # no se parece a su causa.
       KAMAYUK_OIDC_JWKS: http://identidad:8080/realms/sgtm/protocol/openid-connect/certs
+      # Y el punto de EMISION, por la misma red interna y por lo mismo (#21 AC-2): el
+      # publicador del buzon corre sin usuario delante —lo despierta un reloj— y pide su
+      # token con `client_credentials`.
+      KAMAYUK_CAJA_IDENTIDAD_TOKEN: http://identidad:8080/realms/sgtm/protocol/openid-connect/token
+      # Con QUE cliente lo pide: uno por municipalidad, porque la cuenta de servicio de ese
+      # cliente es la que lleva `municipalidad_id` (ADR-0028 §2). El ubigeo es el mismo que
+      # implanta este compose.
+      KAMAYUK_CAJA_IDENTIDAD_CLIENTE: kamayuk-caja-servicio-${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
+      # Y su clave. VACIA por omision a proposito: en el compose la identidad de servicio hay
+      # que crearla a mano (`identidad/reconciliar-identidades.sh servicios`), y mientras no
+      # exista lo correcto es que la llamada salga sin credencial y `rentas` la rechace — no
+      # que la caja se pase la vida pidiendo tokens que nadie va a dar.
+      KAMAYUK_CAJA_CREDENCIAL: ${KAMAYUK_CAJA_CREDENCIAL:-}
       # A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
       # nombre de sistema y no una direccion unica: la caja no sabe cuantos
       # sistemas hay, y el dia que aparezca `mercados` tiene que ser una linea
