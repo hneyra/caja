@@ -112,11 +112,6 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
         if (autorizaAlguna(usuario, requisito, hoy)) {
             return true;
         }
-        // El mensaje dice que falta, no quien lo tiene ni como se configura: eso
-        // ya es informacion sobre la organizacion de la municipalidad. Si la operacion
-        // admite otra opcion, se nombra tambien: negar diciendo solo la primera dejaria
-        // a un cajero leyendo «no tiene LECTURA sobre consulta_deuda», que es una
-        // opcion que su perfil no tiene por que tener.
         // Y ANTES de decir «no tiene el privilegio», hay que saber si el sistema lo conoce (#29
         // §8).
         //
@@ -124,6 +119,8 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
         // falta un permiso, y uno que **no esta dado de alta en este sistema** — que aqui no se
         // arregla de ninguna manera, porque las nueve escrituras de administracion de seguridad
         // viven en `rentas` (ADR-0030 §3) y el unico escritor local es el sembrador de la copia.
+        // El primero lo arregla un administrador concediendo algo; el segundo no, y quien lee el
+        // mensaje no tenia forma de distinguirlos.
         //
         // Es el mismo reparto que #21 hizo en `caja` con el 401 de la credencial: separar lo que
         // se arregla dando un permiso de lo que se arregla del lado del despliegue.
@@ -138,6 +135,11 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
                             + " vive en rentas.");
         }
 
+        // El mensaje dice que falta, no quien lo tiene ni como se configura: eso
+        // ya es informacion sobre la organizacion de la municipalidad. Si la operacion
+        // admite otra opcion, se nombra tambien: negar diciendo solo la primera dejaria
+        // a un cajero leyendo «no tiene LECTURA sobre consulta_deuda», que es una
+        // opcion que su perfil no tiene por que tener.
         throw new ProblemaDeNegocio(
                 CodigoDeError.SIN_PRIVILEGIO,
                 "No tiene el privilegio "
