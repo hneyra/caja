@@ -43,8 +43,11 @@ import tools.jackson.databind.json.JsonMapper;
  * <h2>El token, y por que un 401 NO es un rechazo (#21)</h2>
  *
  * <p>El publicador corre <b>sin usuario delante</b>: no hay peticion en curso de la que sacar un
- * {@code Authorization}. Manda una credencial de servicio configurada, que desde #21 es la de una
- * cuenta de Keycloak por sistema y municipalidad (ADR-0028 §2) y no una cadena aleatoria.
+ * {@code Authorization}. Desde #21 AC-2 <b>pide el suyo</b> con {@code client_credentials} y la
+ * clave de su cliente confidencial —uno por sistema y municipalidad, ADR-0028 §2—, en vez de mandar
+ * una cadena configurada que ningun emisor firmo. Quien lo pide y lo guarda es {@link
+ * TokenDeServicioDeKeycloak}; este cliente solo sabe que hay una {@link CredencialDeServicio} y que
+ * puede tardar, porque un token se renueva.
  *
  * <p><b>Y eso obliga a separar los 4xx en dos, que es el defecto que #21 cierra.</b> Hasta este
  * issue, {@code publicar} clasificaba <b>todo</b> 4xx como {@link
@@ -68,12 +71,12 @@ public class ClienteHttpDelSistemaDeOrigen {
     private final HttpClient cliente;
     private final JsonMapper json;
     private final Map<String, String> origenes;
-    private final String credencial;
+    private final CredencialDeServicio credencial;
 
     public ClienteHttpDelSistemaDeOrigen(
             JsonMapper json,
             @Value("#{${kamayuk.caja.origenes:{:}}}") Map<String, String> origenes,
-            @Value("${kamayuk.caja.credencial:}") String credencial) {
+            CredencialDeServicio credencial) {
         this.json = json;
         this.origenes = Map.copyOf(origenes);
         this.credencial = credencial;
@@ -104,7 +107,7 @@ public class ClienteHttpDelSistemaDeOrigen {
                         .header("Content-Type", "application/json")
                         .header("Accept", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(cuerpo));
-        conCredencial(peticion);
+        String mandada = conCredencial(peticion);
         HttpResponse<String> respuesta = enviar(peticion, sistema, "publicar el pago");
         int estado = respuesta.statusCode();
         if (estado == 200 || estado == 201 || estado == 202 || estado == 409) {
@@ -114,7 +117,8 @@ public class ClienteHttpDelSistemaDeOrigen {
             return;
         }
         if (esDeCredencial(estado)) {
-            throw new BuzonDelSistemaDeOrigen.NoContesta(faltaLaCredencial(sistema, estado));
+            throw new BuzonDelSistemaDeOrigen.NoContesta(
+                    faltaLaCredencial(sistema, estado, mandada));
         }
         if (estado >= 400 && estado < 500) {
             throw new BuzonDelSistemaDeOrigen.Rechazado(
@@ -137,14 +141,17 @@ public class ClienteHttpDelSistemaDeOrigen {
                         .timeout(ESPERA_DE_LECTURA)
                         .header("Accept", "application/json")
                         .GET();
-        conCredencial(peticion);
+        String mandada = conCredencial(peticion);
         HttpResponse<String> respuesta = enviar(peticion, sistema, que);
         if (esDeCredencial(respuesta.statusCode())) {
             // Aqui el 401 ya se reintentaba —TODO lo que no es 200 es `NoContesta`—, asi que lo
             // que #21 anade no es el reintento sino el diagnostico: «contesto 401 al traer el
             // buzon» manda a mirar el buzon, y lo que falta es una credencial.
             throw new BuzonDelSistemaDeOrigen.NoContesta(
-                    faltaLaCredencial(sistema, respuesta.statusCode()) + " (al " + que + ")");
+                    faltaLaCredencial(sistema, respuesta.statusCode(), mandada)
+                            + " (al "
+                            + que
+                            + ")");
         }
         if (respuesta.statusCode() != 200) {
             throw new BuzonDelSistemaDeOrigen.NoContesta(
@@ -161,10 +168,22 @@ public class ClienteHttpDelSistemaDeOrigen {
         }
     }
 
-    private void conCredencial(HttpRequest.Builder peticion) {
-        if (!credencial.isBlank()) {
-            peticion.header("Authorization", credencial);
+    /**
+     * Pone la cabecera si la hay, y devuelve la que puso.
+     *
+     * <p>Devuelve, en vez de volver a preguntar mas abajo, porque preguntar dos veces es <b>pedir
+     * el token dos veces</b>: la segunda llamada seria dentro del diagnostico de un 401, o sea en
+     * el peor momento, y podria lanzar su propia excepcion tapando la que se estaba explicando.
+     *
+     * <p>Y se pide AQUI y no en el constructor: un token caduca, y uno pedido al arrancar el pod
+     * estaria muerto a la primera tanda de la noche.
+     */
+    private String conCredencial(HttpRequest.Builder peticion) {
+        String cabecera = credencial.cabecera();
+        if (!cabecera.isBlank()) {
+            peticion.header("Authorization", cabecera);
         }
+        return cabecera;
     }
 
     private HttpResponse<String> enviar(
@@ -191,10 +210,11 @@ public class ClienteHttpDelSistemaDeOrigen {
     }
 
     /** Lo que hay que mirar, dicho en el mensaje que acaba en {@code pago_evento.ultimo_error}. */
-    private String faltaLaCredencial(SistemaDeOrigen sistema, int estado) {
+    private String faltaLaCredencial(SistemaDeOrigen sistema, int estado, String mandada) {
         String queFalta =
-                credencial.isBlank()
-                        ? "y esta caja no manda ninguna: `kamayuk.caja.credencial` esta vacia"
+                mandada.isBlank()
+                        ? "y esta caja no manda ninguna: no hay identidad de servicio configurada"
+                                + " (`kamayuk.caja.identidad.cliente` y `kamayuk.caja.credencial`)"
                         : "y la que esta caja manda no vale";
         return "«"
                 + sistema

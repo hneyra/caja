@@ -293,6 +293,21 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                   // declarada —que nombra el pod de identidad, no internet— no habria salido en
                   // absoluto. Todo token invalido, por un motivo que no se parece a su causa.
                   { name: "KAMAYUK_OIDC_JWKS", value: e.plataforma.jwks },
+                  // Y el punto de EMISION, tambien por la red interna y por lo mismo (#21 AC-2).
+                  // El publicador del buzon corre sin usuario delante —lo despierta un reloj, no
+                  // una peticion—, asi que no tiene ningun `Authorization` del que tirar: pide el
+                  // suyo con `client_credentials`.
+                  { name: "KAMAYUK_CAJA_IDENTIDAD_TOKEN", value: e.plataforma.token },
+                  // Con QUE cliente lo pide: uno por municipalidad, porque la cuenta de servicio
+                  // de ese cliente es la que lleva `municipalidad_id` y ADR-0028 §2 dice que «no
+                  // hay un proceso con permiso sobre todas». El nombre lo fija
+                  // `clienteDeServicio()` de `infrastructure`, y su guarda `identidad-de-servicio`
+                  // compara esta cadena con la suya: dos sitios que no pueden discrepar en
+                  // silencio.
+                  {
+                    name: "KAMAYUK_CAJA_IDENTIDAD_CLIENTE",
+                    value: `kamayuk-${SISTEMA}-servicio-${e.implantacion.ubigeo}`,
+                  },
                   // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
                   // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
                   // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
