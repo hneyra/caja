@@ -140,27 +140,6 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
         // admite otra opcion, se nombra tambien: negar diciendo solo la primera dejaria
         // a un cajero leyendo «no tiene LECTURA sobre consulta_deuda», que es una
         // opcion que su perfil no tiene por que tener.
-        // Y ANTES de decir «no tiene el privilegio», hay que saber si el sistema lo conoce (#29
-        // §8).
-        //
-        // Sin esto las dos cosas salian como el mismo 403: un funcionario dado de alta al que le
-        // falta un permiso, y uno que **no esta dado de alta en este sistema** — que aqui no se
-        // arregla de ninguna manera, porque las nueve escrituras de administracion de seguridad
-        // viven en `rentas` (ADR-0030 §3) y el unico escritor local es el sembrador de la copia.
-        //
-        // Es el mismo reparto que #21 hizo en `caja` con el 401 de la credencial: separar lo que
-        // se arregla dando un permiso de lo que se arregla del lado del despliegue.
-        if (!comprobador.conoceAlUsuario(usuario)) {
-            throw new ProblemaDeNegocio(
-                    CodigoDeError.SIN_PRIVILEGIO,
-                    "La cuenta «"
-                            + usuario
-                            + "» no esta dada de alta en este sistema. No es que le falte un"
-                            + " privilegio: no tiene ninguna ficha aqui, y el alta no se hace desde"
-                            + " este sistema — la administracion de usuarios, grupos y permisos"
-                            + " vive en rentas.");
-        }
-
         throw new ProblemaDeNegocio(
                 CodigoDeError.SIN_PRIVILEGIO,
                 "No tiene el privilegio "
