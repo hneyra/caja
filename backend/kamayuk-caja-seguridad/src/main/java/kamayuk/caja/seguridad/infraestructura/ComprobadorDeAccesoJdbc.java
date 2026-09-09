@@ -96,4 +96,24 @@ public class ComprobadorDeAccesoJdbc extends RepositorioJdbc implements Comproba
                         .query(Boolean.class)
                         .single());
     }
+
+    /**
+     * {@code @Transactional} por lo mismo que {@link #autoriza}: {@code usuario} lleva RLS con
+     * {@code FORCE} y su politica lee {@code app.municipalidad_id}, que se fija con {@code SET
+     * LOCAL} al abrir la transaccion. Sin ella no salen cero filas: sale un 500.
+     *
+     * <p>Se pregunta por la EXISTENCIA de la fila y nada mas —ni {@code habilitado} ni vigencia—,
+     * porque lo que distingue es «este sistema no te conoce» de «te conoce y no te deja». Un
+     * usuario deshabilitado SI esta dado de alta, y su remedio es otro: lo habilita un
+     * administrador.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean conoceAlUsuario(String usuario) {
+        return Boolean.TRUE.equals(
+                jdbc().sql("SELECT EXISTS (SELECT 1 FROM usuario u WHERE u.cuenta = :usuario)")
+                        .param("usuario", usuario)
+                        .query(Boolean.class)
+                        .single());
+    }
 }

@@ -79,6 +79,51 @@ class GuardiaDeAccesoTest {
     }
 
     @Test
+    @DisplayName(
+            "sin ficha en este sistema: 403 que lo DICE, y no «le falta un privilegio» (#29 §8)")
+    void sinFichaLoDice() throws Exception {
+        comprobador.autoriza = false;
+        comprobador.conoce = false;
+
+        MvcResult resultado = mvc.perform(get("/caja/api/v1/prueba/consulta")).andReturn();
+        String cuerpo = resultado.getResponse().getContentAsString();
+
+        assertThat(resultado.getResponse().getStatus()).isEqualTo(403);
+        assertThat(cuerpo)
+                .as(
+                        "distingue «no te conozco» de «no te dejo»: no son la misma cosa ni se"
+                                + " arreglan igual")
+                .contains("no esta dada de alta en este sistema")
+                .contains("la administracion de usuarios, grupos y permisos vive en rentas");
+        assertThat(cuerpo).doesNotContain("\"detail\":\"No tiene el privilegio");
+
+        // LO QUE ESTA PRUEBA NO PUEDE AFIRMAR: el `title` SIGUE diciendo «No tiene el privilegio
+        // necesario», porque sale del codigo y el codigo es `SIN_PRIVILEGIO`. Un codigo nuevo lo
+        // arreglaria y no se anade aqui a proposito: `CodigoDeError` esta copiado en los cuatro
+        // backends y en dos frontends, y `catastro`#41 midio que un cliente que no reconoce un
+        // codigo lo degrada al del estado HTTP y saca la pantalla con el titulo de otro error. Es
+        // #22.
+        assertThat(cuerpo).contains("\"codigo\":\"SIN_PRIVILEGIO\"");
+    }
+
+    @Test
+    @DisplayName("con ficha y sin privilegio: sigue diciendo que falta el privilegio")
+    void conFichaSigueDiciendoElPrivilegio() throws Exception {
+        comprobador.autoriza = false;
+        comprobador.conoce = true;
+
+        // El contraste. Sin el, el mensaje nuevo podria sustituir al viejo SIEMPRE y nadie lo
+        // notaria: los dos son 403 con el mismo codigo.
+        assertThat(
+                        mvc.perform(get("/caja/api/v1/prueba/consulta"))
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString())
+                .contains("No tiene el privilegio")
+                .doesNotContain("no esta dada de alta");
+    }
+
+    @Test
     @DisplayName("con el privilegio: pasa, y el guardia pregunto por el acceso y el privilegio")
     void conPrivilegioPasa() throws Exception {
         comprobador.autoriza = true;
@@ -322,6 +367,18 @@ class GuardiaDeAccesoTest {
                 String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
             preguntas.add(usuario + "|" + acceso + "|" + privilegio + "|" + fecha);
             return soloSobre == null ? autoriza : soloSobre.equals(acceso);
+        }
+
+        /**
+         * Por omision el sistema SI conoce a la cuenta: asi las pruebas que ya existian siguen
+         * midiendo lo que median —«esta dado de alta y le falta el privilegio»— y no se convierten
+         * en silencio en el caso nuevo (#29 §8).
+         */
+        private boolean conoce = true;
+
+        @Override
+        public boolean conoceAlUsuario(String usuario) {
+            return conoce;
         }
     }
 }
