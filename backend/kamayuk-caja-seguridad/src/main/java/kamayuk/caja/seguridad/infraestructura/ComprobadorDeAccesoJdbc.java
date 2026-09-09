@@ -96,6 +96,7 @@ public class ComprobadorDeAccesoJdbc extends RepositorioJdbc implements Comproba
                         .query(Boolean.class)
                         .single());
     }
+
     /**
      * {@code @Transactional} por lo mismo que {@link #autoriza}: {@code usuario} lleva RLS con
      * {@code FORCE} y su politica lee {@code app.municipalidad_id}, que se fija con {@code SET

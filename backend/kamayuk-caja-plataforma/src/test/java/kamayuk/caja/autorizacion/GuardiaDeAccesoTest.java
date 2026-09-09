@@ -79,7 +79,8 @@ class GuardiaDeAccesoTest {
     }
 
     @Test
-    @DisplayName("sin ficha en este sistema: 403 que lo DICE, y no «le falta un privilegio» (#29 §8)")
+    @DisplayName(
+            "sin ficha en este sistema: 403 que lo DICE, y no «le falta un privilegio» (#29 §8)")
     void sinFichaLoDice() throws Exception {
         comprobador.autoriza = false;
         comprobador.conoce = false;
@@ -89,8 +90,9 @@ class GuardiaDeAccesoTest {
 
         assertThat(resultado.getResponse().getStatus()).isEqualTo(403);
         assertThat(cuerpo)
-                .as("distingue «no te conozco» de «no te dejo»: no son la misma cosa ni se"
-                        + " arreglan igual")
+                .as(
+                        "distingue «no te conozco» de «no te dejo»: no son la misma cosa ni se"
+                                + " arreglan igual")
                 .contains("no esta dada de alta en este sistema")
                 .contains("la administracion de usuarios, grupos y permisos vive en rentas");
         assertThat(cuerpo).doesNotContain("\"detail\":\"No tiene el privilegio");
@@ -99,7 +101,8 @@ class GuardiaDeAccesoTest {
         // necesario», porque sale del codigo y el codigo es `SIN_PRIVILEGIO`. Un codigo nuevo lo
         // arreglaria y no se anade aqui a proposito: `CodigoDeError` esta copiado en los cuatro
         // backends y en dos frontends, y `catastro`#41 midio que un cliente que no reconoce un
-        // codigo lo degrada al del estado HTTP y saca la pantalla con el titulo de otro error. Es #22.
+        // codigo lo degrada al del estado HTTP y saca la pantalla con el titulo de otro error. Es
+        // #22.
         assertThat(cuerpo).contains("\"codigo\":\"SIN_PRIVILEGIO\"");
     }
 
@@ -111,7 +114,11 @@ class GuardiaDeAccesoTest {
 
         // El contraste. Sin el, el mensaje nuevo podria sustituir al viejo SIEMPRE y nadie lo
         // notaria: los dos son 403 con el mismo codigo.
-        assertThat(mvc.perform(get("/caja/api/v1/prueba/consulta")).andReturn().getResponse().getContentAsString())
+        assertThat(
+                        mvc.perform(get("/caja/api/v1/prueba/consulta"))
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString())
                 .contains("No tiene el privilegio")
                 .doesNotContain("no esta dada de alta");
     }
@@ -363,9 +370,9 @@ class GuardiaDeAccesoTest {
         }
 
         /**
-         * Por omision el sistema SI conoce a la cuenta: asi las pruebas que ya existian
-         * siguen midiendo lo que median —«esta dado de alta y le falta el privilegio»— y no
-         * se convierten en silencio en el caso nuevo (#29 §8).
+         * Por omision el sistema SI conoce a la cuenta: asi las pruebas que ya existian siguen
+         * midiendo lo que median —«esta dado de alta y le falta el privilegio»— y no se convierten
+         * en silencio en el caso nuevo (#29 §8).
          */
         private boolean conoce = true;
 

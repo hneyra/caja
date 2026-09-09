@@ -97,17 +97,17 @@ class CierreYRecaudacionControllerTest {
     private final ComprobadorDeAcceso comprobador =
             new ComprobadorDeAcceso() {
 
-                    @Override
-                    public boolean autoriza(
-                            String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
-                        return privilegio != negado;;
-                    }
-
-                    @Override
-                    public boolean conoceAlUsuario(String usuario) {
-                        return true;
-                    }
+                @Override
+                public boolean autoriza(
+                        String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
+                    return privilegio != negado;
                 }
+
+                @Override
+                public boolean conoceAlUsuario(String usuario) {
+                    return true;
+                }
+            };
 
     /**
      * El buzon, vacio: el turno de esta prueba cobro una tasa y una tasa no produce evento.

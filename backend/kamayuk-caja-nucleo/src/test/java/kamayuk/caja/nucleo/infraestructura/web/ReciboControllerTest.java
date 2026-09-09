@@ -101,17 +101,17 @@ class ReciboControllerTest {
     private final ComprobadorDeAcceso comprobador =
             new ComprobadorDeAcceso() {
 
-                    @Override
-                    public boolean autoriza(
-                            String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
-                        return privilegios.contains(privilegio;
-                    }
+                @Override
+                public boolean autoriza(
+                        String usuario, String acceso, Privilegio privilegio, LocalDate fecha) {
+                    return privilegios.contains(privilegio);
+                }
 
-                    @Override
-                    public boolean conoceAlUsuario(String usuario) {
-                        return true;
-                    }
-                });
+                @Override
+                public boolean conoceAlUsuario(String usuario) {
+                    return true;
+                }
+            };
 
     private final DuplicadoDeRecibo duplicados =
             new DuplicadoDeRecibo(

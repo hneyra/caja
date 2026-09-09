@@ -117,7 +117,8 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
         // admite otra opcion, se nombra tambien: negar diciendo solo la primera dejaria
         // a un cajero leyendo «no tiene LECTURA sobre consulta_deuda», que es una
         // opcion que su perfil no tiene por que tener.
-        // Y ANTES de decir «no tiene el privilegio», hay que saber si el sistema lo conoce (#29 §8).
+        // Y ANTES de decir «no tiene el privilegio», hay que saber si el sistema lo conoce (#29
+        // §8).
         //
         // Sin esto las dos cosas salian como el mismo 403: un funcionario dado de alta al que le
         // falta un permiso, y uno que **no esta dado de alta en este sistema** — que aqui no se

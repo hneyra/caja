@@ -24,13 +24,14 @@ public interface ComprobadorDeAcceso {
      * <p><b>Existe para que la ausencia deje de ser silenciosa.</b> {@link #autoriza} devuelve
      * {@code false} tanto cuando el usuario esta dado de alta y no tiene el privilegio como cuando
      * no esta dado de alta en absoluto, y las dos cosas llegaban al funcionario como el mismo 403.
-     * No son la misma cosa ni se arreglan igual: la primera la arregla un administrador
-     * concediendo un permiso; la segunda <b>no se puede arreglar desde este sistema</b>, porque
-     * aqui no hay ninguna escritura de administracion de seguridad — las nueve viven en
-     * {@code rentas} (ADR-0030 §3), y el unico escritor local es el sembrador de la copia.
+     * No son la misma cosa ni se arreglan igual: la primera la arregla un administrador concediendo
+     * un permiso; la segunda <b>no se puede arreglar desde este sistema</b>, porque aqui no hay
+     * ninguna escritura de administracion de seguridad — las nueve viven en {@code rentas}
+     * (ADR-0030 §3), y el unico escritor local es el sembrador de la copia.
      *
      * <p>Es el mismo reparto que #21 hizo en {@code caja} con el 401: separar lo que se arregla
-     * dando un permiso de lo que se arregla del lado del despliegue, y <b>decirlo en el mensaje</b>.
+     * dando un permiso de lo que se arregla del lado del despliegue, y <b>decirlo en el
+     * mensaje</b>.
      *
      * @param usuario la cuenta del usuario, tal como llega del token
      */
