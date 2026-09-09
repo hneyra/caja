@@ -98,6 +98,24 @@ const OBLIGATORIAS = [
   'KAMAYUK_UBIGEO',
 ];
 
+/** Las cuatro del consumidor del buzon de `identidad` (ADR-0039, etapa 4), que la
+    implantacion tiene que llevar porque termina con una pasada suya. Se comprueba el
+    conjunto exacto y ademas DOS valores: que la URL apunte al backend de `identidad` por
+    el alias que su compose publica (`identidad-sistema`, porque `identidad` es Keycloak en
+    la red compartida) y con la raiz ENTERA; y que la credencial sea OPCIONAL, porque en el
+    compose la identidad de servicio se crea a mano y una implantacion que exigiera la
+    clave no se podria levantar sin ella. */
+const CONSUMIDOR_DE_IDENTIDAD = {
+  servicio: 'caja-implantacion',
+  variables: [
+    'KAMAYUK_IDENTIDAD_URL',
+    'KAMAYUK_IDENTIDAD_TOKEN',
+    'KAMAYUK_IDENTIDAD_CLIENTE',
+    'KAMAYUK_IDENTIDAD_CREDENCIAL',
+  ],
+  url: 'http://identidad-sistema:8080/identidad/api/v1',
+};
+
 /** La red de la plataforma, que este compose USA y no crea. Sin `external: true`
     Compose crearia una segunda con el mismo nombre y los servicios no verian a `base`;
     el sintoma seria «Connection refused», que se lee como que el motor no esta
@@ -233,11 +251,40 @@ function laFormaDelArchivo(config) {
     lasDependencias(nombre, servicio);
   }
 
+  elConsumidorDeIdentidad(config);
+
   const red = config.networks?.default;
   anotar(
     red?.name === RED.nombre && red?.external === RED.externa,
     `la red por omision es «${RED.nombre}» y es externa`,
     `es «${red?.name}» con external=${red?.external}`,
+  );
+}
+
+/** Las cuatro del consumidor de `identidad`, en la implantacion y con sus dos valores. La
+    credencial se mide con el entorno de relleno, donde NO esta puesta: si el compose la
+    exigiera con `:?`, `resolver()` ya habria fallado nombrandola; lo que se afirma aqui es
+    que con ella ausente el proceso arranca y la variable llega VACIA, no que falte. */
+function elConsumidorDeIdentidad(config) {
+  const servicio = config.services?.[CONSUMIDOR_DE_IDENTIDAD.servicio];
+  if (!servicio) return; // ya esta anotado arriba como que falta
+  const entorno = servicio.environment ?? {};
+  for (const nombre of CONSUMIDOR_DE_IDENTIDAD.variables) {
+    anotar(
+      nombre in entorno,
+      `«${CONSUMIDOR_DE_IDENTIDAD.servicio}» declara ${nombre} (ADR-0039, etapa 4)`,
+      `no la declara y la implantacion no puede terminar con la pasada del consumidor`,
+    );
+  }
+  anotar(
+    entorno.KAMAYUK_IDENTIDAD_URL === CONSUMIDOR_DE_IDENTIDAD.url,
+    `y su buzon es «${CONSUMIDOR_DE_IDENTIDAD.url}»: el backend de identidad por su alias, con la raiz entera`,
+    `es «${entorno.KAMAYUK_IDENTIDAD_URL}»`,
+  );
+  anotar(
+    (entorno.KAMAYUK_IDENTIDAD_CREDENCIAL ?? '') === '',
+    `y la credencial hacia identidad es opcional: sin ella la implantacion arranca y lo dice`,
+    `llega con valor «${entorno.KAMAYUK_IDENTIDAD_CREDENCIAL}» sin que nadie la haya puesto`,
   );
 }
 

@@ -111,6 +111,16 @@ tasks.test {
         .optional()
         .withPathSensitivity(PathSensitivity.NONE)
 
+    // Y LOS CONTRATOS QUE ESTA CAJA PUBLICA COMO CONSUMIDOR —`docs/50-api/contratos-que-consume/`
+    // de este clon— tampoco eran entrada de nadie: `ContratoQueConsumeDeRentas` y
+    // `ContratoQueConsumeDeIdentidad` comparan lo que su adaptador pide con el archivo
+    // comprometido, y editar ese archivo a mano dejaba la tarea UP-TO-DATE (la misma leccion,
+    // medida en `rentas`#53 en los dos clones). Se declara el DIRECTORIO y no cada archivo, para
+    // que el contrato que se publique manana entre solo.
+    inputs
+        .dir(rootProject.file("../docs/50-api/contratos-que-consume"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Las tres entradas de `rentas` —el contrato OpenAPI, el archivo de formas y el censo de
     // respuestas— NO estan aqui, y no es un olvido: `caja` no tiene contrato derivado. El
     // generador de `rentas` deriva del prototipo del manual (#312) y aqui no hay prototipo del que

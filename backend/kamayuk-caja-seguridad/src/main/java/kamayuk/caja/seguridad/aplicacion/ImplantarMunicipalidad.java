@@ -8,11 +8,13 @@ import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.seguridad.infraestructura.RegistroDeMunicipalidadesJdbc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -52,26 +54,43 @@ import org.springframework.stereotype.Component;
  *
  * <p>Se ejecuta en cada despliegue. Lo que ya existe se queda como esta —con los permisos que
  * alguien haya configurado despues—, y lo que falta se crea. Nunca borra.
+ *
+ * <h2>Y despues de sembrar, se trae lo que falta (ADR-0039, etapa 4)</h2>
+ *
+ * <p>La siembra deja el arranque en frio: el catalogo, el grupo de administracion y su primer
+ * administrador. Todo lo que alguien haya decidido despues en {@code identidad} —otros usuarios,
+ * otros grupos, sus permisos— llega por el buzon, y el consumidor que lo trae ({@link
+ * CorrerElConsumidorDeIdentidad}) corre en esta MISMA invocacion, detras de este runner: por eso
+ * este lleva {@link #ORDEN} y aquel el siguiente. Si el despliegue no configuro ningun buzon
+ * ({@code KAMAYUK_IDENTIDAD_URL} ausente), la implantacion termina igual y <b>lo dice</b>: en la
+ * etapa 4 es admisible, porque el sembrador sigue existiendo; en la 5 deja de serlo.
  */
 @Component
 @Profile("batch")
 @ConditionalOnProperty("kamayuk.implantacion.ubigeo")
 @EnableConfigurationProperties(DatosDeImplantacion.class)
+@Order(ImplantarMunicipalidad.ORDEN)
 public class ImplantarMunicipalidad implements ApplicationRunner {
+
+    /** Antes que el consumidor del buzon: primero la municipalidad, despues lo que le llega. */
+    public static final int ORDEN = 100;
 
     private static final Logger log = LoggerFactory.getLogger(ImplantarMunicipalidad.class);
 
     private final RegistroDeMunicipalidadesJdbc registro;
     private final SembradorDeLaCopiaLocal sembrador;
     private final DatosDeImplantacion datos;
+    private final String buzonDeIdentidad;
 
     public ImplantarMunicipalidad(
             RegistroDeMunicipalidadesJdbc registro,
             SembradorDeLaCopiaLocal sembrador,
-            DatosDeImplantacion datos) {
+            DatosDeImplantacion datos,
+            @Value("${kamayuk.identidad.url:}") String buzonDeIdentidad) {
         this.registro = registro;
         this.sembrador = sembrador;
         this.datos = datos;
+        this.buzonDeIdentidad = buzonDeIdentidad;
     }
 
     @Override
@@ -106,6 +125,21 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
                     municipalidadId,
                     nuevos,
                     datos.administrador());
+            if (buzonDeIdentidad.isBlank()) {
+                log.warn(
+                        "No hay identidad configurada (KAMAYUK_IDENTIDAD_URL): la copia local de"
+                                + " {} se queda con lo que sembro esta implantacion y NADIE la"
+                                + " actualiza. En la etapa 4 de ADR-0039 se admite; en la 5 deja"
+                                + " de admitirse, porque la siembra desaparece y todo llega por"
+                                + " el buzon",
+                        datos.ubigeo());
+            } else {
+                log.info(
+                        "Sembrada la municipalidad {}, el consumidor del buzon de `identidad`"
+                                + " ({}) corre a continuacion y trae lo que falte",
+                        datos.ubigeo(),
+                        buzonDeIdentidad);
+            }
         } finally {
             OrigenContext.limpiar();
             TenantContext.limpiar();

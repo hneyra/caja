@@ -24,9 +24,12 @@
  * pagos con su recibo. Nada mas (`ADR-0026` §1). Es lo que la hace reutilizable para un mercado o
  * un nicho sin arrastrar el Codigo Tributario.
  *
- * Su unico egreso es a `rentas`, y **no es para preguntar**: es el `PagoRegistrado` que publica
- * al cobrar, porque **la imputacion es de rentas** (`ADR-0026` §2). Si Caja imputara, la regla del
- * Codigo Tributario estaria escrita dos veces.
+ * Su egreso hacia `rentas` **no es para preguntar**: es el `PagoRegistrado` que publica al cobrar,
+ * porque **la imputacion es de rentas** (`ADR-0026` §2). Si Caja imputara, la regla del Codigo
+ * Tributario estaria escrita dos veces. Y desde la etapa 4 de ADR-0039 tiene un segundo egreso,
+ * hacia `identidad` —el sistema, no Keycloak—, que tampoco es para cobrar: es el consumidor del
+ * buzon de la autorizacion, corre en un `CronJob` del perfil `batch` y la ventanilla sigue
+ * cobrando con `identidad` apagado, con la copia local que tenga.
  *
  * ## Las tres imagenes existen, y eso ya no es una promesa
  *
@@ -43,6 +46,7 @@ import type {
   BaseDeDatosDeclarada,
   ClaveDeclarada,
   Contenedor,
+  CronJob,
   DescriptorDeSistema,
   EntornoDelDescriptor,
   Manifiesto,
@@ -116,6 +120,12 @@ const RECURSOS_DE_ARRANQUE = {
   limits: { cpu: "1", memory: "1Gi" },
 };
 
+/**
+ * Cada cinco minutos: la ventana de inconsistencia de la copia local de la autorizacion
+ * (ADR-0039 §«Lo que cuesta», punto 2). Ver `lotes()`.
+ */
+const VENTANA_DEL_CONSUMIDOR = "*/5 * * * *";
+
 /** La conexion de la aplicacion: `kamayuk_app` y solo `kamayuk_app` (ARQ-03 §4). */
 function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
   return [
@@ -172,13 +182,57 @@ function operacionDeLaCaja(e: EntornoDelDescriptor): VariableDeEntorno[] {
   ];
 }
 
-/** Las propiedades de `DatosDeImplantacion`, tal como Spring las lee del entorno. */
+/**
+ * Con que lee esta caja el buzon de `identidad` (ADR-0039, etapa 4): las cuatro de
+ * `kamayuk.identidad.*`, que `ConfiguracionDelBuzonDeIdentidad` y `CorrerElConsumidorDeIdentidad`
+ * leen SOLO en el perfil `batch`. Ninguna tiene valor por omision en el `application.yaml`, a
+ * proposito: `@ConditionalOnProperty("kamayuk.identidad.url")` es lo que decide si el consumidor
+ * existe, y un valor vacio por omision lo satisfaria con una URL que no es de nadie.
+ *
+ * Las lleva el `CronJob` y las lleva TAMBIEN el Job de implantacion, porque la implantacion termina
+ * con una pasada del consumidor: una municipalidad recien implantada tiene los dos grupos que
+ * siembra `SembradorDeLaCopiaLocal` y ninguno de los permisos que `identidad` ya tenga para ella.
+ *
+ * La URL se compone con `namespaceDe` y no a mano, y el `Service` se llama `kamayuk-identidad-web`
+ * —es lo que `despliegueDelPerfil` de `identidad` publica— y **no** `kamayuk-<amb>-identidad`, que
+ * es Keycloak (la colision de nombre que ADR-0039 §AC-7 deja escrita). Aqui la raiz de la API va
+ * ENTERA, con su prefijo: `Api.RAIZ` de `identidad` es `/identidad/api/v1` y de ahi cuelga
+ * `EventosController`.
+ *
+ * El token se pide con el MISMO cliente confidencial que el publicador hacia `rentas`
+ * —`kamayuk-caja-servicio-<ubigeo>`, uno por municipalidad (ADR-0028 §2)— y con OTRA clave:
+ * `e.secretoDe("identidad")`, el espejo de la que el Job de identidad le fija a Keycloak para el
+ * par (caja, identidad). No se copia el proveedor del token: se construye con la otra clave.
+ */
+function variablesDelConsumidorDeIdentidad(e: EntornoDelDescriptor): VariableDeEntorno[] {
+  return [
+    {
+      name: "KAMAYUK_IDENTIDAD_URL",
+      value: `http://kamayuk-identidad-web.${e.namespaceDe("identidad")}/identidad/api/v1`,
+    },
+    { name: "KAMAYUK_IDENTIDAD_TOKEN", value: e.plataforma.token },
+    {
+      name: "KAMAYUK_IDENTIDAD_CLIENTE",
+      value: `kamayuk-${SISTEMA}-servicio-${e.implantacion.ubigeo}`,
+    },
+    {
+      name: "KAMAYUK_IDENTIDAD_CREDENCIAL",
+      valueFrom: { secretKeyRef: { name: e.secretoDe("identidad"), key: "clave" } },
+    },
+  ];
+}
+
+/**
+ * Las propiedades de `DatosDeImplantacion`, tal como Spring las lee del entorno. Y desde la etapa
+ * 4 de ADR-0039, las del consumidor de `identidad`: la implantacion termina con una pasada suya.
+ */
 function variablesDeImplantacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
   const i = e.implantacion;
   return [
     { name: "SPRING_PROFILES_ACTIVE", value: "batch" },
     ...credencialesDeLaAplicacion(e),
     ...operacionDeLaCaja(e),
+    ...variablesDelConsumidorDeIdentidad(e),
     { name: "KAMAYUK_IMPLANTACION_UBIGEO", value: i.ubigeo },
     { name: "KAMAYUK_IMPLANTACION_NOMBRE", value: i.nombre },
     { name: "KAMAYUK_IMPLANTACION_TIPO", value: i.tipo },
@@ -776,18 +830,82 @@ export const caja: DescriptorDeSistema = {
   },
 
   /**
-   * Sus procesos por lotes con ventana. **Ninguno**, y es una afirmacion, no una casilla.
+   * Sus procesos por lotes con ventana: **uno**, el consumidor del buzon de `identidad`
+   * (ADR-0039, etapa 4), y no el publicador de pagos, que sigue siendo un `@Scheduled` sin
+   * `@EnableScheduling` (P6 §4.4) y por eso sigue sin `CronJob`.
    *
-   * El unico proceso periodico que `caja` tiene escrito es el publicador de su buzon, y es un
-   * `@Scheduled` que **no se registra**: en los cuatro backends no hay ni un
-   * `@EnableScheduling` (P6 §4.4). Declararle aqui un `CronJob` seria decir que corre algo
-   * que no existe todavia como proceso invocable; lo que hace falta primero es convertirlo
-   * en un `ApplicationRunner` del perfil `batch`, como hizo C-8 con el emisor de `catastro`.
+   * ## Que corre, y que NO toca
    *
-   * Una lista vacia no es lo mismo que un `CronJob` suspendido: lo primero dice «este sistema no
-   * corre nada de madrugada» y lo segundo «corre esto, y hoy no puede».
+   * `CorrerElConsumidorDeIdentidad` —un `ApplicationRunner` del perfil `batch`— lee
+   * `GET /eventos/pendientes` del buzon de `identidad`, aplica cada evento a la copia local de
+   * usuarios, grupos, miembros y permisos, y acusa lo aplicado. Corre **fuera del camino del
+   * cobro**: `CajaController` no inyecta ningun puerto hacia otro sistema, y la ventanilla sigue
+   * cobrando con `identidad` apagado, con la copia que tenga. Es lo que conserva la propiedad por
+   * la que este sistema existe —«no le pregunta nada a nadie para cobrar»— y el motivo por el que
+   * ADR-0039 descarto que cada sistema pidiera la autorizacion por HTTP.
+   *
+   * ## La ventana, y lo que cuesta
+   *
+   * Cada cinco minutos: es la ventana de inconsistencia de la copia local, la que ADR-0039 §«Lo
+   * que cuesta» punto 2 exige que este medida y escrita. Un permiso retirado en `identidad` sigue
+   * valiendo aqui hasta cinco minutos, y eso se sabe. `concurrencyPolicy: Forbid`, porque dos
+   * consumidores a la vez sobre la misma copia se pisarian en el acuse; `backoffLimit: 1`, porque
+   * un fallo transitorio se arregla solo y la vuelta siguiente llega en cinco minutos —reintentar
+   * seis veces en ese hueco es pedirle seis tokens al emisor por lo mismo—.
+   *
+   * ## Lo que este CronJob NO es
+   *
+   * No nace con `suspend: true`. Hasta #21 el ingestor de `rentas` nacia suspendido por falta de
+   * identidad de servicio y dos guardas lo DEMANDABAN; lo que sujeta a este es una guarda que se
+   * pone roja —la de `identidad-de-servicio` de `infrastructure`, que exige la cuenta
+   * `{"sistema":"caja","llamaA":"identidad"}` en cada municipalidad— y no un interruptor que se lee
+   * igual que «esto todavia no toca».
    */
-  lotes: (): Manifiesto[] => [],
+  lotes(e): Manifiesto[] {
+    const nombre = `kamayuk-${SISTEMA}-consumidor-de-identidad`;
+    const etiquetas = { ...e.etiquetas, componente: SISTEMA };
+    const consumidor: CronJob = {
+      apiVersion: "batch/v1",
+      kind: "CronJob",
+      metadata: { name: nombre, namespace: e.namespace, labels: etiquetas },
+      spec: {
+        schedule: VENTANA_DEL_CONSUMIDOR,
+        concurrencyPolicy: "Forbid",
+        successfulJobsHistoryLimit: 3,
+        failedJobsHistoryLimit: 3,
+        jobTemplate: {
+          spec: {
+            backoffLimit: 1,
+            template: {
+              metadata: { labels: { ...etiquetas, app: nombre } },
+              spec: {
+                restartPolicy: "Never",
+                priorityClassName: e.prioridadDe("lote"),
+                containers: [
+                  {
+                    name: "consumidor",
+                    // La MISMA imagen que la aplicacion, con el perfil `batch` (ADR-0003).
+                    image: e.imagenDe(SISTEMA),
+                    env: [
+                      { name: "SPRING_PROFILES_ACTIVE", value: "batch" },
+                      ...credencialesDeLaAplicacion(e),
+                      // Las dos de ADR-0026 §4: van en el bloque comun y las necesita todo
+                      // proceso. Y aqui ademas es quien recibe el aviso de un evento apartado.
+                      ...operacionDeLaCaja(e),
+                      ...variablesDelConsumidorDeIdentidad(e),
+                    ],
+                    resources: RECURSOS_DE_ARRANQUE,
+                    securityContext: SEGURIDAD,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    return [consumidor];
+  },
 
   /**
    * Sus rutas, **bajo su prefijo**. Reclamar el de otro no falla: se lo queda.
@@ -889,6 +1007,10 @@ export const caja: DescriptorDeSistema = {
    * tiene que coincidir con ARQ-01 reducido a cuatro nodos. Cada arista, con su motivo:
    *
    * - **`rentas`**: el `PagoRegistrado` que publica al cobrar, para que rentas impute (ADR-0026 §3)
+   * - **`identidad`** (el sistema, no Keycloak): el consumidor del buzon de la autorizacion, que
+   *   corre en el `CronJob` del perfil `batch` y nunca en el camino del cobro (ADR-0039, etapa 4).
+   *   Se selecciona por `componente: identidad-sistema`, porque `componente: identidad` es Keycloak
+   *   en la plataforma y con ese nombre el grafo de egreso lo descartaria como infraestructura.
    *
    * Devuelve `NetworkPolicy[]`, y desde #17 no todas son de egreso: la interfaz necesita ademas
    * **que Traefik le entre**, y este es el unico miembro del contrato por el que un descriptor
@@ -954,6 +1076,22 @@ export const caja: DescriptorDeSistema = {
                     matchLabels: { "kubernetes.io/metadata.name": e.namespaceDe("rentas") },
                   },
                   podSelector: { matchLabels: { componente: "rentas" } },
+                },
+              ],
+              ports: [{ protocol: "TCP", port: 8080 }],
+            },
+            // identidad, EL SISTEMA: el buzon de la autorizacion, que el consumidor lee cada
+            // cinco minutos (ADR-0039, etapa 4). En SU namespace y por SU etiqueta,
+            // `identidad-sistema`: `componente: identidad` en `kamayuk-<amb>` es Keycloak, y es la
+            // regla de arriba. Son dos aristas distintas a dos destinos distintos que comparten
+            // la palabra, y por eso ninguna de las dos se escribe con una variable.
+            {
+              to: [
+                {
+                  namespaceSelector: {
+                    matchLabels: { "kubernetes.io/metadata.name": e.namespaceDe("identidad") },
+                  },
+                  podSelector: { matchLabels: { componente: "identidad-sistema" } },
                 },
               ],
               ports: [{ protocol: "TCP", port: 8080 }],
@@ -1030,6 +1168,20 @@ export const caja: DescriptorDeSistema = {
       proposito:
         "pedir el token con el que se le entrega a `rentas` el evento de cada pago (ADR-0026 §3)." +
         " No es el token: es la clave del cliente confidencial con la que se pide",
+    },
+    {
+      // La SEGUNDA credencial de servicio: el mismo cliente confidencial —uno por municipalidad—
+      // y la clave del par (caja, identidad). `credencialesDeServicio()` de `infrastructure`
+      // deriva `llamaA` del nombre, y su guarda exige que cada municipalidad declare la cuenta
+      // `{"sistema":"caja","llamaA":"identidad"}` en su bloque `servicios`: sin ella, esto es un
+      // 401 en la primera vuelta del consumidor, y la copia local se queda como esta.
+      nombre: e.secretoDe("identidad"),
+      clave: "clave",
+      emisor: "keycloak",
+      rotacion: "trimestral",
+      proposito:
+        "pedir el token con el que el consumidor del perfil `batch` lee y acusa el buzon de" +
+        " `identidad` (ADR-0039, etapa 4). No es el token: es la clave con la que se pide",
     },
   ],
 };

@@ -118,6 +118,29 @@ services:
       # punto, asi que `KAMAYUK_IMPLANTACION_OWNER_CLAVE` seria
       # `kamayuk.implantacion.owner.clave` y no `owner-clave`.
       KAMAYUK_IMPLANTACION_OWNERCLAVE: ${KAMAYUK_CLAVE_OWNER:?falta KAMAYUK_CLAVE_OWNER, sale del .env de la plataforma}
+      # ── El consumidor del buzon de `identidad` (ADR-0039, etapa 4) ──────────────
+      #
+      # La implantacion termina con una pasada del consumidor: una municipalidad recien
+      # implantada tiene los dos grupos que siembra `SembradorDeLaCopiaLocal` y ninguno
+      # de los permisos que `identidad` ya tenga para ella. Son las MISMAS cuatro
+      # variables que lleva el `CronJob` del descriptor, y tienen que decir lo mismo.
+      #
+      # `identidad-sistema` y no `identidad`: en la red `kamayuk-plataforma` el alias
+      # `identidad` lo tiene Keycloak, y el backend de `identidad` se llama
+      # `identidad-sistema` en SU compose por eso mismo. La raiz va ENTERA, con su
+      # prefijo: `Api.RAIZ` de `identidad` es `/identidad/api/v1`.
+      KAMAYUK_IDENTIDAD_URL: http://identidad-sistema:8080/identidad/api/v1
+      # A donde se pide el token, por la red interna (#21 AC-2). Es Keycloak, y aqui SI
+      # se llama `identidad`.
+      KAMAYUK_IDENTIDAD_TOKEN: http://identidad:8080/realms/sgtm/protocol/openid-connect/token
+      # El MISMO cliente confidencial que el publicador de pagos: uno por municipalidad
+      # (ADR-0028 §2). Lo que cambia es la clave, que es del par (caja, identidad).
+      KAMAYUK_IDENTIDAD_CLIENTE: kamayuk-caja-servicio-${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
+      # VACIA por omision a proposito, como `KAMAYUK_CAJA_CREDENCIAL`: en el compose la
+      # identidad de servicio se crea a mano, y sin ella la llamada sale sin credencial,
+      # `identidad` contesta 401, la implantacion lo dice y NO falla: en la etapa 4 una
+      # municipalidad se implanta con su copia local sembrada y sin consumidor.
+      KAMAYUK_IDENTIDAD_CREDENCIAL: ${KAMAYUK_CAJA_CREDENCIAL_IDENTIDAD:-}
     restart: "no"
 
   # ── El backend ──────────────────────────────────────────────────────────────
