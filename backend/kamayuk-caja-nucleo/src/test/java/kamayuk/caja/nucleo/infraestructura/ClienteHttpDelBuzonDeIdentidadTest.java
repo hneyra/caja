@@ -196,16 +196,33 @@ class ClienteHttpDelBuzonDeIdentidadTest {
                 .hasMessageContaining("no tiene la forma de un evento");
     }
 
+    /**
+     * El puerto 1: fuera del rango efímero, así que ningún otro servidor de mentira de este módulo
+     * puede quedárselo.
+     *
+     * <p>Antes esta prueba cerraba el buzón y reusaba SU puerto, y eso se volvió intermitente en
+     * cuanto el módulo tuvo cinco servidores de mentira ({@code ElTokenDeServicioTest}, {@code
+     * ConciliacionDeNDiasTest}, {@code CobrarConElOrigenApagadoTest} y {@code
+     * UnPagoNoMuereSinCredencialTest}): el puerto recién liberado se lo lleva el siguiente {@code
+     * ServerSocket(0)} de la misma JVM, y entonces «nadie escucha» es falso y la prueba pasa en
+     * verde sin medir nada — o, si el que lo tomó contesta, no lanza y sale en rojo diciendo
+     * «Expecting code to raise a throwable», que es lo que le pasó al CI de {@code main} en la
+     * corrida 34446158130 con las mismas 244 pruebas que aquí salían verdes.
+     *
+     * <p>Medido en esta máquina: un {@code ServerSocket(0)} de loopback cerrado vuelve a salir en
+     * la asignación número 26 130 de la misma JVM, y con él abierto la conexión al «puerto que
+     * nadie escucha» ABRE; el puerto 1 no lo devolvió ninguna de 200 asignaciones y conectar a él
+     * da {@code ConnectException}.
+     */
+    private static final int PUERTO_QUE_NADIE_ESCUCHA = 1;
+
     @Test
     @DisplayName("un puerto que nadie escucha es «no contesta», y no un rechazo")
-    void nadieEscucha() throws IOException {
-        int puerto = buzon.puerto();
-        buzon.close();
-
+    void nadieEscucha() {
         ClienteHttpDelBuzonDeIdentidad apagado =
                 new ClienteHttpDelBuzonDeIdentidad(
                         JsonMapper.builder().build(),
-                        "http://127.0.0.1:" + puerto + "/identidad/api/v1",
+                        "http://127.0.0.1:" + PUERTO_QUE_NADIE_ESCUCHA + "/identidad/api/v1",
                         CredencialDeServicio.fija("Bearer x"));
 
         assertThatThrownBy(() -> apagado.pendientes(10))
@@ -291,10 +308,6 @@ class ClienteHttpDelBuzonDeIdentidadTest {
 
         String raiz() {
             return "http://127.0.0.1:" + socket.getLocalPort() + "/identidad/api/v1";
-        }
-
-        int puerto() {
-            return socket.getLocalPort();
         }
 
         List<String> lineas() {
