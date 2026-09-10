@@ -137,7 +137,7 @@ services:
       KAMAYUK_IDENTIDAD_URL: http://identidad-sistema:8080/identidad/api/v1
       # A donde se pide el token, por la red interna (#21 AC-2). Es Keycloak, y aqui SI
       # se llama `identidad`.
-      KAMAYUK_IDENTIDAD_TOKEN: http://identidad:8080/realms/sgtm/protocol/openid-connect/token
+      KAMAYUK_IDENTIDAD_TOKEN: http://identidad:8080/realms/kamayuk/protocol/openid-connect/token
       # El MISMO cliente confidencial que el publicador de pagos: uno por municipalidad
       # (ADR-0028 §2). Lo que cambia es la clave, que es del par (caja, identidad).
       KAMAYUK_IDENTIDAD_CLIENTE: kamayuk-caja-servicio-${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
@@ -178,17 +178,17 @@ services:
       #
       # Es el MISMO realm que los otros tres: un login para los cuatro
       # (ADR-0030 §3).
-      KAMAYUK_OIDC_EMISOR: ${KAMAYUK_OIDC_EMISOR:-http://localhost:8180}/realms/sgtm
+      KAMAYUK_OIDC_EMISOR: ${KAMAYUK_OIDC_EMISOR:-http://localhost:8180}/realms/kamayuk
       # El emisor es una identidad, no una direccion de red. El navegador llega a
       # Keycloak por su nombre publico y este contenedor por el interno de la red
       # del compose; usar el publico para las dos cosas haria que el backend
       # buscara el JWKS en si mismo y todo token seria invalido por un motivo que
       # no se parece a su causa.
-      KAMAYUK_OIDC_JWKS: http://identidad:8080/realms/sgtm/protocol/openid-connect/certs
+      KAMAYUK_OIDC_JWKS: http://identidad:8080/realms/kamayuk/protocol/openid-connect/certs
       # Y el punto de EMISION, por la misma red interna y por lo mismo (#21 AC-2): el
       # publicador del buzon corre sin usuario delante —lo despierta un reloj— y pide su
       # token con `client_credentials`.
-      KAMAYUK_CAJA_IDENTIDAD_TOKEN: http://identidad:8080/realms/sgtm/protocol/openid-connect/token
+      KAMAYUK_CAJA_IDENTIDAD_TOKEN: http://identidad:8080/realms/kamayuk/protocol/openid-connect/token
       # Con QUE cliente lo pide: uno por municipalidad, porque la cuenta de servicio de ese
       # cliente es la que lleva `municipalidad_id` (ADR-0028 §2). El ubigeo es el mismo que
       # implanta este compose.
