@@ -319,7 +319,7 @@ class PuertosSinLlamadorTest {
      * El codigo sin sus comentarios, y con sus cadenas intactas.
      *
      * <p><b>No es una expresion regular</b>, y el motivo se midio: {@code
-     * "https://sgtm.gob.pe/errores/"} vive en {@code src/main} de este sistema, y un {@code
+     * "https://kamayuk.gob.pe/errores/"} vive en {@code src/main} de este sistema, y un {@code
      * replaceAll("//.*")} se comeria el resto de esa linea. Aqui una llamada perdida seria un rojo
      * sobre codigo correcto —la forma de fallo que se acaba apagando (#437)—, asi que el recorrido
      * lleva la cuenta de si esta dentro de una cadena, de un caracter o de un bloque de texto.

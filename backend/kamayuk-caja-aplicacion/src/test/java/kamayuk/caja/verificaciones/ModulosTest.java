@@ -3,7 +3,7 @@ package kamayuk.caja.verificaciones;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import kamayuk.caja.SgtmAplicacion;
+import kamayuk.caja.KamayukAplicacion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
@@ -17,7 +17,8 @@ import org.springframework.modulith.core.ApplicationModules;
 @DisplayName("ADR-0003 — Limites entre modulos")
 class ModulosTest {
 
-    private static final ApplicationModules MODULOS = ApplicationModules.of(SgtmAplicacion.class);
+    private static final ApplicationModules MODULOS =
+            ApplicationModules.of(KamayukAplicacion.class);
 
     @Test
     @DisplayName("los modulos esperados estan detectados")
