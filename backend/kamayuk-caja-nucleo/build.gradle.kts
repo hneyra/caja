@@ -3,10 +3,16 @@
 // El punto donde entra el dinero: la orden de cobro, la ventanilla, el recibo con su numeracion,
 // el turno, el cierre y el arqueo.
 //
-// NO DEPENDE DE NADIE. No hay `implementation(project(...))` de ningun otro contexto, y esa lista
-// vacia es la propiedad entera de esta separacion: la caja no lee el libro de cuenta corriente, no
-// consulta el padron de contribuyentes y no pregunta a normativa. Lo que sabe se lo dice la orden
-// de cobro; lo que hace lo publica en su buzon de salida.
+// NO DEPENDE DE NINGUN CONTEXTO TRIBUTARIO. No hay `implementation(project(...))` de ningun otro
+// contexto de negocio: la caja no lee el libro de cuenta corriente, no consulta el padron de
+// contribuyentes y no pregunta a normativa. Lo que sabe se lo dice la orden de cobro; lo que hace
+// lo publica en su buzon de salida.
+//
+// La UNICA dependencia de modulo es hacia `kamayuk-caja-seguridad`, y no es un contexto: es la
+// copia local de la autorizacion (D-N5). Entra en la etapa 4 de ADR-0039 para que el cliente HTTP
+// del buzon de `identidad` —que vive aqui porque reusa `TokenDeServicioDeKeycloak`— implemente el
+// puerto que aquel modulo declara. Va en esta direccion y no al reves: `seguridad` no sabe nada de
+// la caja, y `CajaController` sigue sin inyectar ningun puerto hacia otro sistema.
 //
 // El dia que aparezca aqui una dependencia hacia un contexto tributario, la caja habra dejado de
 // servir para cobrar un puesto de mercado — que es la razon por la que se separo.
@@ -22,6 +28,9 @@ dependencies {
     // JSON —el cuerpo del evento se congela como texto, asi que hace falta escribirlo y leerlo—.
     implementation("org.springframework:spring-web")
     implementation("tools.jackson.core:jackson-databind")
+
+    // El puerto del buzon de `identidad` (etapa 4). Ver la cabecera.
+    implementation(project(":kamayuk-caja-seguridad"))
 
     // Las pruebas de repositorio y de atomicidad corren contra PostgreSQL de verdad: provisionan
     // la base como un ambiente real y se conectan como kamayuk_app, no como el superusuario que

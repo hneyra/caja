@@ -310,6 +310,36 @@ public final class DatosDePrueba {
                 muni,
                 EJERCICIO,
                 "10.0.0.1");
+        sembrarConsumidorDeIdentidad(app, muni, sufijo);
+    }
+
+    /**
+     * Las dos tablas del consumidor del buzon de {@code identidad} (V3, ADR-0039 etapa 4).
+     *
+     * <p>Una fila en cada una, con lo minimo que su {@code NOT NULL} exige: la prueba de
+     * aislamiento mide la politica, no el contenido. La huella es un sha256 de mentira —64
+     * hexadecimales— porque la columna la declara con ese largo, y el {@code cuerpo} del muerto es
+     * el JSON vacio: lo que se aparta se guarda entero, y aqui lo entero es que haya algo.
+     */
+    private static void sembrarConsumidorDeIdentidad(Connection app, long muni, String sufijo)
+            throws SQLException {
+        ejecutar(
+                app,
+                "INSERT INTO identidad_evento_aplicado (municipalidad_id, evento_id, secuencia,"
+                        + " tipo, sujeto_id, huella, aplicado_en)"
+                        + " VALUES (?, gen_random_uuid(), 1, 'USUARIO_DADO_DE_ALTA', 1, ?, ?)",
+                muni,
+                "a".repeat(64),
+                Timestamp.from(Instant.parse("2026-03-16T13:00:00Z")));
+        ejecutar(
+                app,
+                "INSERT INTO identidad_evento_muerto (municipalidad_id, evento_id, secuencia,"
+                        + " tipo, sujeto_id, cuerpo, huella, motivo, apartado_en)"
+                        + " VALUES (?, gen_random_uuid(), 2, 'TIPO_QUE_NO_EXISTE', 1, '{}', ?, ?, ?)",
+                muni,
+                "b".repeat(64),
+                "apartado por la prueba de aislamiento " + sufijo,
+                Timestamp.from(Instant.parse("2026-03-16T13:00:01Z")));
     }
 
     /**

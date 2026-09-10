@@ -29,6 +29,12 @@ final class TablasDelSgtm {
      *       emitio</b>, o de que no se pudo. Es el criterio 4 del encargo de P5D hecho lista: una
      *       anulacion produce un asiento de reversion en el otro sistema y aqui deja su fila; si
      *       esa fila se pudiera borrar, un pago perdido dejaria de existir y el turno cerraria.
+     *   <li>{@code identidad_evento_aplicado} e {@code identidad_evento_muerto} (V3, ADR-0039 etapa
+     *       4): la constancia de que un hecho de {@code identidad} <b>entro</b> en esta copia
+     *       local, y la de que <b>no pudo entrar nunca</b>. Borrar la primera volveria a aplicar un
+     *       hecho que ya se aplico —o dejaria sin explicacion por que la copia dice lo que dice—;
+     *       borrar la segunda haria desaparecer un permiso que alguien concedio y que aqui no
+     *       llego, sin que el responsable al que se aviso pueda volver a encontrarlo.
      * </ul>
      */
     static final Set<String> PROTEGIDAS =
@@ -39,7 +45,9 @@ final class TablasDelSgtm {
                     "cierre_turno",
                     "cierre_turno_detalle",
                     "orden_de_cobro",
-                    "pago_evento");
+                    "pago_evento",
+                    "identidad_evento_aplicado",
+                    "identidad_evento_muerto");
 
     /**
      * Tablas que ademas <b>no se actualizan</b>: se corrigen agregando, no editando.
@@ -66,6 +74,13 @@ final class TablasDelSgtm {
      * dos cambian de estado: una orden pasa a {@code PAGADA} y vuelve a {@code PENDIENTE} si el
      * recibo se anula; un evento pasa a {@code ENTREGADO} o a {@code MUERTO}. Meterlas romperia el
      * cobro entero. Lo que si esta prohibido —borrarlas— lo dice {@link #PROTEGIDAS}.
+     *
+     * <p><b>{@code identidad_evento_aplicado} e {@code identidad_evento_muerto} SI estan aqui</b>,
+     * al reves que {@code pago_evento}: ninguna de las dos cambia de estado. Un hecho aplicado se
+     * aplico una vez y a una hora, y un hecho apartado se aparto con su motivo; corregir cualquiera
+     * de las dos cosas es otro hecho —el que {@code identidad} vuelva a publicar— y no una edicion.
+     * `V3` no le concede {@code UPDATE} a {@code kamayuk_app} sobre ninguna de las dos, y esta
+     * lista es lo que lo dice ANTES de ejecutar.
      */
     static final Set<String> INMUTABLES =
             Set.of(
@@ -75,5 +90,7 @@ final class TablasDelSgtm {
                     "cierre_caja",
                     "cierre_turno",
                     "cierre_turno_detalle",
-                    "auditoria");
+                    "auditoria",
+                    "identidad_evento_aplicado",
+                    "identidad_evento_muerto");
 }

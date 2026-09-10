@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { Contenedor, EntornoDelDescriptor, Manifiesto } from "@kamayuk/infra-contrato";
+import type { Contenedor, CronJob, EntornoDelDescriptor, Manifiesto } from "@kamayuk/infra-contrato";
 import { caja } from "../src/descriptor";
 
 /**
@@ -118,14 +118,39 @@ describe("el descriptor de caja", () => {
     }
   });
 
-  it("su egreso es rentas, y solo rentas", () => {
-    // Y no es para preguntar: es el `PagoRegistrado` que publica al cobrar, porque la
-    // imputacion es de rentas (ADR-0026 §2).
-    expect(destinosDeEgreso()).toEqual(["rentas"]);
+  it("su egreso es rentas e identidad —el sistema—, y ninguno de los dos es para cobrar", () => {
+    // `rentas` no es para preguntar: es el `PagoRegistrado` que publica al cobrar, porque la
+    // imputacion es de rentas (ADR-0026 §2). `identidad-sistema` es el buzon de la autorizacion
+    // (ADR-0039, etapa 4), que lee el CronJob del perfil `batch` y nunca `CajaController`: la
+    // ventanilla cobra con `identidad` apagado, con la copia local que tenga.
+    expect(destinosDeEgreso()).toEqual(["identidad-sistema", "rentas"]);
+  });
+
+  it("y la arista hacia identidad selecciona `identidad-sistema`, en SU namespace, y no a Keycloak", () => {
+    // `componente: identidad` en la plataforma es Keycloak. Un egreso a `identidad` por ese
+    // nombre no daria un rojo: `grafoDeEgreso` de `infrastructure` lo filtraria como
+    // infraestructura y el grafo diria que a `identidad` no lo llama nadie (ADR-0039 §AC-7).
+    const reglas = caja
+      .egreso(ENTORNO)
+      .flatMap((p) => p.spec.egress ?? [])
+      .filter((r) => (r.to ?? []).some((s) => s.podSelector?.matchLabels?.["componente"] === "identidad-sistema"));
+    expect(reglas).toHaveLength(1);
+    const destino = reglas[0]!.to![0]!;
+    expect(destino.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"]).toBe("kamayuk-identidad-stg");
+    expect(reglas[0]!.ports).toEqual([{ protocol: "TCP", port: 8080 }]);
+    // Y la de Keycloak sigue: el JWKS se trae de ahi, y «no uses `identidad`» no se cumple
+    // dejando al backend sin poder validar un token.
+    const keycloak = caja
+      .egreso(ENTORNO)
+      .flatMap((p) => p.spec.egress ?? [])
+      .flatMap((r) => r.to ?? [])
+      .filter((s) => s.podSelector?.matchLabels?.["componente"] === "identidad");
+    expect(keycloak).toHaveLength(1);
+    expect(keycloak[0]!.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"]).toBe("kamayuk-stg");
   });
 });
 
-/** Los SISTEMAS a los que este descriptor declara egreso. El motor y la identidad no cuentan. */
+/** Los SISTEMAS a los que este descriptor declara egreso. El motor y Keycloak no cuentan. */
 function destinosDeEgreso(): string[] {
   const infra = ["postgres", "identidad"];
   return caja
@@ -230,15 +255,86 @@ function declara(c: Contenedor, nombre: string): boolean {
   return (c.env ?? []).some((e) => e.name === nombre);
 }
 
-describe("C-14 §3 — caja no declara ningun proceso por lotes todavia", () => {
+describe("ADR-0039 etapa 4 — el consumidor del buzon de identidad, como CronJob del perfil batch", () => {
+  const VARIABLES_DEL_CONSUMIDOR = [
+    "KAMAYUK_IDENTIDAD_URL",
+    "KAMAYUK_IDENTIDAD_TOKEN",
+    "KAMAYUK_IDENTIDAD_CLIENTE",
+    "KAMAYUK_IDENTIDAD_CREDENCIAL",
+  ];
+
+  function elCronJob(): CronJob {
+    const lotes = caja.lotes(ENTORNO);
+    expect(lotes).toHaveLength(1);
+    const cron = lotes[0]!;
+    expect(cron.kind).toBe("CronJob");
+    return cron as CronJob;
+  }
+
   /**
-   * El unico proceso periodico que `caja` tiene escrito es el publicador de su buzon, y es un
-   * `@Scheduled` que **no se registra**: en los cuatro backends no hay ni un `@EnableScheduling`
-   * (P6 §4.4). Declararle un `CronJob` seria decir que corre algo que no existe como proceso
-   * invocable; lo que falta primero es convertirlo en un `ApplicationRunner` del perfil `batch`.
+   * Hasta esta etapa `lotes()` devolvia `[]` con su motivo escrito: el unico periodico era el
+   * publicador de pagos, un `@Scheduled` sin `@EnableScheduling`. Ese sigue sin CronJob. El que
+   * hay es OTRO: `CorrerElConsumidorDeIdentidad`, un `ApplicationRunner` del perfil `batch`.
    */
-  it("no declara ninguno, y el motivo esta escrito", () => {
-    expect(caja.lotes(ENTORNO)).toEqual([]);
+  it("declara UNO, cada cinco minutos, sin solaparse y con un solo reintento", () => {
+    const cron = elCronJob();
+    expect(cron.metadata.name).toBe("kamayuk-caja-consumidor-de-identidad");
+    expect(cron.spec.schedule).toBe("*/5 * * * *");
+    expect(cron.spec.concurrencyPolicy).toBe("Forbid");
+    expect(cron.spec.jobTemplate.spec.backoffLimit).toBe(1);
+    expect(cron.spec.jobTemplate.spec.template.spec.restartPolicy).toBe("Never");
+    expect(cron.spec.jobTemplate.spec.template.spec.priorityClassName).toBe("kamayuk-stg-prioridad-lote");
+  });
+
+  /**
+   * NO nace suspendido. El ingestor de `rentas` nacio con `suspend: true` por falta de identidad
+   * de servicio y dos guardas lo DEMANDABAN (#21 AC-4, C-17 §1, C-18 §5). Lo que sujeta a este es
+   * la guarda `identidad-de-servicio` de `infrastructure`, que se pone roja nombrando el ubigeo
+   * si una municipalidad no declara la cuenta `{"sistema":"caja","llamaA":"identidad"}`.
+   */
+  it("y no nace suspendido: un `suspend` se lee igual que «esto todavia no toca»", () => {
+    expect(elCronJob().spec.suspend, "el consumidor nacio suspendido (ADR-0039 etapa 4)").not.toBe(true);
+  });
+
+  it("corre la imagen de la aplicacion con el perfil `batch`, y lleva las cuatro del consumidor", () => {
+    const c = contenedoresDe(caja.lotes(ENTORNO))[0]!;
+    expect(c.image).toBe(ENTORNO.imagenDe("caja"));
+    expect(valorDe(c, "SPRING_PROFILES_ACTIVE")).toBe("batch");
+    for (const nombre of VARIABLES_DEL_CONSUMIDOR) {
+      expect(declara(c, nombre), `el CronJob no declara ${nombre}`).toBe(true);
+    }
+    // El `Service` de identidad EL SISTEMA, en su namespace, con la raiz entera de su API. Y no
+    // `kamayuk-stg-identidad`, que es Keycloak.
+    expect(valorDe(c, "KAMAYUK_IDENTIDAD_URL")).toBe(
+      "http://kamayuk-identidad-web.kamayuk-identidad-stg/identidad/api/v1",
+    );
+    expect(valorDe(c, "KAMAYUK_IDENTIDAD_TOKEN")).toBe(ENTORNO.plataforma.token);
+    // El MISMO cliente confidencial que el publicador hacia `rentas`: uno por municipalidad.
+    expect(valorDe(c, "KAMAYUK_IDENTIDAD_CLIENTE")).toBe("kamayuk-caja-servicio-200105");
+    // Y OTRA clave, la del par (caja, identidad), que es lo unico que sale de un `secretKeyRef`.
+    const credencial = (c.env ?? []).find((e) => e.name === "KAMAYUK_IDENTIDAD_CREDENCIAL")!;
+    expect(credencial.valueFrom?.secretKeyRef).toEqual({ name: "kamayuk-caja-stg-identidad", key: "clave" });
+    // Las de ADR-0026 §4, y aqui ademas quien recibe el aviso de un evento apartado.
+    expect(valorDe(c, "KAMAYUK_CAJA_RESPONSABLE")).toBe("Guardia de plataforma");
+    expect(valorDe(c, "KAMAYUK_CAJA_CANAL")).toBe("guardia@example.pe");
+    expect(c.resources).toBeDefined();
+    expect(c.securityContext).toBeDefined();
+  });
+
+  /**
+   * La implantacion termina con una pasada del consumidor: una municipalidad recien implantada
+   * tiene los dos grupos sembrados y ninguno de los permisos que `identidad` ya tenga para ella.
+   * Las cuatro tienen que decir LO MISMO en los dos procesos, y se comparan valor a valor.
+   */
+  it("y la implantacion lleva las mismas cuatro, con los mismos valores", () => {
+    const implantacion = contenedoresDe(caja.implantacion(ENTORNO))[0]!;
+    const cron = contenedoresDe(caja.lotes(ENTORNO))[0]!;
+    for (const nombre of VARIABLES_DEL_CONSUMIDOR) {
+      const enLaImplantacion = (implantacion.env ?? []).find((e) => e.name === nombre);
+      const enElCron = (cron.env ?? []).find((e) => e.name === nombre);
+      expect(enLaImplantacion, `la implantacion no declara ${nombre}`).toBeDefined();
+      expect(enLaImplantacion).toEqual(enElCron);
+    }
   });
 
   /**
@@ -252,6 +348,30 @@ describe("C-14 §3 — caja no declara ningun proceso por lotes todavia", () => 
     const c = contenedoresDe(caja.implantacion(ENTORNO))[0]!;
     expect(valorDe(c, "KAMAYUK_CAJA_RESPONSABLE")).toBe("Guardia de plataforma");
     expect(valorDe(c, "KAMAYUK_CAJA_CANAL")).toBe("guardia@example.pe");
+  });
+
+  /**
+   * La segunda credencial de servicio: mismo cliente, otra clave. `emisor: "keycloak"` es lo
+   * que la separa de una clave de PostgreSQL (#21), y el destino va en el NOMBRE porque de ahi
+   * lo deriva `credencialesDeServicio()` de `infrastructure`.
+   */
+  it("declara la clave del par (caja, identidad) como credencial de emisor, y sigue declarando la de rentas", () => {
+    const deEmisor = caja.claves(ENTORNO).filter((c) => c.emisor === "keycloak");
+    expect(deEmisor.map((c) => c.nombre).sort()).toEqual(["kamayuk-caja-stg-identidad", "kamayuk-caja-stg-rentas"]);
+    // Y la que el CronJob monta es la que el inventario declara: C-17 punto 4 por este eje.
+    const c = contenedoresDe(caja.lotes(ENTORNO))[0]!;
+    const montada = (c.env ?? []).find((e) => e.name === "KAMAYUK_IDENTIDAD_CREDENCIAL")!.valueFrom!.secretKeyRef!.name;
+    expect(deEmisor.map((c) => c.nombre)).toContain(montada);
+  });
+
+  /** El CronJob no toca el camino del cobro: la interfaz no gana nada, y el web tampoco. */
+  it("y ni la interfaz ni el perfil web ganan ninguna de las cuatro", () => {
+    const ajenos = caja.despliegue(ENTORNO);
+    for (const c of contenedoresDe(ajenos)) {
+      for (const nombre of VARIABLES_DEL_CONSUMIDOR) {
+        expect(declara(c, nombre), `${c.name} declara ${nombre}, y el consumidor corre solo en batch`).toBe(false);
+      }
+    }
   });
 });
 

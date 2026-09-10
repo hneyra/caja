@@ -42,9 +42,19 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
      * <p>{@code orden_de_cobro} y {@code pago_evento} son de `V2` (ADR-0026 §1 y §3): lo que la
      * caja sabe cobrar y lo que publica cuando cobra. No estan en GOB-05 porque no existian cuando
      * se hizo el inventario del corte.
+     *
+     * <p>{@code identidad_evento_aplicado} e {@code identidad_evento_muerto} son de `V3` (ADR-0039
+     * etapa 4): el acuse local del consumidor del buzon de {@code identidad} y lo que ese
+     * consumidor aparto por no poder aplicarse nunca. Son de ESTA base aunque hablen de eventos de
+     * otro sistema, como {@code catastro_evento_aplicado} lo es de {@code rentas}: lo que guardan
+     * es lo que esta copia hizo con cada uno. Se nombran el mismo dia que nacen, porque una tabla
+     * que falta en el reparto no da un cruce: deja de revisarse, en verde (R-N, #7 de {@code
+     * catastro}).
      */
     private static final Set<String> DE_CAJA =
             Set.of(
+                    "identidad_evento_aplicado",
+                    "identidad_evento_muerto",
                     "area",
                     "caja",
                     "cierre_caja",
@@ -353,7 +363,41 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
     public Set<String> escriturasSinUsuarioQueObserve() {
         return Set.of(
                 ".nucleo.aplicacion.EntregarEventos.entregarUno("
-                        + "kamayuk.caja.nucleo.dominio.EventoDePago)");
+                        + "kamayuk.caja.nucleo.dominio.EventoDePago)",
+                // Las dos escrituras del consumidor del buzon de `identidad` (etapa 4). No hay
+                // usuario delante por el mismo motivo que arriba: es un proceso. Y la observacion
+                // de cada hecho EXISTE, solo que la escribio quien lo decidio, en `identidad`,
+                // con la regla 10 aplicada alli; lo que llega aqui es la fila tal como quedo.
+                ".seguridad.aplicacion.AplicarUnEventoDeIdentidad.aplicar("
+                        + "kamayuk.caja.seguridad.EventoDeIdentidadRecibido)",
+                ".seguridad.aplicacion.AplicarUnEventoDeIdentidad.apartar("
+                        + "kamayuk.caja.seguridad.EventoDeIdentidadRecibido, java.lang.String)");
+    }
+
+    /**
+     * Quien puede escribir {@code usuario}, {@code grupo}, {@code miembro} y {@code permiso} en
+     * este repositorio (regla 12, ADR-0039), y hasta cuando.
+     *
+     * <p><b>Declarada desde la etapa 4, y con eso la prohibicion pasa a VIGILARSE aqui</b>: hasta
+     * este PR la configuracion devolvia {@code null} y el escaner no miraba nada, que es lo que
+     * {@code ProhibicionesEnElCodigoFuenteTestBase} imprimia en cada corrida. Dos escritores:
+     *
+     * <ul>
+     *   <li><b>{@code SembradorDeLaCopiaLocal}</b>, <b>hasta la etapa 5</b>: el arranque en frio de
+     *       una municipalidad —catalogo, grupo de administracion y primer administrador— lo sigue
+     *       escribiendo la implantacion. El dia que todo llegue por el buzon, esta entrada se quita
+     *       y el escaner caza a quien la deje.
+     *   <li><b>{@code AplicarUnEventoDeIdentidad}</b>, sin fecha de fin: es el consumidor del
+     *       buzon. Escribe las cuatro tablas con lo que {@code identidad} decidio, y no decide nada
+     *       — que es lo unico que un escaner de texto no puede ver, y por eso lo dice su javadoc y
+     *       lo miden sus pruebas.
+     * </ul>
+     *
+     * <p>Nadie mas. {@code ComprobadorDeAccesoJdbc} las LEE, y leer no es cruzar ninguna frontera.
+     */
+    @Override
+    public Set<String> escritoresDeLaAutorizacionConMotivo() {
+        return Set.of("SembradorDeLaCopiaLocal", "AplicarUnEventoDeIdentidad");
     }
 
     /**
