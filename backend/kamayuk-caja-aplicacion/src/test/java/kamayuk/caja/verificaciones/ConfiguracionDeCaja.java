@@ -378,26 +378,28 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
      * Quien puede escribir {@code usuario}, {@code grupo}, {@code miembro} y {@code permiso} en
      * este repositorio (regla 12, ADR-0039), y hasta cuando.
      *
-     * <p><b>Declarada desde la etapa 4, y con eso la prohibicion pasa a VIGILARSE aqui</b>: hasta
-     * este PR la configuracion devolvia {@code null} y el escaner no miraba nada, que es lo que
-     * {@code ProhibicionesEnElCodigoFuenteTestBase} imprimia en cada corrida. Dos escritores:
+     * <p><b>Declarada desde la etapa 4, y desde la etapa 5 tiene UN solo escritor.</b> La etapa 4
+     * la estreno con dos, y la segunda entrada llevaba su fecha de fin escrita: {@code
+     * SembradorDeLaCopiaLocal}, «hasta la etapa 5», porque el arranque en frio —grupo de
+     * administracion, primer administrador, su afiliacion y sus siete privilegios— lo escribia
+     * todavia la implantacion. La etapa 5 se lo quito: ese sembrador se quedo con el catalogo, se
+     * llama {@link kamayuk.caja.seguridad.aplicacion.SembradorDelCatalogo} y ya no toca ninguna de
+     * las cuatro tablas. La entrada se retira, y quien la dejara con el nombre viejo se lo
+     * encuentra dicho: {@code SujetosDeLaConfiguracion} (#27) exige que toda entrada nombre una
+     * clase de produccion que exista, asi que una exencion que sobrevive a su clase no exime en
+     * silencio — sale roja nombrandola.
      *
-     * <ul>
-     *   <li><b>{@code SembradorDeLaCopiaLocal}</b>, <b>hasta la etapa 5</b>: el arranque en frio de
-     *       una municipalidad —catalogo, grupo de administracion y primer administrador— lo sigue
-     *       escribiendo la implantacion. El dia que todo llegue por el buzon, esta entrada se quita
-     *       y el escaner caza a quien la deje.
-     *   <li><b>{@code AplicarUnEventoDeIdentidad}</b>, sin fecha de fin: es el consumidor del
-     *       buzon. Escribe las cuatro tablas con lo que {@code identidad} decidio, y no decide nada
-     *       — que es lo unico que un escaner de texto no puede ver, y por eso lo dice su javadoc y
-     *       lo miden sus pruebas.
-     * </ul>
+     * <p>El unico que queda es <b>{@code AplicarUnEventoDeIdentidad}</b>, <b>sin fecha de fin</b>:
+     * es el consumidor del buzon. Escribe las cuatro tablas con lo que {@code identidad} decidio, y
+     * no decide nada — que es lo unico que un escaner de texto no puede ver, y por eso lo dice su
+     * javadoc y lo miden sus pruebas. No lleva fecha porque no se va a ir: mientras cada sistema
+     * autorice contra su copia local (D-N5), alguien tiene que escribirla aqui.
      *
      * <p>Nadie mas. {@code ComprobadorDeAccesoJdbc} las LEE, y leer no es cruzar ninguna frontera.
      */
     @Override
     public Set<String> escritoresDeLaAutorizacionConMotivo() {
-        return Set.of("SembradorDeLaCopiaLocal", "AplicarUnEventoDeIdentidad");
+        return Set.of("AplicarUnEventoDeIdentidad");
     }
 
     /**

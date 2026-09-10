@@ -2,6 +2,7 @@ package kamayuk.caja.seguridad.aplicacion;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,8 +22,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * El proceso de vida corta que trae de {@code identidad} lo que esta copia no tiene (ADR-0039,
- * etapa 4). Lo lanza el {@code CronJob} del descriptor cada cinco minutos, y lo lanza tambien la
- * implantacion al terminar, <b>despues</b> de sembrar.
+ * etapa 4). Lo lanza el {@code CronJob} del descriptor cada cinco minutos, y desde la etapa 5 lo
+ * llama <b>en linea</b> {@link ImplantarMunicipalidad}, detras de sembrar el catalogo: alli esta
+ * pasada dejo de ser un adorno —la implantacion ya no escribe ni un usuario— y paso a ser la unica
+ * fuente del administrador, asi que la implantacion la exige, la corre y comprueba lo que dejo.
  *
  * <h2>Perfil {@code batch}, y fuera del camino del cobro</h2>
  *
@@ -89,8 +92,43 @@ public class CorrerElConsumidorDeIdentidad implements ApplicationRunner {
         this.clienteDeServicio = clienteDeServicio;
     }
 
+    /**
+     * Si la pasada de esta invocacion ya se hizo.
+     *
+     * <p>Desde la etapa 5 la <b>implantacion</b> llama a {@link #unaPasada()} en linea, porque la
+     * copia local ya no la siembra nadie y sin esa pasada la municipalidad quedaria implantada sin
+     * un solo usuario. En una invocacion de implantacion este runner sigue existiendo —es el mismo
+     * bean que despierta el {@code CronJob}— y correria una segunda pasada sobre un buzon que la
+     * primera acaba de vaciar. No es un error, es ruido: dos bloques de vueltas en el registro del
+     * mismo Job, que es justo lo que hay que leer cuando algo falla. El interruptor lo pone quien
+     * ya corrio y no una propiedad: una propiedad seria una segunda fuente de la verdad sobre algo
+     * que pasa dentro de este mismo proceso.
+     */
+    private boolean yaCorrio;
+
     @Override
     public void run(ApplicationArguments argumentos) {
+        if (yaCorrio) {
+            log.info(
+                    "La pasada del consumidor de `identidad` ya la hizo la implantacion en esta"
+                            + " misma invocacion: no se repite");
+            return;
+        }
+        unaPasada();
+    }
+
+    /**
+     * Una corrida entera del consumidor: vueltas hasta que una no progresa, y el aviso final.
+     *
+     * <p>El contexto de municipalidad se <b>restaura</b> al salir en vez de limpiarse, para que la
+     * implantacion pueda llamar a esto en medio del suyo y seguir despues: quien lo fijo es quien
+     * lo quita. Limpiarlo a secas dejaba a la implantacion sin contexto justo antes de comprobar su
+     * propia postcondicion, y esa comprobacion lee tablas con RLS: sin {@code SET LOCAL} no
+     * devuelven vacio, revientan.
+     */
+    public void unaPasada() {
+        yaCorrio = true;
+        Optional<MunicipalidadId> anterior = TenantContext.actualSiHay();
         long municipalidadId = municipalidadDe(clienteDeServicio, registro);
         TenantContext.fijar(new MunicipalidadId(municipalidadId));
         try {
@@ -119,7 +157,7 @@ public class CorrerElConsumidorDeIdentidad implements ApplicationRunner {
             }
             consumidor.avisarDeLosPospuestosQueLlevanDemasiado(pospuestos.values());
         } finally {
-            TenantContext.limpiar();
+            anterior.ifPresentOrElse(TenantContext::fijar, TenantContext::limpiar);
         }
     }
 

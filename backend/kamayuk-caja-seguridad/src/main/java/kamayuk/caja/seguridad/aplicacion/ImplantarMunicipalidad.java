@@ -1,14 +1,22 @@
 package kamayuk.caja.seguridad.aplicacion;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import kamayuk.caja.auditoria.Origen;
 import kamayuk.caja.auditoria.OrigenContext;
+import kamayuk.caja.autorizacion.ComprobadorDeAcceso;
+import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.dominio.Observacion;
+import kamayuk.caja.seguridad.dominio.CatalogoDelSistema;
 import kamayuk.caja.seguridad.infraestructura.RegistroDeMunicipalidadesJdbc;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,7 +26,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Pone la municipalidad dentro de la base de {@code caja}: sin esto no hay nada que administrar.
+ * Pone la municipalidad dentro de la base de {@code caja}, siembra el catalogo de este sistema y
+ * <b>trae la autorizacion del buzon de {@code identidad}</b> antes de darse por terminada.
  *
  * <h2>El hueco que cierra (C-6, hueco 3)</h2>
  *
@@ -43,27 +52,46 @@ import org.springframework.stereotype.Component;
  * INSERT}, en una conexion que se abre y se cierra. Todo lo demas va por el camino normal de la
  * aplicacion, como {@code kamayuk_app} y con su auditoria.
  *
- * <h2>Un grupo, no dos</h2>
+ * <h2>Ni un grupo, ni un usuario, ni un permiso: eso es de {@code identidad} (ADR-0039, etapa 5)
+ * </h2>
  *
- * <p>{@code rentas} crea dos —administracion y {@code Seguridad}—; aqui solo el primero. El segundo
- * es la plantilla de quien administra <b>el acceso de los usuarios</b>, y esas pantallas viven en
- * {@code rentas} (ADR-0030 §3): crear aqui un grupo que no puede administrar nada seria decir que
- * existe una delegacion que no existe.
+ * <p>Hasta la etapa 4 esta implantacion fabricaba el arranque en frio con SQL propio: un grupo de
+ * administracion, el primer administrador, su afiliacion y sus siete privilegios. Con {@code
+ * identidad} implantado eso son <b>dos</b> sitios que dan de alta al mismo administrador, cada uno
+ * en su base y sin saber del otro; y el sintoma de que discrepen no es un error sino una respuesta
+ * distinta a «quien puede hacer esto» segun la pantalla que se abra. Desde esta etapa la
+ * implantacion siembra <b>solo el catalogo</b> ({@link SembradorDelCatalogo}) y todo lo demas llega
+ * por el buzon.
+ *
+ * <h2>Y por eso la pasada del consumidor se llama AQUI, en linea</h2>
+ *
+ * <p>Hasta la etapa 4 el consumidor corria como un runner detras de este, encadenado por {@link
+ * Order}. Eso bastaba mientras la siembra dejaba un administrador: si el consumidor no existia, la
+ * municipalidad quedaba usable. Ya no. Un encadenamiento por {@code @Order} tiene un modo de fallo
+ * que en esta etapa es exactamente el defecto: {@code CorrerElConsumidorDeIdentidad} es
+ * {@code @ConditionalOnProperty("kamayuk.identidad.url")}, asi que <b>sin esa variable el bean no
+ * existe, no corre nadie y este Job sale {@code Complete} con la copia local vacia</b> — el Job
+ * roto de C-18 con otra cara: arranca, no hace nada y sale con codigo 0.
+ *
+ * <p>Llamandolo en linea se pueden hacer las dos cosas que un vecino no puede hacer: <b>exigir</b>
+ * que exista antes de tocar nada, y <b>comprobar la postcondicion</b> cuando termina. La
+ * postcondicion es la unica afirmacion que importa —el administrador puede entrar—, y no se deduce
+ * de que el consumidor no fallara: un buzon que contesta 200 con cero eventos es exactamente lo que
+ * devuelve {@code identidad} cuando esta municipalidad todavia no se ha implantado alli.
+ *
+ * <h2>Y esto NO convierte el {@code CronJob} en un Job que falla cada cinco minutos</h2>
+ *
+ * <p>Lo que falla es la <b>implantacion</b>, no toda corrida del consumidor. Las vueltas periodicas
+ * siguen tratando un evento pospuesto como lo que es —un retraso, que avisa a los quince minutos y
+ * termina en {@code rc=0}, hallazgo H7 de la medida de la etapa 4—. La diferencia esta en lo que
+ * cada una promete: una vuelta periodica promete acercar la copia, y una implantacion promete
+ * dejarla utilizable. Una municipalidad implantada sin administrador no es una copia con retraso:
+ * es una instalacion que nadie puede abrir, y sale asi de la unica corrida que iba a mirar alguien.
  *
  * <h2>Idempotente, entera</h2>
  *
  * <p>Se ejecuta en cada despliegue. Lo que ya existe se queda como esta —con los permisos que
  * alguien haya configurado despues—, y lo que falta se crea. Nunca borra.
- *
- * <h2>Y despues de sembrar, se trae lo que falta (ADR-0039, etapa 4)</h2>
- *
- * <p>La siembra deja el arranque en frio: el catalogo, el grupo de administracion y su primer
- * administrador. Todo lo que alguien haya decidido despues en {@code identidad} —otros usuarios,
- * otros grupos, sus permisos— llega por el buzon, y el consumidor que lo trae ({@link
- * CorrerElConsumidorDeIdentidad}) corre en esta MISMA invocacion, detras de este runner: por eso
- * este lleva {@link #ORDEN} y aquel el siguiente. Si el despliegue no configuro ningun buzon
- * ({@code KAMAYUK_IDENTIDAD_URL} ausente), la implantacion termina igual y <b>lo dice</b>: en la
- * etapa 4 es admisible, porque el sembrador sigue existiendo; en la 5 deja de serlo.
  */
 @Component
 @Profile("batch")
@@ -72,29 +100,46 @@ import org.springframework.stereotype.Component;
 @Order(ImplantarMunicipalidad.ORDEN)
 public class ImplantarMunicipalidad implements ApplicationRunner {
 
-    /** Antes que el consumidor del buzon: primero la municipalidad, despues lo que le llega. */
+    /**
+     * Antes que el consumidor del buzon.
+     *
+     * <p>Sigue haciendo falta aunque la pasada se llame en linea: el runner del consumidor es el
+     * mismo bean, y si corriera ANTES que esto no habria ni fila de {@code municipalidad} que
+     * resolver — se pararia diciendo «esa municipalidad no esta implantada en esta caja», que es
+     * cierto y no es el diagnostico que hace falta.
+     */
     public static final int ORDEN = 100;
 
     private static final Logger log = LoggerFactory.getLogger(ImplantarMunicipalidad.class);
 
     private final RegistroDeMunicipalidadesJdbc registro;
-    private final SembradorDeLaCopiaLocal sembrador;
+    private final SembradorDelCatalogo sembrador;
     private final DatosDeImplantacion datos;
-    private final String buzonDeIdentidad;
+    private final ObjectProvider<CorrerElConsumidorDeIdentidad> consumidor;
+    private final ComprobadorDeAcceso guardia;
+    private final Clock reloj;
 
     public ImplantarMunicipalidad(
             RegistroDeMunicipalidadesJdbc registro,
-            SembradorDeLaCopiaLocal sembrador,
+            SembradorDelCatalogo sembrador,
             DatosDeImplantacion datos,
-            @Value("${kamayuk.identidad.url:}") String buzonDeIdentidad) {
+            ObjectProvider<CorrerElConsumidorDeIdentidad> consumidor,
+            ComprobadorDeAcceso guardia,
+            Clock reloj) {
         this.registro = registro;
         this.sembrador = sembrador;
         this.datos = datos;
-        this.buzonDeIdentidad = buzonDeIdentidad;
+        this.consumidor = consumidor;
+        this.guardia = guardia;
+        this.reloj = reloj;
     }
 
     @Override
     public void run(ApplicationArguments argumentos) {
+        // ANTES de tocar la base: sin consumidor no hay copia local que traer, y una implantacion
+        // que empieza a escribir para descubrirlo al final deja la municipalidad a medias.
+        CorrerElConsumidorDeIdentidad pasada = exigirElConsumidor();
+
         long municipalidadId =
                 registro.darDeAltaSiFalta(
                         datos.ubigeo(), datos.nombre(), datos.tipo(), datos.esDemostracion());
@@ -107,8 +152,6 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
         try {
             int nuevos =
                     sembrador.sembrar(
-                            datos.administrador(),
-                            datos.nombreDelAdministrador(),
                             Observacion.de(
                                     "Implantacion de la municipalidad "
                                             + datos.ubigeo()
@@ -118,31 +161,111 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
             // se puede comprobar mirando pantallas. Una instalacion que se creia de demostracion y
             // salio real emite papeles sin marca, y quien lo descubre es quien recibe uno (#122).
             log.info(
-                    "Municipalidad {} lista en caja ({}): id {}, {} accesos nuevos,"
-                            + " administrador '{}'",
+                    "Municipalidad {} dada de alta en caja ({}): id {}, {} accesos nuevos."
+                            + " La autorizacion no se siembra: se trae del buzon de `identidad`",
                     datos.ubigeo(),
                     datos.esDemostracion() ? "DEMOSTRACION" : "instalacion real",
                     municipalidadId,
-                    nuevos,
-                    datos.administrador());
-            if (buzonDeIdentidad.isBlank()) {
-                log.warn(
-                        "No hay identidad configurada (KAMAYUK_IDENTIDAD_URL): la copia local de"
-                                + " {} se queda con lo que sembro esta implantacion y NADIE la"
-                                + " actualiza. En la etapa 4 de ADR-0039 se admite; en la 5 deja"
-                                + " de admitirse, porque la siembra desaparece y todo llega por"
-                                + " el buzon",
-                        datos.ubigeo());
-            } else {
-                log.info(
-                        "Sembrada la municipalidad {}, el consumidor del buzon de `identidad`"
-                                + " ({}) corre a continuacion y trae lo que falte",
-                        datos.ubigeo(),
-                        buzonDeIdentidad);
-            }
+                    nuevos);
+
+            pasada.unaPasada();
+            comprobarQueLaCopiaLlego();
+
+            log.info(
+                    "Municipalidad {} lista en caja: el administrador '{}' esta en la copia local"
+                            + " con sus {} privilegios sobre las {} opciones de este sistema",
+                    datos.ubigeo(),
+                    datos.administrador(),
+                    Privilegio.values().length,
+                    CatalogoDelSistema.opciones().size());
         } finally {
             OrigenContext.limpiar();
             TenantContext.limpiar();
+        }
+    }
+
+    /**
+     * El consumidor del buzon, o el rojo que dice que falta.
+     *
+     * <p>Sin el no hay nada que traer: desde la etapa 5 esta implantacion no escribe ni un usuario.
+     */
+    private CorrerElConsumidorDeIdentidad exigirElConsumidor() {
+        @Nullable CorrerElConsumidorDeIdentidad disponible = consumidor.getIfAvailable();
+        if (disponible == null) {
+            throw new IllegalStateException(
+                    "No hay consumidor del buzon de `identidad` en esta invocacion, asi que no hay"
+                            + " de donde sacar la autorizacion: falta «kamayuk.identidad.url»"
+                            + " (KAMAYUK_IDENTIDAD_URL). Desde la etapa 5 de ADR-0039 la"
+                            + " implantacion NO siembra ni un usuario, ni un grupo, ni un permiso:"
+                            + " los trae el buzon. Sin esto la municipalidad "
+                            + datos.ubigeo()
+                            + " quedaria dada de alta, con su catalogo sembrado y SIN UN SOLO"
+                            + " USUARIO —ni siquiera el administrador «"
+                            + datos.administrador()
+                            + "»—, y este Job saldria Complete. Remedio: implantar `identidad`"
+                            + " primero y darle a este Job KAMAYUK_IDENTIDAD_URL,"
+                            + " KAMAYUK_IDENTIDAD_TOKEN, KAMAYUK_IDENTIDAD_CLIENTE y"
+                            + " KAMAYUK_IDENTIDAD_CREDENCIAL");
+        }
+        return disponible;
+    }
+
+    /**
+     * La postcondicion: el administrador puede entrar.
+     *
+     * <p>Se comprueba con el <b>mismo</b> {@link ComprobadorDeAcceso} que usa el guardia en cada
+     * peticion, y no contando filas: lo que decide si alguien puede abrir una pantalla es esa
+     * consulta —con su precedencia usuario-sobre-grupo y sus tres vigencias—, y contar filas de
+     * {@code permiso} daria por buena una copia en la que el administrador esta deshabilitado o su
+     * grupo caducado.
+     *
+     * <p>Se distinguen los dos motivos porque se arreglan distinto: que no haya <b>ninguna</b> fila
+     * suya dice que el buzon no trajo su alta —casi siempre, que {@code identidad} todavia no
+     * implanto esta municipalidad—; que este y le falten privilegios dice que llego su alta y no su
+     * matriz, que es lo que pasa cuando un evento se quedo pospuesto.
+     */
+    private void comprobarQueLaCopiaLlego() {
+        String cuenta = datos.administrador();
+        if (!guardia.conoceAlUsuario(cuenta)) {
+            throw new IllegalStateException(
+                    "La implantacion de "
+                            + datos.ubigeo()
+                            + " corrio el consumidor del buzon y la copia local se quedo SIN"
+                            + " NINGUNA fila de `usuario` para el administrador «"
+                            + cuenta
+                            + "». El buzon contesto y no trajo su alta, que es lo que pasa cuando"
+                            + " esta municipalidad todavia no esta implantada en `identidad`: alli"
+                            + " no hay cola que servirle a esta caja. Dar esto por bueno dejaria el"
+                            + " Job en Complete y la ventanilla sin nadie que pueda entrar."
+                            + " Remedio: implantar `identidad` primero y volver a correr esta"
+                            + " implantacion");
+        }
+        LocalDate hoy = LocalDate.now(reloj);
+        List<String> faltan = new ArrayList<>();
+        for (CatalogoDelSistema.Opcion opcion : CatalogoDelSistema.opciones()) {
+            for (Privilegio privilegio : Privilegio.values()) {
+                if (!guardia.autoriza(cuenta, opcion.codigo(), privilegio, hoy)) {
+                    faltan.add(opcion.codigo() + ":" + privilegio.name());
+                }
+            }
+        }
+        if (!faltan.isEmpty()) {
+            throw new IllegalStateException(
+                    "La implantacion de "
+                            + datos.ubigeo()
+                            + " dejo al administrador «"
+                            + cuenta
+                            + "» dado de alta en la copia local y SIN poder abrir "
+                            + faltan.size()
+                            + " de las "
+                            + CatalogoDelSistema.opciones().size() * Privilegio.values().length
+                            + " cosas que este sistema le tiene que dejar hacer: "
+                            + faltan
+                            + ". Su alta llego por el buzon y su matriz de permisos no —o llego y"
+                            + " se quedo pospuesta porque le faltaba su dependencia—. Remedio:"
+                            + " comprobar en `identidad` que esa cuenta esta en el grupo de"
+                            + " administracion de esta municipalidad, y volver a correr esta"
+                            + " implantacion");
         }
     }
 }

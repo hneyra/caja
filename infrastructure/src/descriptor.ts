@@ -189,9 +189,16 @@ function operacionDeLaCaja(e: EntornoDelDescriptor): VariableDeEntorno[] {
  * proposito: `@ConditionalOnProperty("kamayuk.identidad.url")` es lo que decide si el consumidor
  * existe, y un valor vacio por omision lo satisfaria con una URL que no es de nadie.
  *
- * Las lleva el `CronJob` y las lleva TAMBIEN el Job de implantacion, porque la implantacion termina
- * con una pasada del consumidor: una municipalidad recien implantada tiene los dos grupos que
- * siembra `SembradorDeLaCopiaLocal` y ninguno de los permisos que `identidad` ya tenga para ella.
+ * Las lleva el `CronJob` y las lleva TAMBIEN el Job de implantacion, y desde la etapa 5 de ADR-0039
+ * ese Job **no arranca sin ellas**: la implantacion ya no siembra ni un usuario, ni un grupo, ni un
+ * permiso —eso es de `identidad`— y lo unico que escribe por su cuenta es el catalogo de este
+ * sistema. Sin `KAMAYUK_IDENTIDAD_URL` no existe el bean del consumidor, no hay de donde traer la
+ * autorizacion, y la implantacion falla nombrandolo en vez de dejar la municipalidad dada de alta y
+ * sin nadie que pueda entrar.
+ *
+ * (Hasta la etapa 4 este comentario decia «los dos grupos que siembra `SembradorDeLaCopiaLocal`», y
+ * era falso por partida doble: aquel sembrador creaba UNO —su propio javadoc lo argumentaba en un
+ * epigrafe titulado «Un grupo, no dos»— y desde la etapa 5 no crea ninguno.)
  *
  * La URL se compone con `namespaceDe` y no a mano, y el `Service` se llama `kamayuk-identidad-web`
  * —es lo que `despliegueDelPerfil` de `identidad` publica— y **no** `kamayuk-<amb>-identidad`, que
