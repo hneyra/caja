@@ -120,10 +120,15 @@ services:
       KAMAYUK_IMPLANTACION_OWNERCLAVE: ${KAMAYUK_CLAVE_OWNER:?falta KAMAYUK_CLAVE_OWNER, sale del .env de la plataforma}
       # ── El consumidor del buzon de `identidad` (ADR-0039, etapa 4) ──────────────
       #
-      # La implantacion termina con una pasada del consumidor: una municipalidad recien
-      # implantada tiene los dos grupos que siembra `SembradorDeLaCopiaLocal` y ninguno
-      # de los permisos que `identidad` ya tenga para ella. Son las MISMAS cuatro
-      # variables que lleva el `CronJob` del descriptor, y tienen que decir lo mismo.
+      # La implantacion termina con una pasada del consumidor, y desde la etapa 5 de
+      # ADR-0039 NO TERMINA SIN ELLA: aqui ya no se siembra ni un usuario, ni un grupo,
+      # ni un permiso —eso es de `identidad`—, asi que sin estas variables el Job falla
+      # nombrandolas en vez de dejar la municipalidad dada de alta y sin nadie que pueda
+      # entrar. Son las MISMAS cuatro variables que lleva el `CronJob` del descriptor, y
+      # tienen que decir lo mismo.
+      #
+      # (Hasta la etapa 4 esto decia «los dos grupos que siembra `SembradorDeLaCopiaLocal`»
+      # y era falso: aquel sembrador creaba UNO, y desde la etapa 5 no crea ninguno.)
       #
       # `identidad-sistema` y no `identidad`: en la red `kamayuk-plataforma` el alias
       # `identidad` lo tiene Keycloak, y el backend de `identidad` se llama
@@ -137,9 +142,11 @@ services:
       # (ADR-0028 §2). Lo que cambia es la clave, que es del par (caja, identidad).
       KAMAYUK_IDENTIDAD_CLIENTE: kamayuk-caja-servicio-${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
       # VACIA por omision a proposito, como `KAMAYUK_CAJA_CREDENCIAL`: en el compose la
-      # identidad de servicio se crea a mano, y sin ella la llamada sale sin credencial,
-      # `identidad` contesta 401, la implantacion lo dice y NO falla: en la etapa 4 una
-      # municipalidad se implanta con su copia local sembrada y sin consumidor.
+      # identidad de servicio se crea a mano. LO QUE CUESTA NO PONERLA CAMBIA EN LA
+      # ETAPA 5: la llamada sale sin credencial, `identidad` contesta 401 y la
+      # implantacion FALLA — hasta la etapa 4 lo decia y terminaba, porque la copia
+      # local la sembraba ella; ya no la siembra nadie, asi que terminar seria dejar la
+      # municipalidad sin un solo usuario y el Job en Complete.
       KAMAYUK_IDENTIDAD_CREDENCIAL: ${KAMAYUK_CAJA_CREDENCIAL_IDENTIDAD:-}
     restart: "no"
 

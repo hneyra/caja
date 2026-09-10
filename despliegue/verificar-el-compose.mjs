@@ -283,7 +283,9 @@ function elConsumidorDeIdentidad(config) {
   );
   anotar(
     (entorno.KAMAYUK_IDENTIDAD_CREDENCIAL ?? '') === '',
-    `y la credencial hacia identidad es opcional: sin ella la implantacion arranca y lo dice`,
+    `y la clave hacia identidad no la EXIGE el compose: se pone a mano, como la del`
+      + ` publicador. Lo que cambia en la etapa 5 es lo que cuesta no ponerla: la pasada del`
+      + ` consumidor recibe 401, y la implantacion FALLA en vez de terminar callando`,
     `llega con valor «${entorno.KAMAYUK_IDENTIDAD_CREDENCIAL}» sin que nadie la haya puesto`,
   );
 }
