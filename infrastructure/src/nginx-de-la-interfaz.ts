@@ -40,7 +40,7 @@ export const NGINX_DE_LA_INTERFAZ = `# La interfaz de ventanilla, servida como a
 #
 # ## Lo que este archivo NO tiene, que es lo unico que lo distingue del monolito
 #
-# \`el monolito\` —que \`infrastructure/frontend/nginx.conf\` replica byte a byte para
+# el \`nginx.conf\` del monolito —que \`infrastructure/frontend/nginx.conf\` replica byte a byte para
 # meterlo en un \`ConfigMap\`— lleva un bloque \`location /api/v1/\` que **reenvia al backend**, y
 # alli ese reenvio no es comodidad: es lo unico que hace que su interfaz alcance su API sin CORS.
 #
