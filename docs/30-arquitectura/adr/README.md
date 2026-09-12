@@ -1,8 +1,14 @@
 # Decisiones de arquitectura (ADR)
 
-**Ninguna decision propia todavia**, y es correcto que se vea asi en vez de inventarle una: lo que la caja hace lo deciden dos ADR que no son suyos —el camino del dinero (0026), que decide `rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la plataforma—.
+**Una decision propia, y no es la que este indice esperaba.** Lo que la caja hace lo siguen decidiendo dos ADR que no son suyos —el camino del dinero (0026), que decide `rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la plataforma—.
 
-La primera decision propia llegara con **D-17**: a quien se le cobra lo que no es tributo, cuando la caja cobre un puesto de mercado o un nicho.
+| # | Decision | Estado |
+|---|---|---|
+| [0040](ADR-0040-la-ventanilla-se-conecta.md) | Si la ventanilla se conecta, y que hace falta antes | **Propuesto** |
+
+> **Este indice predecia que la primera propia seria D-17** —a quien se le cobra lo que no es tributo—, y se equivoco: llego antes una que nadie habia planteado, porque el despliegue la hizo urgente. La prediccion se deja escrita en vez de borrarla; una tabla que solo contiene aciertos no dice nada sobre lo que cuesta prever.
+
+D-17 sigue abierta.
 
 Un ADR registra una decision con su contexto y sus consecuencias. **No se editan una vez
 aceptados**: si una decision cambia, se escribe otro ADR que declare obsoleto al anterior. El
