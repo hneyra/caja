@@ -337,9 +337,11 @@ real y las cifras cuadren— no lo puede leer una máquina: eso lo lee la revisi
 | Verificación | Cómo se demostró que puede fallar | Resultado |
 |---|---|---|
 
-**Las 44 filas viven en [`docs/agent/HISTORY.md`](docs/agent/HISTORY.md)**, y ahí es donde se
-escribe la siguiente. Se mudaron el 2026-09-12: eran el **88 %** de este archivo, que se carga
-entero en cada sesión ([#114](https://github.com/hneyra/infrastructure/issues/114)).
+**Las filas viven en [`docs/agent/HISTORY.md`](docs/agent/HISTORY.md)**, y ahí es donde se
+escribe la siguiente. Las 44 primeras se mudaron el 2026-09-12: eran el **88 %** de este archivo,
+que se carga entero en cada sesión ([#114](https://github.com/hneyra/infrastructure/issues/114)).
+Desde el tercer tiempo de esa mudanza, **una fila escrita aquí ya no cuenta**: la guarda sólo
+mira `docs/agent/HISTORY.md`.
 
 La tabla de arriba se deja **con su cabecera y vacía** a propósito: es la forma de la fila que hay
 que escribir, y tenerla delante evita ir a buscarla.
