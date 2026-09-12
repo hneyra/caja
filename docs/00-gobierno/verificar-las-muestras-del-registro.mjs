@@ -4,15 +4,21 @@
    esquivada, que en una convencion de proceso es peor todavia — el peaje se aprende a
    rodear y la tabla se queda igual de vacia.
 
-   Asi que se corre la comprobacion contra siete situaciones fabricadas, cuatro que
+   Asi que se corre la comprobacion contra ocho situaciones fabricadas, cinco que
    tiene que rechazar y tres que tiene que dejar pasar, y se exige que el rechazo
    **nombre el issue**: rechazar por el motivo equivocado seria pasar por casualidad.
 
-   La cuarta que rechaza entra con #39, y es la muestra de `despliegue/`: hasta entonces
-   un PR que solo tocaba `despliegue/compose.yaml` —o sea el archivo que dice con que rol
-   se conecta cada proceso y en que orden arranca— pasaba por el caso «no toca codigo de
-   produccion». Es lo que le paso al PR de #18, medido. Sin esta muestra, ampliar
-   `RUTAS_DE_CODIGO` seria una linea que nadie comprueba.
+   La muestra de `despliegue/` entra con #39: hasta entonces un PR que solo tocaba
+   `despliegue/compose.yaml` —o sea el archivo que dice con que rol se conecta cada proceso
+   y en que orden arranca— pasaba por el caso «no toca codigo de produccion». Es lo que le
+   paso al PR de #18, medido. Sin esta muestra, ampliar `RUTAS_DE_CODIGO` seria una linea
+   que nadie comprueba.
+
+   La de «una cabecera o un parrafo que citen el issue NO valen como fila» entra con #114,
+   y fija el arreglo de `nombra()`: la mencion tiene que estar en una linea que sea una
+   fila. Sin ella, esa funcion puede volver a buscar `#N` en cualquier linea anadida y la
+   guarda deja de poder fallar — que es como se descubrio, con la rotura de control en
+   VERDE en tres carriles a la vez.
 
    Uso: node docs/00-gobierno/verificar-las-muestras-del-registro.mjs
 */
@@ -54,6 +60,19 @@ const CASOS = [
     anadido: '+| Una fila cualquiera (#711) | … | … |',
     esperado: 'rojo',
     dice: '#71',
+  },
+  {
+    // La muestra de #114, y es la que fija el arreglo de `nombra()`. Con la version vieja
+    // —que buscaba `#N` en cualquier linea anadida— este caso sale VERDE: la mencion esta
+    // en un parrafo y no en una fila. Lo destaparon tres carriles a la vez al mudar el
+    // registro, porque la cabecera del archivo nuevo citaba su propio issue y la rotura de
+    // control —quitar la fila y ver si la guarda muerde— salia VERDE.
+    nombre: 'una cabecera o un parrafo que citen el issue NO valen como fila',
+    cuerpo: 'Cierra #711.',
+    archivos: ['backend/kamayuk-caja/src/main/java/kamayuk/caja/Algo.java'],
+    anadido: '+# Registro\n+\n+Se mudo aqui por #711, y esto no es una fila.',
+    esperado: 'rojo',
+    dice: '#711',
   },
   {
     // La muestra de #39. Y es una muestra de verdad y no un adorno: sin el patron

@@ -31,8 +31,9 @@
    Copiada de `sgtm`, donde nacio con #711. Lo unico que cambia es QUE cuenta como
    codigo de produccion en ESTE repositorio —la lista `RUTAS_DE_CODIGO` de abajo— y el
    nombre de la variable de entorno, que aqui es `KAMAYUK_CUERPO_DEL_PR`. La tabla que
-   protege es la de `CLAUDE.md`, que en este repositorio **nace vacia**: el registro
-   anterior es historia de `sgtm` y no viaja.
+   protege es la de `docs/agent/HISTORY.md` —vivia en `CLAUDE.md` hasta el 2026-09-12
+   (#114)—, que en este repositorio **nace vacia**: el registro anterior es historia de
+   `sgtm` y no viaja.
 
    ## Uso
 
@@ -86,16 +87,21 @@ const RUTAS_DE_CODIGO = [
 ];
 
 /**
- * Donde puede estar la fila. **Son dos a proposito, y es una ventana de compatibilidad**
- * (#114): el registro se muda de `CLAUDE.md` a `docs/agent/HISTORY.md` —eran el 88 % de un
- * archivo que cada sesion carga entero— y los seis repositorios no migran a la vez.
+ * Donde vive la fila. **Es uno, y ya no es una ventana de compatibilidad** (#114).
  *
- * Mientras las dos esten aqui, una fila escrita en cualquiera de los dos cuenta. El dia que
- * los seis hayan migrado se retira `CLAUDE.md` **en un cambio propio**, y entonces una fila
- * en el sitio viejo deja de contar. Estrechar antes deja rojos cruzados en los que aun no
- * han migrado.
+ * Entre el 2026-09-11 y el 2026-09-12 fueron dos —`docs/agent/HISTORY.md` y `CLAUDE.md`—
+ * porque el registro se mudaba de sitio y los seis repositorios no migran a la vez:
+ * estrechar antes de que migrara el ultimo habria dejado rojos cruzados en los que todavia
+ * escribian en el archivo viejo. **Los seis migraron el 2026-09-12**, asi que la ventana se
+ * cierra y esta lista se estrecha en un cambio propio, que es lo que aquel comentario decia
+ * que habria que hacer.
+ *
+ * Consecuencia, y es el punto: **una fila escrita en `CLAUDE.md` deja de contar**. Ese
+ * archivo conserva la doctrina —que es una fila y que tiene que demostrar— y la cabecera de
+ * la tabla vacia, pero la fila se escribe aqui. Si se admitieran los dos, el registro
+ * volveria a partirse en dos sitios sin que nada lo dijera, que es de donde se sale.
  */
-const DONDE_VIVE_LA_FILA = ['docs/agent/HISTORY.md', 'CLAUDE.md'];
+const DONDE_VIVE_LA_FILA = ['docs/agent/HISTORY.md'];
 
 /** Como se declara que un PR cierra un issue. GitHub admite estas y alguna mas. */
 const CIERRA = /\b(?:cierra|closes?|close|fixes?|fix|resuelve|resolves?)\s+#(\d+)/gi;
@@ -160,9 +166,34 @@ console.log(`Cada issue que este PR cierra tiene su fila: #${issues.join(', #')}
 
 // ---------------------------------------------------------------------------
 
-/** Si ese texto nombra al issue como tal y no como parte de otro numero. */
+/**
+ * Si alguna de esas lineas nuevas es **una fila** que nombra al issue —y no como parte de otro
+ * numero—. Lo que se exige es una fila de la tabla, asi que la linea tiene que empezar por `|`.
+ *
+ * ## Por que no basta con buscar `#N` en cualquier linea anadida
+ *
+ * Hasta la mudanza del registro (#114) esto era un `test` sobre el texto entero, y **eso lo
+ * satisface cualquier linea**: una cabecera, un parrafo introductorio, una nota al pie. Lo
+ * destaparon **tres carriles a la vez** el mismo dia, y por el mismo camino: al mudar el
+ * registro a `docs/agent/HISTORY.md`, la cabecera del archivo nuevo citaba su propio issue
+ * —«se mudaron aqui por #114»—, asi que el diff contenia `#114` aunque no hubiera ni una fila.
+ * La rotura de control —quitar la fila y comprobar que la guarda se pone roja— **salia VERDE**,
+ * y una guarda que no puede fallar no protege nada: es exactamente el modo de fallo silencioso
+ * que esta comprobacion existe para impedir.
+ *
+ * El arreglo es el minimo que distingue las dos cosas: la mencion tiene que estar **en una
+ * linea que sea una fila**. Se acepta el `+` que el diff antepone y los espacios de sangria,
+ * y nada mas — no se comprueba que la fila tenga tres columnas ni que diga la verdad, porque
+ * eso es justo lo que lee la revision y no una maquina.
+ */
 function nombra(texto, numero) {
-  return new RegExp(`#${numero}(?![0-9])`).test(texto);
+  const mencion = new RegExp(`#${numero}(?![0-9])`);
+  return texto.split('\n').some((linea) => esFila(linea) && mencion.test(linea));
+}
+
+/** Si esa linea anadida es una fila de la tabla. El `+` es el del diff; la fila empieza por `|`. */
+function esFila(linea) {
+  return linea.replace(/^\+/, '').trimStart().startsWith('|');
 }
 
 function lineas(texto) {
