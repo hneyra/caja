@@ -3,7 +3,6 @@ package kamayuk.caja.nucleo.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -68,10 +67,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * vencimiento la cola de ventanilla no se puede parar porque otro sistema este caido.
  *
  * <p>El apagado NO se simula con un doble que lance: se apunta el cliente HTTP a <b>un puerto que
- * nadie escucha</b>, abriendo un {@code ServerSocket(0)} y cerrandolo. Es el mismo mecanismo con
- * que P5B midio «rentas calcula con normativa apagado», y el motivo es el mismo: un doble que lanza
- * prueba que el codigo maneja una excepcion; un puerto muerto prueba que la excepcion <b>ocurre</b>
- * por donde se cree.
+ * nadie escucha</b>, {@code PUERTO_QUE_NADIE_ESCUCHA}. Es el mismo mecanismo con que P5B midio
+ * «rentas calcula con normativa apagado», y el motivo es el mismo: un doble que lanza prueba que el
+ * codigo maneja una excepcion; un puerto muerto prueba que la excepcion <b>ocurre</b> por donde se
+ * cree.
+ *
+ * <p>Hasta #59 ese puerto se sacaba abriendo un {@code ServerSocket(0)} y cerrandolo, y eso no
+ * garantizaba que nadie escuchara: el porque, medido, esta en el javadoc de la constante.
  *
  * <p>Y se cobra contra PostgreSQL de verdad, como {@code kamayuk_app}: el recibo, la orden marcada
  * y el evento tienen que caer en la MISMA transaccion, y eso no se puede demostrar contra un doble.
@@ -145,7 +147,7 @@ class CobrarConElOrigenApagadoTest {
         ClienteHttpDelSistemaDeOrigen cliente =
                 new ClienteHttpDelSistemaDeOrigen(
                         new tools.jackson.databind.json.JsonMapper(),
-                        Map.of("rentas", "http://127.0.0.1:" + unPuertoQueNadieEscucha()),
+                        Map.of("rentas", "http://127.0.0.1:" + PUERTO_QUE_NADIE_ESCUCHA),
                         CredencialDeServicio.fija(""));
         alerta = new AlertaEnMemoria();
         entregar =
@@ -158,17 +160,33 @@ class CobrarConElOrigenApagadoTest {
     }
 
     /**
-     * Un puerto que nadie escucha.
+     * El puerto 1: fuera del rango efimero, asi que ningun {@code ServerSocket(0)} de esta JVM
+     * puede quedarselo.
      *
-     * <p>Se abre uno del sistema, se lee su numero y se cierra. Es la forma mas fiel de «el sistema
-     * de origen no esta»: inventar un numero corre el riesgo de acertar con algo que si escucha en
-     * la maquina de quien corra la prueba, y entonces la prueba mediria otra cosa.
+     * <p><b>Hasta #59 aqui habia un metodo que abria un {@code ServerSocket(0)}, leia su numero y
+     * lo cerraba</b>, y su javadoc lo defendia asi: «Es la forma mas fiel de "el sistema de origen
+     * no esta": inventar un numero corre el riesgo de acertar con algo que si escucha en la maquina
+     * de quien corra la prueba, y entonces la prueba mediria otra cosa». <b>Lo medido dice lo
+     * contrario</b>: ese riesgo lo tenia justamente el puerto derivado. Al cerrarse vuelve al
+     * reparto efimero, y este modulo levanta en la misma JVM otros cuatro servidores de mentira que
+     * piden el suyo con {@code ServerSocket(0)} ({@code ClienteHttpDelBuzonDeIdentidadTest}, {@code
+     * ElTokenDeServicioTest}, {@code ConciliacionDeNDiasTest} y {@code
+     * UnPagoNoMuereSinCredencialTest}). Si uno se lo queda y contesta como el origen, «el origen
+     * esta apagado» es falso y las pruebas de abajo salen verdes sin medirlo; si contesta otra
+     * cosa, salen rojas sobre codigo correcto. Es el defecto que dejo {@code main} en rojo en la
+     * corrida 34446158130 desde {@code ClienteHttpDelBuzonDeIdentidadTest}, y que #58 cerro alli
+     * con esta misma constante.
+     *
+     * <p>Medido el 2026-09-13 en Linux con JDK 26.0.2.1 y el rango efimero 32768-60999, abriendo y
+     * cerrando {@code ServerSocket(0)} como lo hacia el metodo: el puerto derivado volvio a salir
+     * en la asignacion 4 389, 2 012 y 1 068 de tres corridas, y con el retomado la conexion al
+     * «puerto que nadie escucha» ABRE. El puerto 1 no salio en ninguna de 600 000 asignaciones —el
+     * menor fue el 32 769—, conectar a el da {@code ConnectException: Connection refused}, y
+     * abrirlo sin privilegios da {@code BindException: Permission denied}. O sea que el numero fijo
+     * no «acierta con algo que escucha» salvo que alguien lo abra a proposito y con privilegios, y
+     * el derivado acierta solo.
      */
-    private static int unPuertoQueNadieEscucha() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
-    }
+    private static final int PUERTO_QUE_NADIE_ESCUCHA = 1;
 
     @AfterAll
     static void cerrarBase() {
