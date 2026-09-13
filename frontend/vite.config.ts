@@ -1,54 +1,102 @@
-import { fileURLToPath } from "node:url";
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import process from 'node:process';
 
-/*
- * `caja-web` no habla con nadie.
+import tailwind from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+
+import { LO_QUE_PONE_EL_CONSUMIDOR } from './resolucion.ts';
+
+/**
+ * El empaquetado de `caja-web`, que es el de `rentas-web` con el prefijo de este sistema (#74).
  *
- * Aqui NO hay `server.proxy`, y no es un olvido: mientras esta interfaz no tenga backend,
- * un proxy declarado seria una invitacion a escribir la primera peticion sin que nadie lo
- * decida. La prohibicion esta ademas escrita como regla de ESLint, con su muestra.
+ * `base` es `/caja/` y no `/`: ADR-0030 §2 pone el sistema delante de la ruta, y el
+ * mismo Traefik sirve las cuatro interfaces. Con `base: '/'` el bundle pediria
+ * `/assets/…`, que en el cluster es de otro sistema — y el fallo no aparece en
+ * desarrollo, donde todo cuelga de la raiz.
  */
+
+/**
+ * A donde van las peticiones de la API en desarrollo.
+ *
+ * Por variable de entorno, con el Traefik de la plataforma en el puerto **8080** por omision: es el
+ * `${KAMAYUK_PUERTO_INGRESO:-8080}` de `infrastructure/despliegue/plataforma.compose.yaml`, medido
+ * al copiar este archivo de `rentas`, que todavia dice 8082. Quien levante el backend en otro sitio
+ * no tiene que editar este archivo para probar.
+ */
+const BACKEND = process.env.KAMAYUK_BACKEND ?? 'http://localhost:8080';
+
+/**
+ * La raiz de la API de este sistema. Tiene que ser la misma que `PREFIJO` de `api/cliente.ts` y que
+ * `Api.RAIZ` del backend, y que lo sea lo comprueba `verificaciones/camino-a-la-api.test.ts`.
+ */
+const RAIZ_DE_LA_API = '/caja/api/v1';
+
 export default defineConfig({
-  /*
-   * La interfaz se sirve bajo `/caja`, y esto es la mitad que le toca a Vite.
+  base: '/caja/',
+  /**
+   * Tailwind v4, **desde #90**.
    *
-   * La otra mitad es el `stripPrefix` del `IngressRoute` (#17), y **no son alternativas**: las
-   * cuatro combinaciones las midio #17 contra el nginx real de `nginx:1.31.4-alpine` con dos
-   * `dist/` distintos, y solo la ultima funciona.
-   *
-   *   - `base: "/"` sin quitar el prefijo → nginx recibe `/caja/assets/index-<huella>.js`, no
-   *     encuentra el archivo, cae en el `try_files` y contesta **200 text/html** con el
-   *     `index.html` dentro. El navegador rechaza el modulo por su tipo y la pantalla queda en
-   *     blanco, sin un solo error en el servidor: un 200 que miente.
-   *   - `base: "/"` quitando el prefijo → nginx sirve bien lo que le llega, pero el navegador
-   *     pide `/assets/...` **a la raiz del dominio**, que `PathPrefix(/caja)` no casa.
-   *   - `base: "/caja/"` sin quitar el prefijo → el mismo 200 que miente.
-   *   - `base: "/caja/"` **quitando el prefijo** → correcto: HTML, JS, PNG y recarga en
-   *     `/caja/recibos`.
-   *
-   * Con la barra final: `import.meta.env.BASE_URL` vale exactamente esta cadena, y quien la use
-   * concatena sin anadir ninguna. Que este valor y el `stripPrefix` no se puedan separar lo
-   * vigila `infrastructure/verificaciones/descriptor.test.ts`, que ademas exige que no quede en
-   * `src/` ninguna ruta absoluta a la raiz del dominio: Vite reescribe el `base` en el
-   * `index.html` y en los recursos importados, pero **no dentro de un literal de JavaScript**.
+   * No estaba antes y no podia estar: su *preflight* normaliza margenes, tipografia y filos de
+   * todo el documento, y la V6 —3 446 lineas de CSS escritas a mano— se apoyaba en los valores
+   * por omision del navegador. Encenderlo con las dos interfaces vivas le habria cambiado la cara
+   * a la que se estaba sirviendo. Por eso la guarda de #91 compila la hoja DENTRO de la prueba: se
+   * podia medir que los tokens llegan al CSS sin aplicarselo a nadie.
    */
-  base: "/caja/",
-  plugins: [react()],
+  plugins: [tailwind(), react()],
+  /**
+   * **UNA sola copia de lo que los paquetes enlazados dan por puesto.**
+   *
+   * La lista NO se escribe: se deriva de las `peerDependencies` de cada `@kamayuk/*` enlazado.
+   * El porque entero —con los dos rojos que costo, `Cannot read properties of null (reading
+   * 'useId')` en local y `Cannot find module 'react'` en CI— esta en `resolucion.ts`.
+   */
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    dedupe: [...LO_QUE_PONE_EL_CONSUMIDOR],
   },
-  server: { port: 5181, strictPort: false },
-  build: { target: "es2022" },
-  test: {
-    // `jsdom` para todo, incluida la prueba que linta las muestras: en Vitest el entorno del
-    // navegador no quita los modulos de Node, asi que un solo entorno evita partir la suite.
-    environment: "jsdom",
-    globals: true,
-    // Sin esto, `import "@/ds/global.css"` desde una prueba no inyecta nada y la prueba de los
-    // tokens mediria un documento sin estilos: verde, y sin haber verificado nada. Con `css`
-    // encendido es Vite quien resuelve la cadena de `@import`, o sea la misma que se despliega.
-    css: true,
-    include: ["verificaciones/**/*.test.{ts,tsx}"],
+  /**
+   * El camino a la API en desarrollo, y **por que hace falta uno** (I-1, AC4).
+   *
+   * <h2>No es comodidad: es la unica via, y esta medido</h2>
+   *
+   * El backend **no publica ninguna cabecera `Access-Control-Allow-Origin`** —cero
+   * `CorsConfiguration` y cero `@CrossOrigin` en todo `backend/`—, asi que una peticion de
+   * `http://localhost:5181` a `http://localhost:8080` la bloquea el navegador antes de que
+   * nadie la lea. La unica salida sin tocar el backend es que todo salga del **mismo origen**:
+   * la pagina y la API por el puerto de Vite, y Vite reenviando a Traefik.
+   *
+   * <h2>Y sin esto el fallo no parece un fallo</h2>
+   *
+   * Sin `server.proxy`, `/caja/api/v1/...` lo atiende el propio servidor de Vite, que para
+   * cualquier ruta desconocida devuelve el `index.html` de la aplicacion con un **200**. La
+   * pantalla pide JSON y recibe HTML con un codigo de exito: no un error, una pagina. Es el
+   * modo de fallo que `datos/servidas.ts` de `rentas` llevaba escrito como motivo para no
+   * encender ninguna ruta.
+   *
+   * `rewrite` no hace falta y por eso no esta: Traefik enruta por `PathPrefix(/caja/api/v1)`, o sea
+   * que la ruta que sale de aqui es exactamente la que el backend espera. Reescribirla seria
+   * quitarle el prefijo por el que se enruta.
+   */
+  server: {
+    /**
+     * **5181, y estricto.** Es el puerto que `caja` documenta desde su primera interfaz, y deja correr
+     * `rentas` (5173) al lado. `strictPort` porque si Vite se mudara en silencio al 5182, Keycloak
+     * rechazaria el `redirect_uri` —el realm admite `localhost:5181`, no el siguiente libre— y el
+     * sintoma seria un «Invalid parameter: redirect_uri» que no nombra el puerto.
+     */
+    port: 5181,
+    strictPort: true,
+    proxy: {
+      [RAIZ_DE_LA_API]: {
+        target: BACKEND,
+        changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    outDir: 'dist',
+    // Que el bundle sea reproducible importa mas que su tamano: la imagen se etiqueta con
+    // el `sha` del repositorio (D), asi que dos construcciones del mismo `sha` tienen que
+    // dar el mismo contenido.
+    sourcemap: true,
   },
 });
