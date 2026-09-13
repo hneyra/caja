@@ -15,9 +15,12 @@ import java.util.List;
  *
  * <p>Cual es su parte no se elige a ojo: es <b>el conjunto de {@code acceso} que sus propios
  * endpoints declaran</b> con {@code @RequiereAcceso}. Y eso no se deja a la buena memoria — {@code
- * CatalogoDelSistemaTest} recorre {@code src/main}, junta los valores de la anotacion y exige que
- * sean exactamente estos. Una opcion de mas seria un permiso que nadie puede usar; una de menos,
- * una pantalla a la que no se le puede dar permiso, que es el defecto que RF-122 existe para
+ * CatalogoDelSistemaTest}, en {@code kamayuk-caja-aplicacion}, lee la anotacion del <b>bytecode</b>
+ * de todas las clases de produccion y exige que sean exactamente estos. Hasta #74 leia el texto
+ * fuente y solo veia los literales: los cuatro accesos que {@code ReciboController} y {@code
+ * RecaudacionController} escriben como constante no estaban aqui, y sus rutas daban 403 a todo el
+ * mundo con la prueba en verde. Una opcion de mas seria un permiso que nadie puede usar; una de
+ * menos, una pantalla a la que no se le puede dar permiso, que es el defecto que RF-122 existe para
  * impedir.
  *
  * <p>El nombre y el modulo estan transcritos de {@code
@@ -42,7 +45,16 @@ public final class CatalogoDelSistema {
                             "Tesoreria",
                             "caja_tasas",
                             "Caja de tasas y derechos administrativos"),
-                    new Opcion("TESORERIA", "Tesoreria", "cierre_caja", "Cierre y arqueo de caja"));
+                    new Opcion("TESORERIA", "Tesoreria", "duplicado_recibo", "Duplicado de recibo"),
+                    new Opcion("TESORERIA", "Tesoreria", "anulacion_recibo", "Anulacion de recibo"),
+                    new Opcion("TESORERIA", "Tesoreria", "cierre_caja", "Cierre y arqueo de caja"),
+                    new Opcion(
+                            "TESORERIA",
+                            "Tesoreria",
+                            "avance_recaudacion",
+                            "Avance de recaudacion"),
+                    new Opcion(
+                            "TESORERIA", "Tesoreria", "recaudacion_area", "Recaudacion por area"));
 
     /** Las opciones de este sistema, en el orden del catalogo del manual. */
     public static List<Opcion> opciones() {

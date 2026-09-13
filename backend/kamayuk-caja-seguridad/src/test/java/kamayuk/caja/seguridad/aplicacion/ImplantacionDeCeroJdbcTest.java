@@ -113,7 +113,7 @@ class ImplantacionDeCeroJdbcTest {
 
     @Test
     @DisplayName(
-            "AC-2: de una base vacia sale un administrador que puede abrir las tres opciones de"
+            "AC-2: de una base vacia sale un administrador que puede abrir las siete opciones de"
                     + " esta caja, con sus siete privilegios, y NINGUNA fila la escribio la siembra")
     void unaImplantacionDeCero() throws SQLException {
         String ubigeo = "209911";
@@ -145,7 +145,7 @@ class ImplantacionDeCeroJdbcTest {
                                 + " lo que se concedio en otra parte]")
                 .isEqualTo(codigos().size());
 
-        // Y lo que decide de verdad: el guardia de produccion contesta que si, a las tres opciones
+        // Y lo que decide de verdad: el guardia de produccion contesta que si, a las siete opciones
         // por los siete privilegios. Es lo que le va a preguntar la primera peticion.
         assertThat(loQueElGuardiaLeNiega(arnes.guardia(), municipalidad, ADMINISTRADOR))
                 .as(
@@ -164,10 +164,10 @@ class ImplantacionDeCeroJdbcTest {
                 .as("lo que SI siembra la implantacion: el catalogo de este sistema")
                 .isEqualTo(codigos().size());
         assertThat(contar(municipalidad, "identidad_evento_aplicado", "true"))
-                .as("los veinte de la corriente, ajenos incluidos: un ajeno tambien se acusa")
+                .as("todos los de la corriente, ajenos incluidos: un ajeno tambien se acusa")
                 .isEqualTo(buzon.total());
         assertThat(buzon.lecturas)
-                .as("una pagina con los veinte y una segunda vacia, que es la que para la corrida")
+                .as("una pagina con todos y una segunda vacia, que es la que para la corrida")
                 .isEqualTo(2);
     }
 
@@ -181,13 +181,18 @@ class ImplantacionDeCeroJdbcTest {
         long municipalidad = idDe(ubigeo);
         long usuariosTrasLaPrimera = contar(municipalidad, "usuario", "true");
 
-        // Un segundo despliegue, con el MISMO buzon: los veinte ya se acusaron, asi que no sirve
+        // Un segundo despliegue, con el MISMO buzon: todos ya se acusaron, asi que no sirve
         // ninguno. La copia tiene que seguir en pie por si sola.
         new Arnes(ubigeo, buzon).implantacion().run(new DefaultApplicationArguments());
 
         assertThat(contar(municipalidad, "usuario", "true")).isEqualTo(usuariosTrasLaPrimera);
         assertThat(contar(municipalidad, "acceso", "true")).isEqualTo(codigos().size());
-        assertThat(buzon.total()).isEqualTo(20);
+        // 17 que no dependen del catalogo —tres de la ficha del administrador, cuatro permisos
+        // ajenos, el grupo del buzon y su permiso, y las cuatro cuentas con sus cuatro
+        // afiliaciones—
+        // mas un permiso por cada opcion de esta caja. Eran 20 con tres opciones; se compone para
+        // que la cifra no vuelva a quedarse atras cuando el catalogo cambie (#74).
+        assertThat(buzon.total()).isEqualTo(17 + codigos().size());
     }
 
     // ------------------------------------------------------------------

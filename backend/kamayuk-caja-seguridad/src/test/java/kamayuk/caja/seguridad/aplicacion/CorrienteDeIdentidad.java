@@ -104,7 +104,7 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
             eventos.add(permiso(++secuencia, 1, GRUPO_DE_ADMINISTRACION, "caja", codigo, creadoEn));
         }
         // 3. Y los del resto del catalogo unido, que son de otros sistemas: en una implantacion de
-        //    verdad son la inmensa mayoria —154 de las 157 opciones no son de esta caja—.
+        //    verdad son la inmensa mayoria —154 de las 161 opciones no son de esta caja—.
         eventos.add(
                 permiso(
                         ++secuencia,
