@@ -77,8 +77,8 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | Que el artefacto se declare maqueta y no invente a nadie | `yarn maqueta` | `frontend/`, con `yarn build` hecho. No necesita servidor ni Chromium |
 | Que el nginx que se despliega sirva **con y sin** ingreso delante | `yarn sin-traefik` | `frontend/`, con `yarn build` hecho y Docker —o un nginx ya levantado en `CAJA_NGINX`—. Sin ninguno de los dos no se omite: sale con codigo 2 |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
-| Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml up -d --build --wait` | la raíz |
-| Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait` | la raíz |
+| Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml --env-file ../infrastructure/despliegue/.env up -d --build --wait` | la raíz |
+| Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml --env-file ../infrastructure/despliegue/.env up -d --build caja-interfaz --wait` | la raíz |
 | Lo que hay que pasar antes de un PR | `./gradlew build verificarAislamiento verificarArquitectura` · `yarn verificar` (los **dos**: `infrastructure/` y `frontend/`) | los tres |
 
 ## Las dos frases que gobiernan todo lo demás
