@@ -18,9 +18,13 @@
  *
  * <p>No hay pantallas de administracion de seguridad. Las once escrituras de grupos, usuarios,
  * miembros y permisos viven en <b>{@code identidad}</b>, que es el dueño de la autorizacion desde
- * ADR-0039 (y hasta la etapa 4 de aquel ADR, tambien en {@code rentas}). Aqui hay tres cosas: quien
- * <b>lee</b> la copia para autorizar, quien la <b>siembra</b> al implantar la municipalidad, y
- * —desde la etapa 4— quien la <b>mantiene</b>: el consumidor del buzon de {@code identidad}.
+ * ADR-0039 (y hasta la etapa 4 de aquel ADR, tambien en {@code rentas}). Aqui hay cuatro cosas:
+ * quien <b>lee</b> la copia para autorizar; quien la <b>siembra</b> al implantar la municipalidad;
+ * desde la etapa 4, quien la <b>mantiene</b> —el consumidor del buzon de {@code identidad}—; y
+ * desde ADR-0042, quien la <b>publica</b>: las cinco lecturas de {@code
+ * kamayuk.caja.seguridad.infraestructura.web} con las que la interfaz de esta caja compone su
+ * sesion sin preguntarle a {@code rentas}. Las cinco declaran {@code SESION_PROPIA} y ninguna
+ * escribe; la matriz de {@code /seguridad/sesion/permisos} usa la precedencia del comprobador.
  *
  * <h2>Como se sincroniza la copia, y que pasa mientras esta desatrasada (ADR-0039, etapa 4)</h2>
  *
