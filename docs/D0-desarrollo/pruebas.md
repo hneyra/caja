@@ -11,7 +11,7 @@
 | `yarn verificar` (en `frontend/`) | `caja-web`: ESLint con sus muestras, `tsc` y Vitest | nada | **634 pruebas** en 20 archivos |
 | `yarn build` (en `frontend/`) | Que el artefacto que se despliega se construye | nada | 70 módulos |
 | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | Lo que un emulador de DOM **no puede decir** | Chromium y un servidor levantado | §7 |
-| `node docs/00-gobierno/verificar-las-muestras-del-registro.mjs` | Que la guarda de #711 muerde y no muerde de más | nada | **7 muestras** desde #39 |
+| `node docs/00-gobierno/verificar-las-muestras-del-registro.mjs` | Que la guarda de #711 muerde y no muerde de más: que la **fila** se exija, y —desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165)— que el cierre declarado sea uno que **GitHub entienda** | nada | **13 muestras** desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165) |
 | `node despliegue/verificar-el-compose.mjs` | Que `despliegue/compose.yaml` declara los cuatro servicios, el grafo de arranque entero y las siete variables que exige del `.env` | **Compose** (no un demonio) | **27 afirmaciones** |
 
 **`yarn verificar` son dos comandos distintos**, y los dos hacen falta antes de un PR: el de
