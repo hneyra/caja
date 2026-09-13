@@ -2,10 +2,11 @@
 
 | Campo | Valor |
 |---|---|
-| Estado | **Propuesto** |
-| Fecha | 2026-09-12 |
-| Decide | `caja` |
+| Estado | **Aceptado** — la alternativa (1), acotada a lecturas |
+| Fecha | 2026-09-12 (propuesto) · 2026-09-13 (aceptado) |
+| Decide | `caja`, por decisión de la dirección en [`caja`#74](https://github.com/hneyra/caja/issues/74) |
 | Nace de | [`caja`#66](https://github.com/hneyra/caja/issues/66), sub-issue de [`infrastructure`#124](https://github.com/hneyra/infrastructure/issues/124) |
+| Paso 1 cumplido por | [ADR-0042](ADR-0042-la-ventanilla-lee-su-propia-copia.md) |
 
 ## Contexto
 
@@ -49,9 +50,20 @@ backend.
 
 ## Decisión
 
-**PENDIENTE.** Este ADR no la toma: la plantea con su coste para que se tome.
+> **Aceptado el 2026-09-13 con la alternativa (1), acotada a lecturas** ([`caja`#74](https://github.com/hneyra/caja/issues/74)).
+> La ventanilla se reconstruye con el método y el stack de `rentas-web` —la puerta PKCE, el
+> catálogo filtrado por los permisos de la sesión y pantallas que leen— y **en esta entrega no
+> escribe**: cobrar, cerrar el turno y anular quedan declaradas y no se llaman. Lo que la
+> alternativa (1) pedía releer antes está contestado en
+> [ADR-0042](ADR-0042-la-ventanilla-lee-su-propia-copia.md): la interfaz no habla con `rentas`
+> para nada, así que «`rentas` apagado» no la toca.
+>
+> Hasta ese día la decisión estaba **PENDIENTE**, y el texto de abajo es el que la planteaba. Se
+> deja tal cual: el orden que fija sigue siendo el que se cumple.
 
-Lo que sí decide —y esto sí es una decisión— es **el orden**, porque el daño no está en
+Este ADR no la tomaba: la planteaba con su coste para que se tomara.
+
+Lo que sí decidía —y esto sí es una decisión— es **el orden**, porque el daño no está en
 ninguna de las piezas sino en su secuencia:
 
 > **La `IngressRoute` de `prod` se retira la última, y sólo cuando la pantalla autentique y
