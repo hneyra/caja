@@ -38,9 +38,12 @@
 #  exista, entra en el compose de su sistema»—, y `caja-web` existe desde #3, con
 #  su imagen publicada desde #16 y su descriptor desde #17. Entra.
 #
-#  LO QUE ESE SERVICIO NO HACE, que es la mitad importante: no habla con el
-#  backend. No tiene `depends_on`, no reenvia nada y no lee ni una variable de
-#  este compose. El motivo largo esta en su servicio.
+#  Y DESDE #74 ES OTRO FRONTEND: la maqueta V6 se retiro y la interfaz se rehizo
+#  con el stack de `rentas-web`, sobre `../kamayuk-lib`. Habla con su backend —solo
+#  con el suyo, ADR-0042—, pero lo hace el NAVEGADOR y a traves de Traefik: el
+#  contenedor sigue sin `depends_on`, sin reenviar nada y sin leer una variable de
+#  este compose. Por eso el backend se estrecha a `/caja/api/v1` y la interfaz se
+#  queda con `/caja`, cada una con su prioridad.
 # ============================================================================
 
 name: kamayuk-caja
@@ -231,8 +234,21 @@ services:
       # Su prefijo, y SOLO el suyo. Reclamar el de otro no falla: se lo queda, y
       # las peticiones dejan de llegar a su dueno. Es la misma prohibicion (a) que
       # `descriptor/auditoria.ts` aplica en el cluster.
+      #
+      # DESDE #74 EL BACKEND SE QUEDA SOLO CON `/caja/api/v1`, como en `rentas`.
+      # Hasta entonces reclamaba `/caja` entero y la interfaz no tenia etiquetas:
+      # se entraba a ella por su puerto. Ahora la interfaz va detras de Traefik
+      # bajo `/caja`, y dos enrutadores con el mismo prefijo no dan error: se lo
+      # reparten.
+      #
+      # La PRIORIDAD va escrita. Traefik v3 ordena por longitud de la regla cuando
+      # nadie la declara, y `/caja/api/v1` es mas larga que `/caja`, asi que hoy
+      # saldria bien POR ACCIDENTE. El fallo al reves no grita: la API la
+      # contestaria el nginx, cuyo `try_files` devuelve el `index.html` con un
+      # **200**, y la pantalla recibiria HTML donde espera JSON.
       - traefik.enable=true
-      - traefik.http.routers.caja.rule=PathPrefix(`/caja`)
+      - traefik.http.routers.caja.rule=PathPrefix(`/caja/api/v1`)
+      - traefik.http.routers.caja.priority=20
       - traefik.http.services.caja.loadbalancer.server.port=8080
     healthcheck:
       # `/actuator/health` y no `/actuator/health/liveness`: aqui esta sonda
@@ -298,53 +314,52 @@ services:
   caja-interfaz:
     build:
       # El contexto es `frontend/` y no la raiz, al reves que los tres de arriba:
-      # este `Dockerfile` no tiene ni un `COPY` que salga de ahi, y el
-      # `.dockerignore` que acota el contexto —`frontend/.dockerignore`— solo se
-      # aplica desde la raiz del contexto. El de la raiz excluye `frontend/` entero.
+      # el `.dockerignore` que lo acota —`frontend/.dockerignore`— solo se aplica
+      # desde la raiz del contexto, y el de la raiz excluye `frontend/` entero.
       context: ../frontend
+      # Y desde #74, el clon hermano por un CONTEXTO CON NOMBRE, como en `rentas`:
+      # `frontend/package.json` declara las librerias comunes como `link:` a
+      # `../../kamayuk-lib`. Sin esta clave, `COPY --from=kamayuk-lib` no es ni una
+      # etapa ni un contexto declarado, y BuildKit se va a buscar la imagen
+      # `docker.io/library/kamayuk-lib:latest`. `despliegue/../../kamayuk-lib` y
+      # `frontend/../../kamayuk-lib` son el mismo directorio. Pide `docker compose`
+      # >= v2.17.0.
+      additional_contexts:
+        kamayuk-lib: ../../kamayuk-lib
       target: interfaz
     image: kamayuk-caja-interfaz:compose
-    # EL UNICO SERVICIO DE ESTE COMPOSE QUE PUBLICA UN PUERTO, y hace falta.
+    # EL PUERTO LLEVA EL SUFIJO DEL SISTEMA, y no es capricho: `KAMAYUK_PUERTO_INTERFAZ`
+    # a secas lo usa la interfaz del monolito con el MISMO `.env`, y con el delante el
+    # valor por omision de aqui no se aplicaria nunca (#39).
     #
-    # A los tres de arriba se entra por Traefik, bajo `/caja`. Aqui se entra por el
-    # puerto, y este servicio NO lleva etiquetas de Traefik: el de arriba ya reclama
-    # `PathPrefix(/caja)` y dos enrutadores con la misma regla no dan error, se lo
-    # reparten — o sea una peticion que a veces llega a quien no era.
-    #
-    # Y ENTRAR POR EL PUERTO ES ENTRAR SIN QUE NADIE QUITE EL PREFIJO. El
-    # `index.html` que `vite build` emite pide `/caja/assets/index-<huella>.js`
-    # —`vite.config.ts` declara `base: "/caja/"` desde #37—, y aqui no hay ningun
-    # `stripPrefix` delante. Hasta #42 eso no daba un error: `frontend/nginx.conf`
-    # servia solo en la raiz, la peticion caia en su `try_files` y contestaba **200
-    # `text/html`** con el `index.html` dentro. `curl -sf` en verde y navegador en
-    # blanco. Desde #42 ese archivo sirve tambien bajo `/caja/`, reescribiendo a la
-    # raiz, asi que las dos entradas —con ingreso delante y sin el— acaban en el
-    # mismo sitio; se mide levantando nginx de verdad, en
-    # `frontend/verificaciones/sin-traefik.mjs`.
-    #
-    # LA VARIABLE NO ES `KAMAYUK_PUERTO_INTERFAZ`, y no es capricho. Ese nombre ya
-    # lo usa la interfaz del monolito —`infrastructure/despliegue/compose.yaml:252`
-    # publica `${KAMAYUK_PUERTO_INTERFAZ:-8081}:8080`— y el `.env` es EL MISMO para
-    # todo esto: `infrastructure/despliegue/.env.ejemplo:86` trae
-    # `KAMAYUK_PUERTO_INTERFAZ=8081` y el README de ese directorio dice «El `.env`
-    # es el mismo de la plataforma». Reusar el nombre tendria dos efectos, los dos
-    # malos: con ese `.env` delante el valor por omision de aqui NO SE APLICA NUNCA
-    # —o sea que documentar `:8082` seria documentar algo falso—, y las dos
-    # interfaces pedirian el mismo puerto del anfitrion.
+    # PARA QUE SIRVE, existiendo Traefik (#74): para mirar el nginx SIN el ingreso
+    # delante. Hasta #74 era la unica entrada y su nginx servia dos —la raiz y
+    # `/caja/`, reescrita (#42)—; desde #74 la entrada de verdad es
+    # `http://localhost:8080/caja/`, por Traefik, y por este puerto `/caja/...` cae en
+    # el bloque de `frontend/nginx.conf` que contesta 404 diciendo que falta el
+    # `stripprefix`. Es exactamente lo que se quiere poder distinguir cuando algo no
+    # llega.
     ports:
       - "${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}:8080"
-    # SIN `healthcheck`, y tampoco es un olvido: `frontend/Dockerfile:126` ya
-    # declara el suyo —`wget --spider -q http://127.0.0.1:8080/`, en 127.0.0.1 y no
-    # `localhost` porque este nginx escucha solo en IPv4—, y Docker aplica el
-    # `HEALTHCHECK` de la imagen al contenedor, que es de donde `up --wait` lee la
-    # salud. **Eso ultimo NO se ha comprobado aqui**: esta maquina no tiene demonio
-    # y `docker compose config` no lo puede decir; es el comportamiento documentado
-    # y se anota como tal, no como medido.
+    labels:
+      # La otra mitad del reparto. Prioridad MENOR que la de la API, escrita: ver la
+      # nota del servicio `caja`. Y aqui SI se quita el prefijo, porque este nginx
+      # sirve en la raiz de su contenedor; que el paquete lo pida con el prefijo
+      # puesto lo garantiza `vite.config.ts` con `base: '/caja/'` (ADR-0030 §2).
+      - traefik.enable=true
+      - traefik.http.routers.caja-interfaz.rule=PathPrefix(`/caja`)
+      - traefik.http.routers.caja-interfaz.priority=10
+      - traefik.http.routers.caja-interfaz.middlewares=caja-quitar-prefijo
+      - traefik.http.middlewares.caja-quitar-prefijo.stripprefix.prefixes=/caja
+      - traefik.http.services.caja-interfaz.loadbalancer.server.port=8080
+    # SIN `healthcheck` aqui: `frontend/Dockerfile` declara el suyo, pidiendo
+    # `/index.html` por su nombre, y Docker aplica el `HEALTHCHECK` de la imagen al
+    # contenedor.
     #
-    # El monolito si lo escribe en su compose, y por un motivo concreto: su
-    # `frontend/Dockerfile` no trae ninguno (comprobado con `grep HEALTHCHECK`, que
-    # no encuentra nada alli). Copiarlo aqui seria un segundo sitio con la misma
-    # verdad, y el que envejece sin ponerse rojo.
+    # Y SIN `depends_on`: esta interfaz lee su API por el navegador, a traves de
+    # Traefik, y no depende de que el backend este levantado para servir sus
+    # archivos. Una dependencia inventada haria que el compose mintiera sobre el
+    # grafo que compara la guarda de `infrastructure`.
 
 # La red de la plataforma, QUE YA EXISTE. `external: true` es lo que impide que
 # este compose cree una segunda con el mismo nombre y deje a los servicios sin

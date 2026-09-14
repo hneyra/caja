@@ -8,9 +8,9 @@
 | `./gradlew verificarAislamiento` | Los cuatro roles, `FORCE ROW LEVEL SECURITY`, el `WITH CHECK`, que sin contexto la consulta **reviente en vez de devolver vacío**, y la trampa del superusuario | PostgreSQL 16 | **9 pruebas** |
 | `./gradlew build` | Lo anterior más Spotless | PostgreSQL 16 | |
 | `yarn verificar` (en `infrastructure/`) | El descriptor de despliegue: lint, tipos y pruebas | nada | **31 pruebas** |
-| `yarn verificar` (en `frontend/`) | `caja-web`: ESLint con sus muestras, `tsc` y Vitest | nada | **634 pruebas** en 20 archivos |
-| `yarn build` (en `frontend/`) | Que el artefacto que se despliega se construye | nada | 70 módulos |
-| `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | Lo que un emulador de DOM **no puede decir** | Chromium y un servidor levantado | §7 |
+| `yarn verificar` (en `frontend/`) | `caja-web`: ESLint con sus muestras, `tsc` y Vitest | `../kamayuk-lib` | **33 archivos** (#74) |
+| `yarn build` (en `frontend/`) | Que el artefacto que se despliega se construye | `../kamayuk-lib` | |
+| `yarn e2e` (en `frontend/`) | Lo que un emulador de DOM **no puede decir**, sobre el `dist/` servido | Chromium de Playwright | **37 caminos** (#74) |
 | `node docs/00-gobierno/verificar-las-muestras-del-registro.mjs` | Que la guarda de #711 muerde y no muerde de más: que la **fila** se exija, y —desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165)— que el cierre declarado sea uno que **GitHub entienda** | nada | **13 muestras** desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165) |
 | `node despliegue/verificar-el-compose.mjs` | Que `despliegue/compose.yaml` declara los cuatro servicios, el grafo de arranque entero y las siete variables que exige del `.env` | **Compose** (no un demonio) | **27 afirmaciones** |
 
@@ -114,161 +114,41 @@ Es la mitad del trabajo, y la que se anota en `CLAUDE.md`. La forma que funciona
 4. Si la rotura pasa en **verde**, eso es el hallazgo: la verificación no medía lo que parecía.
    Se escribe, no se descarta.
 
-## 7. La pantalla: `yarn verificar` y los cinco arneses
+## 7. La pantalla: `yarn verificar` y `yarn e2e`
+
+> **Este apartado describía `yarn verificar` de la maqueta V6 y sus cinco arneses (`paleta`,
+> `pegajosa`, `mirar`, `cero-red`, `prefijo`), y desde #74 no existe ninguno.** La interfaz se rehizo
+> con el stack de `rentas-web`, y con ella viajaron su forma de verificar y su arnés de Playwright.
+> Lo que se midió con los arneses retirados —la tipografía que movía la cabecera pegajosa, el
+> prefijo que el paquete no llevaba— está en el historial de este archivo y en `docs/agent/HISTORY.md`.
 
 ```bash
 cd frontend
 yarn install
-yarn verificar
+yarn verificar     # ESLint con sus muestras, tsc y Vitest
+yarn e2e:navegador # una vez: el Chromium de Playwright
+yarn e2e           # construye, sirve el dist/ en un puerto derivado del arbol, y recorre
 ```
 
-**No necesita nada más**: ni Docker, ni base de datos, ni el clon hermano, ni red. La salida real,
-ejecutada en este repositorio:
+**`yarn verificar` necesita `../kamayuk-lib` y nada más**: ni Docker, ni base, ni red. Varias guardas
+leen el backend de este mismo repositorio —`Api.java`, los controladores, `CatalogoDelSistema.java`
+y los `Resource` de sesión—, así que un cambio allí puede poner roja la pantalla, y por eso
+`frontend.yml` los nombra en su `paths:`.
 
-```
-$ yarn verificar
-$ yarn lint && yarn typecheck && yarn test
-$ eslint .
-$ tsc --noEmit
-$ vitest run
-…
- Test Files  21 passed (21)
-      Tests  648 passed (648)
-   Duration  81.23s
-```
+**Medir con Node 22**, que es el de CI y el de la imagen. Con Node 24 las pruebas del armazón de
+`@kamayuk/shell` fallan con `RequestInit: Expected signal … to be an instance of AbortSignal`, que no
+es un defecto de este código.
 
-**Lee el paréntesis.** Vitest imprime `Test Files 21 passed (21)`: el número de fuera es lo que
-pasó y el de dentro, lo que había. Con dos archivos que no cargan, escribe `2 passed (4)` —«2 de
-4» y aun así la palabra *passed*—, y ese caso ya se vio en #4.
+Las guardas que ocupan el lugar del artboard que caja no tiene:
 
-Y **`yarn verificar` en verde no implica que `yarn build` lo esté**: `tsc --noEmit` y Rollup no
-fallan por lo mismo. Por eso `frontend.yml` ejecuta los dos.
-
-### Los cinco arneses, y por qué no están en `yarn verificar`
-
-Cuatro miden lo que jsdom y happy-dom **no pueden decir**: esos dos calculan una cascada, no
-colocan nada. Allí «la lista mide 320 px» es una declaración leída y no un ancho medido, y
-`@media print` no existe. Así que hace falta un Chromium de verdad — y eso es lo que los deja fuera
-de la cadena que corre en cada cambio.
-
-El quinto, `yarn prefijo`, no necesita navegador y está fuera por otra razón: mide el **`dist/`**
-—que `yarn verificar` no construye— y lo que un servidor **contesta**. Es la capa donde apareció el
-defecto de #37: con `base` declarado y el escudo escrito como literal de JavaScript, el código
-compilaba, el `index.html` pedía `/caja/escudo-catacaos.png` y el paquete seguía diciendo
-`/escudo-catacaos.png`.
-
-**La aplicación se sirve bajo `/caja`**, no en la raíz (`base: "/caja/"`, #37), así que `CAJA_BASE`
-lleva el prefijo dentro. Por omisión los cinco apuntan a `http://localhost:5181/caja`.
-
-```bash
-# En una terminal
-cd frontend && yarn dev        # http://localhost:5181/caja/ — `/` contesta 302 hacia ahí
-
-# En otra
-cd frontend
-yarn paleta      # la paleta de comandos con solo el teclado
-yarn pegajosa    # la cabecera de las tablas se queda quieta al desplazar
-yarn mirar       # las cuatro secciones: cortes, arbol, teclado y papel
-yarn cero-red    # ni una peticion fuera de sus propios recursos, y todas bajo `/caja`
-```
-
-**`yarn prefijo` es el único que NO vale contra `yarn dev`**, y no falla en silencio: compara el
-`dist/` del disco con lo que el servidor entrega, y el servidor de desarrollo no conoce los nombres
-con huella —contestaría su `index.html` a todos ellos—. Se le apunta al artefacto servido, y si se
-le apunta al otro lo dice con esas palabras en vez de acusar al servidor de un defecto que no
-tiene:
-
-```bash
-cd frontend
-yarn build
-npx vite preview --port 5182 --strictPort &
-CAJA_BASE=http://localhost:5182/caja yarn prefijo
-```
-
-También valen contra el artefacto: `yarn build && yarn preview`, con `CAJA_BASE` apuntando a ese
-puerto **y al prefijo** — `CAJA_BASE=http://localhost:5182/caja`. Salidas reales, medidas contra
-el `dist/` servido con `vite preview` (sobre `yarn dev` las cifras de `cero-red` son otras: el
-servidor de desarrollo pide cada módulo por separado y abre el WebSocket de su recarga en
-caliente, que el arnés nombra y deja pasar sólo ahí):
-
-```
-$ yarn paleta
-la paleta se opera sólo con el teclado: abre, mueve, filtra, elige y cierra
-
-$ yarn prefijo
-la interfaz bajo `/caja`, medida en el artefacto y en el servidor
-  · `index.html`: 3 recursos propios, todos bajo `/caja`
-  · paquete (index-DGWPq6eb.js): 0 rutas absolutas fuera de `/caja`
-  · /caja/recibos → 200 text/html 1383 B (una recarga en una ruta profunda)
-  · /escudo-catacaos.png (raíz del dominio) → 404 text/plain
-el `dist/` no pide nada a la raíz del dominio, y `/caja/` sirve la aplicación con su tipo
-
-$ yarn cero-red
-20 peticiones propias · 10 a la tipografia declarada · 0 de conexion · 0 a terceros sin declarar
-  todas las propias cuelgan de `/caja`: si
-  recorrido (10 pasos): #panel · #recibos · #cajas · #tarifario · la paleta con una consulta ·
-    el lanzador de modulos · el menu de sesion · una ficha de recibo con sus cinco secciones ·
-    escribir en un campo · un cobro nuevo con su documento
-la aplicacion no habla con nadie: ni fetch, ni XHR, ni WebSocket, ni un tercero sin declarar
-
-$ yarn mirar
-las cuatro secciones, miradas · capturas y PDF en .capturas/
-  · Tab recorre 42 controles y vuelve al documento; 38 con el anillo rgb(82, 189, 239) y
-    4 campos con el suyo; 0 inalcanzables
-  · #panel en papel: fuera [barra, arbol, pestanas], 1500 caracteres, 0 desbordes, 2 hoja(s) A4
-la envoltura aguanta: los cortes, el arbol que empuja, el teclado y el papel
-```
-
-### `yarn pegajosa` salía rojo al azar hasta #35, y ya no: lo que se midió
-
-Conviene tenerlo escrito porque cuesta una tarde, y porque lo que este apartado decía antes —«si
-sale rojo, repítelo antes de creértelo»— es justo el hábito que había que quitar: un arnés que se
-reintenta por costumbre no vigila nada el día que la cabecera deje de pegarse de verdad.
-
-Lo que salía en la **primera** corrida sobre una caché de navegador fría:
-
-```
-#cajas: desplazado 62 px · cabecera y=240.84375→243.84375 · primera celda y=272.34375→215.34375
-la cabecera no se queda:
-  - #cajas: la cabecera se fue con la tabla — de y=240.84375 a y=243.84375 tras desplazar 62 px
-  - #cajas: el cuerpo no se movió lo que se desplazó — la primera celda subió 57 px de 62
-```
-
-**La causa es la tipografía, y se reproduce a voluntad.** `index.html` carga Source Sans 3 de
-Google Fonts; retrasando esas dos peticiones 200 ms con un `page.route`, el arnés de antes de #35
-da ese mismo rojo **todas las veces**, con los mismos tres números — el 62, el +3 y el 57. Los tres
-síntomas que el issue contaba por separado son **uno solo**: la webfont llega entre las dos medidas,
-la página se recompone, el anclaje de desplazamiento de Chromium empuja el contenedor a
-`scrollTop = 2` y las alturas de fila cambian.
-
-Lo que el arnés hace hoy, y por qué cada pieza está:
-
-| Pieza | Qué mata |
+| Guarda | Qué sostiene |
 |---|---|
-| Se afirma la **diferencia** de `scrollTop`, no el absoluto | El contenedor pre-desplazado: `2 → 62` es un delta de 60 |
-| Se mide la distancia al **borde del contenedor**, y las dos posiciones en la **misma** evaluación | Que la página se mueva bajo la medida, y que dos `boundingBox()` seguidos sean dos instantes |
-| Se espera a `load`, a `document.fonts.ready` y a que la huella se repita en tres marcos | Que se mida una maqueta que todavía va a cambiar |
-| Si aun así cambia entre las dos medidas, se **descarta el intento** y se repite | El rojo que miente: acusar a `position: sticky` de lo que hizo la tipografía |
+| `el-arbol-cuadra-con-el-backend.test.ts` | Hoja ↔ acceso del catálogo en los dos sentidos, y cada operación declarada existe en su controlador con ese acceso y ese verbo |
+| `la-frontera-de-caja.test.ts` | Ni la API de otro sistema, ni sus señas, ni su código, ni el vocabulario de `rentas` en lo que se sirve (ADR-0042) |
+| `solo-lee.test.ts` | El cliente sólo publica `leer`; nada compone un `metodo:`; ningún destino ofrece Guardar (ADR-0040) |
+| `la-cuenta-no-se-inventa.test.tsx` | La barra dice la cuenta que contesta el backend, o que no la conoce; ningún nombre de persona en `src/` (#44) |
+| `camino-a-la-api.test.ts` | Proxy de Vite, `PREFIJO` y `Api.RAIZ` dicen lo mismo; las lecturas de sesión existen con los campos que se leen |
+| `imagen-y-despliegue.test.ts` | El `Dockerfile`, el `nginx.conf` y `configuracion.js` tienen la forma que el descriptor y el compose esperan |
 
-Salida real, sobre el `dist/` servido:
-
-```
-#cajas · «arqueo» · sin estorbos: scrollTop 0→60 (delta 60) · cabecera a 0.0→0.0 px del borde ·
-  celda sube 60.0 px · tipografía puesta (loaded), quieta tras 3 marcos y 0.0 px
-#cajas · «arqueo» · contenedor a 2 px y página empujada 3 px: … · la página se movió 3.0 px en el
-  viewport y la medida no
-#cajas · «arqueo» · la maqueta creciendo 3 px entre las dos medidas: la maqueta se movió entre las
-  dos medidas (la celda pasó de 33.5 a 36.5 px dentro del contenido); intento 1 descartado
-#cajas: las 3 pasadas coinciden — delta 60, cabecera a 0.0 px del borde, celda +60.0 px
-```
-
-Esas tres pasadas por pantalla son **la autocomprobación**, y corren en cada ejecución: la segunda y
-la tercera ponen a propósito los estorbos del fallo —el contenedor a 2 px, la página empujada 3, la
-maqueta creciendo 3 entre las dos medidas—, comprueban que **han surtido efecto** y exigen que el
-veredicto no cambie. Si la maqueta se mueve y el arnés no lo descarta, lo dice con esa palabra: «la
-guarda … está **CIEGA**, y con ella este verde no significa nada».
-
-**Un rojo de `pegajosa` ya no se repite: se lee.** Veinte corridas seguidas contra el `dist/`
-servido salen en verde, y en una de las veinte la espera absorbió 8 px de maqueta moviéndose —lo
-dice la propia línea, «quieta tras 3 marcos y 8.0 px»—, que es la corrida que antes habría salido
-roja.
+**Lee el paréntesis.** Vitest imprime `Test Files 33 passed (33)`: el número de fuera es lo que pasó
+y el de dentro, lo que había. Con dos archivos que no cargan, escribe `31 passed (33)`.

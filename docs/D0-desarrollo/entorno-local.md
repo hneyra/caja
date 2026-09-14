@@ -55,7 +55,7 @@ De ahí salen las reglas del predial (NEG-05), el motor de reglas (ARQ-09) y los
 de columna. **No es una sugerencia:** el motor de reglas se escribió una vez sin poder leer esos
 documentos y salieron dos defectos estructurales, los dos en verde.
 
-## 3. Las tres formas de trabajar
+## 3. Las cuatro formas de trabajar
 
 Elige la más barata que sirva para lo que vas a tocar.
 
@@ -175,6 +175,33 @@ cd ../infrastructure/despliegue && ./levantar-todo.sh caja
 > se lee como desactualizada — se lee como instrucciones, y manda a `infrastructure` a buscar una
 > forma que ya está aquí.
 
+### D · La interfaz de la ventanilla
+
+La interfaz se rehizo en #74 con el stack de `rentas-web` —React, Vite, Tailwind y las librerías
+comunes de `../kamayuk-lib`, **que tiene que estar clonado al lado** igual que `infrastructure`— y
+se mira de dos maneras:
+
+```bash
+cd frontend
+yarn install
+yarn dev                     # sin nada levantado, en http://localhost:5181/caja/
+yarn dev:con-plataforma      # contra la plataforma y el backend de la sección C
+```
+
+**`yarn dev` a secas no necesita la plataforma**: `.env.development` pone
+`VITE_KAMAYUK_SIN_PLATAFORMA=true`, y el arranque siembra el catálogo y la cuenta con las capturas
+de `src/datos/seguridadMedida.ts` y `sesionMedida.ts` y no manda a nadie a Keycloak. La consola lo
+dice, porque una interfaz que se ve entera sin nada levantado es justo lo que alguien confunde con
+«el backend contestó». Las pantallas no piden datos: dicen por qué no los tienen.
+
+**`yarn dev:con-plataforma`** apaga la bandera: la puerta PKCE va a Keycloak (`localhost:8180`, el
+cliente `kamayuk-backoffice`, que admite `localhost:5181` desde `infrastructure`#184) y las lecturas
+salen por el `server.proxy` de Vite hacia Traefik (`localhost:8080`), porque el backend no publica
+CORS y la API tiene que ser del mismo origen. `KAMAYUK_BACKEND` cambia ese destino sin editar nada.
+
+**El 5181 es estricto**: si está ocupado, Vite no se muda a otro puerto, porque Keycloak rechazaría
+el `redirect_uri` con un «Invalid parameter» que no nombra el puerto.
+
 ## 4. Puertos
 
 | Puerto | Quién | Cuándo |
@@ -183,6 +210,7 @@ cd ../infrastructure/despliegue && ./levantar-todo.sh caja
 | 8080 | Traefik, el enrutado por prefijo | Compose |
 | 8180 | Keycloak | Compose |
 | 8025 | Mailpit, el buzón | Compose |
+| 5181 | `yarn dev` de la interfaz, estricto | Vite |
 
 **Los cuatro se pueden mover**, y a veces hay que hacerlo: `KAMAYUK_PUERTO_BASE`, `KAMAYUK_PUERTO_INGRESO`,
 `KAMAYUK_PUERTO_IDENTIDAD` y `KAMAYUK_PUERTO_CORREO` en el `.env`. Si mueves el de Keycloak, **mueve con

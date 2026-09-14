@@ -528,7 +528,11 @@ describe("#17 — la interfaz se despliega, y no se llama como el backend", () =
     // a un OOM sin serlo.
     for (const sonda of [c.livenessProbe, c.readinessProbe]) {
       expect(sonda).toBeDefined();
-      expect(sonda!.httpGet?.path, "la sonda pide la pantalla, no un puerto abierto").toBe("/");
+      // `/index.html` por su nombre (#74): `/` contestaria con el `try_files` aunque el `dist/` no
+      // se hubiera copiado. Es lo mismo que pide el `HEALTHCHECK` de la imagen.
+      expect(sonda!.httpGet?.path, "la sonda pide el archivo de la pantalla, no un puerto abierto").toBe(
+        "/index.html",
+      );
       expect(sonda!.timeoutSeconds).toBeGreaterThanOrEqual(3);
       expect(sonda!.timeoutSeconds).toBeLessThanOrEqual(5);
     }
@@ -641,40 +645,55 @@ describe("#17 — el ingreso partido en dos, y la precedencia escrita", () => {
   });
 });
 
-describe("#17 — la configuracion de nginx que se monta", () => {
-  /**
-   * El `ConfigMap` es **el archivo**, caracter a caracter.
-   *
-   * La copia vive en `src/nginx-de-la-interfaz.ts` y no se lee del disco porque un descriptor es
-   * una funcion pura; lo que la hace segura es esta comparacion, que sale roja en cuanto los dos
-   * se separen. Para que salga roja **tambien cuando lo unico que cambia es el archivo**,
-   * `infraestructura.yml` lo nombra en su `paths:`.
-   */
-  it("el ConfigMap lleva `frontend/nginx.conf` sin una coma de diferencia", () => {
+/**
+ * #74 — lo que se monta ya no es el `nginx.conf`: son las senias del ambiente.
+ *
+ * Hasta #74 el `ConfigMap` era una copia byte a byte de `frontend/nginx.conf`, montada sobre el
+ * `default.conf` de la imagen, y la prueba de aqui comprobaba que no se separaran. La interfaz se
+ * rehizo con la forma de `rentas`: el `nginx.conf` va dentro de la imagen y lo que cambia con el
+ * ambiente —el emisor OIDC— va en `configuracion.js`, que la interfaz lee de
+ * `window.__KAMAYUK_CAJA__` antes de arrancar.
+ */
+describe("#74 — las senias del ambiente que se montan", () => {
+  const guion = () => delDespliegue("ConfigMap")[0]!.data["configuracion.js"] ?? "";
+
+  it("un solo ConfigMap, con `configuracion.js` y nada del `nginx.conf`", () => {
     const configMaps = delDespliegue("ConfigMap");
     expect(configMaps).toHaveLength(1);
-    expect(configMaps[0]!.data["default.conf"]).toBe(delRepositorio("frontend/nginx.conf"));
+    expect(Object.keys(configMaps[0]!.data)).toEqual(["configuracion.js"]);
   });
 
-  /** Y se monta donde el `Dockerfile` copia el suyo, o el `include conf.d/*.conf` no lo recoge. */
-  it("y se monta sobre el `default.conf` de la imagen, con `subPath`", () => {
+  it("el guion fija el global que la interfaz lee, con el emisor PUBLICO del ambiente", () => {
+    const global = /window\.(__KAMAYUK_[A-Z]+__)/.exec(guion())?.[1];
+    expect(global).toBe("__KAMAYUK_CAJA__");
+    // Y es el mismo nombre que leen los dos lados de la interfaz: el guion vacio que viaja en la
+    // imagen y el modulo que resuelve las senias. Tres sitios que tienen que decir lo mismo.
+    expect(delRepositorio("frontend/public/configuracion.js")).toContain(`window.${global}`);
+    expect(delRepositorio("frontend/src/api/configuracion.ts")).toContain(`${global}?.[clave]`);
+
+    const senias = JSON.parse(guion().replace(/^[^=]+=\s*/, "").replace(/;\s*$/, "")) as Record<string, string>;
+    expect(senias).toEqual({
+      oidcRealm: ENTORNO.plataforma.emisor,
+      oidcCliente: "kamayuk-backoffice",
+      oidcAlcance: "openid profile",
+    });
+    // `plataforma.jwks` es una direccion de la red interna del cluster: el navegador no llega.
+    expect(guion()).not.toContain(ENTORNO.plataforma.jwks);
+  });
+
+  it("y se monta ENCIMA del que trae la imagen, con `subPath`, donde nginx lo sirve", () => {
     const pod = deploymentDeLaInterfaz().spec.template.spec;
     const configMap = delDespliegue("ConfigMap")[0]!.metadata.name;
     const montaje = (pod.containers[0]!.volumeMounts ?? [])[0];
 
-    expect(montaje?.mountPath).toBe("/etc/nginx/conf.d/default.conf");
-    expect(montaje?.subPath, "sin `subPath` el montaje tapa el directorio entero de conf.d").toBe(
-      "default.conf",
-    );
-    expect(delRepositorio("frontend/Dockerfile")).toContain(
-      "COPY nginx.conf /etc/nginx/conf.d/default.conf",
-    );
-
+    expect(montaje?.mountPath).toBe("/usr/share/nginx/html/configuracion.js");
+    expect(montaje?.subPath, "sin `subPath` el montaje tapa el `dist/` entero").toBe("configuracion.js");
     const volumen = (pod.volumes ?? []).find((v) => v.name === montaje?.name);
-    expect(
-      volumen?.configMap?.name,
-      "el volumen no apunta al ConfigMap que este descriptor emite",
-    ).toBe(configMap);
+    expect(volumen?.configMap?.name, "el volumen no apunta al ConfigMap que este descriptor emite").toBe(configMap);
+
+    // Y nginx lo sirve sin cache: un navegador que se quedara con el de otro ambiente mandaria al
+    // usuario a otro emisor.
+    expect(delRepositorio("frontend/nginx.conf")).toMatch(/location = \/configuracion\.js \{[^}]*no-store/);
   });
 });
 
@@ -839,7 +858,8 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
 
   /** El `base` que `vite.config.ts` declara. Sin declarar, Vite usa `/`. */
   function baseDeVite(): string {
-    const encaje = /^\s*base:\s*"([^"]*)"/m.exec(sinComentarios(delRepositorio("frontend/vite.config.ts")));
+    // Con comillas dobles o simples: la interfaz de #74 se escribe con las de `rentas`.
+    const encaje = /^\s*base:\s*["']([^"']*)["']/m.exec(sinComentarios(delRepositorio("frontend/vite.config.ts")));
     return encaje?.[1] ?? "/";
   }
 
@@ -869,39 +889,31 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
     return hallazgos;
   }
 
-  it("nginx sirve las dos entradas: la raiz y `/caja/`, que reescribe a la raiz", () => {
+  it("nginx sirve en la RAIZ, y `/caja/` contesta 404 nombrando el `stripPrefix` (#74)", () => {
     const conf = nginx();
 
-    // La entrada del CLUSTER: aqui llega lo que el `stripPrefix` ya limpio.
+    // Lo que llega del ingreso, con el prefijo ya quitado.
     expect(conf).toContain("root /usr/share/nginx/html;");
     expect(conf).toContain("location / {");
 
-    // La entrada de quien NO tiene un ingreso delante (#42). Se exige la forma exacta porque lo
-    // que la hace valer es que reescriba **a la raiz**: un `location /caja/` que sirviera por su
-    // cuenta seria un segundo camino, y dos caminos se separan.
-    expect(
-      conf,
-      "sin esto, `/caja/assets/...` cae en el `try_files` y sale 200 `text/html`: la pantalla en " +
-        "blanco del compose (#42)",
-    ).toMatch(/location \/caja\/ \{\s*rewrite \^\/caja\/\(\.\*\)\$ \/\$1 last;\s*\}/);
+    // Hasta #74 este nginx servia DOS entradas —la raiz y `/caja/`, reescrita (#42)— para que el
+    // puerto del compose sirviera sin nadie delante. Con #74 el compose pone a Traefik delante,
+    // como en `rentas`, y una ruta con el prefijo puesto pasa a ser la averia que es: el ingreso no
+    // quito el prefijo. Contesta 404 y lo dice, en vez de servir el `index.html` con un 200.
+    expect(conf, "`/caja/` volvio a reescribirse: dos entradas son dos caminos").not.toMatch(
+      /location \/caja\/ \{\s*rewrite/,
+    );
+    // `[\s\S]*?` y no `[^}]*`: el bloque abre un `types { }` vacio antes del `return`.
+    expect(conf).toMatch(/location \/caja\/ \{[\s\S]*?return 404 "[^"]*stripPrefix/);
 
-    // Y la propiedad que ata las dos entradas a un solo camino de servicio: **una** directiva
-    // `try_files` y **un** `location /assets/`. Es lo que impide el arreglo por copia, que es el
-    // que envejece: duplicar los bloques bajo el prefijo dejaria las dos rutas sirviendo bien hoy
-    // y con cabeceras distintas el dia que alguien toque una sola.
-    //
-    // Se cuentan DIRECTIVAS y no menciones —al principio de linea, que es donde nginx las lee—
-    // porque la cabecera de ese archivo las nombra al explicar por que hay una sola: contarlas a
-    // secas da 4 y la guarda se pondria roja por su propia prosa, que es la leccion del escaner
-    // del Panel (#10) y la del conteo del reenvio en ese mismo archivo.
-    expect(
-      (conf.match(/^\s*try_files\s/gm) ?? []).length,
-      "dos `try_files` son dos caminos de servicio que pueden separarse",
-    ).toBe(1);
+    // Un solo camino de servicio: DOS `try_files` —el de la pantalla, que cae al `index.html`, y el
+    // de los activos, que da 404— y un solo `location /assets/`. Se cuentan DIRECTIVAS al principio
+    // de linea y no menciones, porque la prosa del archivo las nombra.
+    expect((conf.match(/^\s*try_files\s/gm) ?? []).length).toBe(2);
     expect((conf.match(/^\s*location \/assets\/ \{/gm) ?? []).length).toBe(1);
 
-    // El middleware del ingreso NO se retira, aunque con lo de arriba sea redundante en efecto:
-    // ver el docblock de `ingreso()`.
+    // Y el middleware del ingreso es ahora IMPRESCINDIBLE, no redundante: sin el, todo lo que la
+    // interfaz pide cae en el 404 de arriba.
     const { interfaz } = rutasDelIngreso();
     expect((interfaz.middlewares ?? []).length).toBe(1);
   });
@@ -940,7 +952,13 @@ describe("#17 — el prefijo, la base de Vite y lo que nginx sirve, a la vez", (
    */
   it("desde #37 no queda ninguna, y el escaner lo dice habiendo mirado", () => {
     expect(absolutasEnSrc().map((a) => `${a.archivo}: ${a.ruta}`)).toEqual([]);
-    expect(cuantasFuentesDeLaInterfaz()).toBeGreaterThan(30);
+    // Que ha mirado: la interfaz de #74 tiene muchos menos archivos que la maqueta —las pantallas
+    // son dato y el marco es de la libreria—, asi que se exige encontrar las dos piezas que toda
+    // interfaz del producto tiene, y no un numero que dependia de la V6.
+    expect(cuantasFuentesDeLaInterfaz()).toBeGreaterThan(10);
+    const leidas = readdirSync(raizDeLaInterfaz(), { recursive: true, encoding: "utf8" });
+    expect(leidas).toContain("main.tsx");
+    expect(leidas).toContain("aplicacion.tsx");
   });
 });
 
@@ -1112,7 +1130,6 @@ describe("#42 — ningun archivo vivo dice que `vite.config.ts` no declara `base
   const ARCHIVOS = [
     "frontend/nginx.conf",
     "infrastructure/src/descriptor.ts",
-    "infrastructure/src/nginx-de-la-interfaz.ts",
     "despliegue/compose.yaml",
   ];
 
@@ -1139,6 +1156,6 @@ describe("#42 — ningun archivo vivo dice que `vite.config.ts` no declara `base
   });
 
   it("y `base` sigue declarado, que es la premisa de lo anterior", () => {
-    expect(/^\s*base:\s*"\/caja\/"/m.test(delRepositorio("frontend/vite.config.ts"))).toBe(true);
+    expect(/^\s*base:\s*["']\/caja\/["']/m.test(delRepositorio("frontend/vite.config.ts"))).toBe(true);
   });
 });

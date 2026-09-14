@@ -16,15 +16,15 @@ tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
 
 | Pieza | Estado |
 |---|---|
-| `infrastructure/` — el descriptor (ADR-0031 §2) | **Existe y verifica**: `yarn verificar` en verde —`Tests 31 passed (31)`—, sin Pulumi, sin token y sin cluster. Desde #17 declara tambien el `Deployment`, el `Service`, el `ConfigMap` de nginx y las **dos** rutas del `IngressRoute` de la interfaz |
+| `infrastructure/` — el descriptor (ADR-0031 §2) | **Existe y verifica**: `yarn verificar` en verde —`Tests 31 passed (31)`—, sin Pulumi, sin token y sin cluster. Desde #17 declara tambien el `Deployment`, el `Service` y las **dos** rutas del `IngressRoute` de la interfaz; desde #74 su `ConfigMap` ya no copia el `nginx.conf`: monta `configuracion.js` con las senias del ambiente |
 | `.github/workflows/` — su CI | **Existe**, con seis flujos: el descriptor, el frontend, las **dos barreras bloqueantes** del backend, la publicacion de imagenes, la guarda del registro y —desde #39— el compose |
 | `docs/30-arquitectura/adr/` | **Existe**, con 0 ADR propio(s) y su indice ⚠ ver la nota de abajo |
 | `backend/` — seis modulos, con el negocio dentro | **Existe desde P5D**: `kamayuk-caja-nucleo` es el contexto acotado entero, y a su lado el esquema, la plataforma, el dominio compartido, la seguridad (C-7) y la aplicacion que ensambla |
 | `backend/kamayuk-caja-esquema` — su esquema | **Esta aqui desde P5D**, con `V1__baseline.sql` (23 tablas, **cero extensiones**) y `V2__ordenes_de_cobro_y_outbox.sql` |
-| Su frontend (`caja-web`, ADR-0030 §1) | **Existe, y esta entero**: las cuatro pantallas, `Tests 634 passed (634)` en 20 archivos. **No se conecta al backend** — ver la seccion de abajo, que es la mitad importante |
+| Su frontend (`caja-web`, ADR-0030 §1) | **Rehecho en #74 con el stack de `rentas-web`** sobre `../kamayuk-lib`: puerta PKCE, catalogo filtrado por lo que la sesion puede abrir **segun la copia local de esta caja** (ADR-0042) y las siete hojas de Tesoreria. **Solo lee** (ADR-0040): cobrar, cerrar y anular estan declarados y no se llaman. La maqueta V6 sin red se retiro entera |
 | La imagen `ghcr.io/hneyra/kamayuk-caja-interfaz` | **Existe y se publica** desde #16, junto a `kamayuk-caja` y `kamayuk-caja-migrador`, etiquetadas con el `sha` de este repositorio |
 | `despliegue/compose.yaml` | **Cuatro servicios** desde #18: el migrador, la implantacion, el backend y `caja-interfaz`. Desde #39 **lo verifica alguien de este repositorio**: `node despliegue/verificar-el-compose.mjs`, con Compose de verdad y sin demonio |
-| Que la interfaz sea alcanzable bajo `/caja` | **Todavia NO.** Falta declarar `base` en Vite **y** arreglar un literal de `BarraGlobal.tsx`, las dos a la vez. Es el **#37**, y hasta entonces se mira por el puerto que publica el compose |
+| Que la interfaz sea alcanzable bajo `/caja` | **Si**, desde #37. Desde #74 el prefijo lo quita Traefik tambien en el compose, y el nginx de la imagen sirve en la raiz |
 | Lo que falta y vive en `infrastructure` | **Declarado, no descubierto tarde**: [`docs/00-gobierno/huecos-en-infrastructure.md`](docs/00-gobierno/huecos-en-infrastructure.md) |
 
 ## Por donde entrar
@@ -38,121 +38,50 @@ tributo**, y por eso sirve para cobrar un puesto de mercado o un nicho.
 ```bash
 cd frontend
 yarn install
-yarn dev          # el servidor de desarrollo, en http://localhost:5181/caja/
-yarn verificar    # ESLint (con sus muestras), tipos y Vitest
-yarn build        # el artefacto de produccion, en frontend/dist/
+yarn dev                  # http://localhost:5181/caja/, sin nada levantado: siembra el catalogo
+yarn dev:con-plataforma   # contra Keycloak (8180) y Traefik (8080), con login de verdad
+yarn verificar            # ESLint (con sus muestras), tipos y Vitest
+yarn build                # el artefacto de produccion, en frontend/dist/
+yarn e2e                  # Playwright contra el `dist/` servido
 ```
 
-**`yarn dev` no necesita backend, ni base de datos, ni Keycloak, ni la plataforma levantada.** Y no
-es que no le hagan falta *todavia*: es que **esta interfaz no habla con nadie**. Sus datos salen de
-`frontend/src/datos/`, copiados del artboard del diseño; `eslint.config.mjs` prohibe `fetch` en el
-codigo; `frontend/nginx.conf` no reenvia a ningun sitio —contar la directiva de reenvio en ese
-archivo da **cero**—; y el arnes `yarn cero-red` lo comprueba en un navegador de verdad. Es lo que
-hace cierto que la pantalla se dibuje en un municipio sin salida a internet, y es tambien lo que
-hay que cambiar el dia que lea un dato real (ver
-[`docs/00-gobierno/huecos-en-infrastructure.md`](docs/00-gobierno/huecos-en-infrastructure.md) §3).
+> **Esta seccion describia una maqueta que «no habla con nadie», y desde #74 es falso.** La interfaz
+> se rehizo con **el mismo stack y el mismo metodo que `rentas-web`** —React 19, Vite 7, Tailwind 4,
+> TanStack Query, i18next y Playwright— y consume `@kamayuk/{api,formato,sesion,shell,ui}` por
+> `link:` desde **`../kamayuk-lib`, que tiene que estar clonado al lado**. La maqueta V6, sus datos
+> copiados del artboard y sus siete arneses se retiraron enteros.
 
-**Y desde #44 lo dice la propia pantalla**, que es lo que separa servir una maqueta de servir el
-sistema: una banda permanente arriba del todo —en las cuatro secciones **y en el papel**—, los
-toast de las acciones que escribirian diciendo que **no escribieron nada**, y una ficha de sesion
-que **no inventa a ninguna persona**. Por lo mismo, el descriptor **no ruta esta interfaz en
-`prod`**: una cifra plausible y falsa copiada a un informe no la evita ninguna banda si el dominio
-es el de produccion. El `Deployment` y el `Service` siguen en su sitio; lo que cambia es a que
-ambiente llega su ruta.
+**Que habla, y con quien.** Con `/caja/api/v1` y con el emisor de Keycloak, y con nadie mas
+(ADR-0042): con `rentas` apagado la ventanilla sigue abriendo. Lo que la sesion puede abrir sale de
+cinco `GET` del backend de esta caja —`/seguridad/{modulos,accesos}` y
+`/seguridad/sesion{,/permisos,/municipalidad}`—, que leen la copia local de ADR-0039. **Solo lee**
+(ADR-0040): no hay un camino para escribir en `src/api/cliente.ts`, y lo vigilan
+`verificaciones/solo-lee.test.ts` y una barrera de `tsc`.
 
-La salida real de `yarn verificar`, ejecutado en este repositorio:
+**De donde sale el arbol.** Caja no tiene artboard, asi que las siete hojas salen de **sus accesos y
+sus controladores**: `verificaciones/el-arbol-cuadra-con-el-backend.test.ts` lee
+`CatalogoDelSistema.java` y los `*Controller.java` y exige que cada hoja sea un acceso, cada acceso
+una hoja, y cada operacion declarada exista con ese acceso y ese verbo. Las pantallas no piden datos
+todavia: dicen por que no los tienen.
 
-```
-$ yarn verificar
-$ yarn lint && yarn typecheck && yarn test
-$ eslint .
-$ tsc --noEmit
-$ vitest run
-…
- Test Files  22 passed (22)
-      Tests  664 passed (664)
-   Duration  81.23s
-```
-
-Y la de `yarn build`:
-
-```
-$ yarn build
-$ tsc -b && vite build
-vite v6.4.3 building for production...
-✓ 72 modules transformed.
-dist/index.html                   1.38 kB │ gzip:  0.76 kB
-dist/assets/index-DPIdrlRS.css    3.55 kB │ gzip:  1.43 kB
-dist/assets/index-DS_nv2HZ.js   293.14 kB │ gzip: 86.04 kB
-✓ built in 2.25s
-```
-
-**La interfaz se sirve bajo `/caja`**, y no en la raiz: `vite.config.ts` declara
-`base: "/caja/"` (#37), asi que `yarn dev` y `vite preview` contestan `302` a `/caja/` para
-cualquier peticion a `/`. Es la mitad que le toca a Vite; la otra es el `stripPrefix` del
-`IngressRoute` (#17), y **ninguna de las dos basta sola**.
-
-**Los siete arneses** miden lo que un emulador de DOM no puede decir —disposicion, foco real,
-impresion, peticiones de red y lo que el `dist/` lleva dentro—, y no entran en `yarn verificar`
-porque necesitan un servidor levantado o el artefacto construido (y cuatro de ellos, un
-Chromium). Se lanzan contra `yarn dev` o contra el
-`dist/` servido con `vite preview`, con `CAJA_BASE` apuntando al puerto **y al prefijo**
-(`CAJA_BASE=http://localhost:5182/caja`), y su detalle esta en
-[DEV-02 §7](docs/D0-desarrollo/pruebas.md).
-
-| Comando | Que mide |
-|---|---|
-| `yarn paleta` | La paleta de comandos con solo el teclado: abre, mueve, filtra, elige y cierra |
-| `yarn pegajosa` | Que la cabecera de las tablas de consulta se queda quieta **y pegada al borde** al desplazar, con la medida hecha en el marco del contenedor para que moverse la pagina no la descuadre (#35) |
-| `yarn mirar` | Las cuatro secciones: cortes, arbol, teclado y papel, con capturas y PDF |
-| `yarn cero-red` | Que no hay ni una peticion fuera de sus propios recursos y la tipografia declarada, y que **todas cuelgan de `/caja`** |
-| `yarn prefijo` | Que el `dist/` no pide nada a la raiz del dominio y que `/caja/` y `/caja/recibos` sirven la aplicacion **con su tipo**. No necesita Chromium, y **solo vale contra el `dist/` servido**: apuntado a `yarn dev` lo dice y sale |
-| `yarn sin-traefik` | Que el **nginx que se despliega** sirve las dos entradas —la raiz, que es lo que llega con el prefijo ya quitado por el ingreso, y `/caja/`, que es lo que llega cuando no hay nadie delante— con el mismo tipo, el mismo cuerpo y el mismo `Cache-Control` (#42). Necesita Docker, o un nginx que ya exista en `CAJA_NGINX`; sin ninguno de los dos **no se omite: sale con codigo 2 diciendo que no midio** |
-| `yarn maqueta` | Que el artefacto **se declara maqueta** —la banda de #44 viaja en el paquete y en la hoja, con su regla de `@media print`—, que **no nombra a nadie** («Cárdenas»: 0 apariciones, como I-1 de `rentas`) y que ningun toast afirma una escritura que nunca ocurre. No necesita Chromium ni servidor: le basta `yarn build` |
+**La cuenta no se inventa.** El nombre y la municipalidad de la barra los contesta el backend; con la
+cuenta desconocida para esta copia, la barra lo dice. Es lo que retiro #44, y ahora lo vigila
+`verificaciones/la-cuenta-no-se-inventa.test.tsx`.
 
 ### Levantarla como se despliega
 
 ```bash
-# La red `kamayuk-plataforma` tiene que EXISTIR antes: este compose la declara
-# `external: true` para no crear una segunda con el mismo nombre, asi que sin ella
-# Compose se niega. Es lo unico que `caja-interfaz` necesita de fuera.
-docker compose -f ../infrastructure/despliegue/plataforma.compose.yaml up -d --wait
-
-docker compose -f despliegue/compose.yaml up -d --build caja-interfaz --wait
-
-# La pantalla, bajo su prefijo (#42). La raiz tambien la sirve —es lo que le llega en el
-# cluster, con el prefijo ya quitado por el ingreso— pero lo que el `index.html` pide es esto:
-curl -sf http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/caja/
+cd ../infrastructure/despliegue && ./levantar-todo.sh identidad caja
+curl -sf http://localhost:8080/caja/     # por Traefik, que quita el prefijo
 ```
 
-Ese servicio construye `frontend/Dockerfile` y sirve `dist/` con nginx **sin root** (uid 101). **No
-declara `depends_on` del backend**, y esa ausencia es una afirmacion, no un descuido: el motivo
-largo esta escrito en el propio [`despliegue/compose.yaml`](despliegue/compose.yaml). Levantarlo
-**no arranca** el migrador, ni la implantacion, ni el backend, ni necesita la base ni Keycloak.
-
-> **Esos dos comandos no se ejecutaron**, y por una razon que no se disimula: la maquina donde se
-> escribio esto **no tiene Docker** —ni `podman`, ni `nerdctl`—. Lo que si se ejecuto es
-> `docker compose config` con el binario oficial, que no necesita demonio, y el nginx real de
-> `nginx:1.31.4-alpine` sirviendo este mismo `dist/` con este mismo `nginx.conf`. Está en el PR
-> de #18, con sus cifras.
-
-> **Desde #37 la interfaz es alcanzable bajo `/caja`, y desde #42 tambien por este puerto.**
-> `vite.config.ts` declara `base: "/caja/"`, asi que el `index.html` pide sus recursos bajo el
-> prefijo. En el cluster ese prefijo lo quita el `stripPrefix` del ingreso (#17); **aqui no hay
-> ningun Traefik delante**, y hasta #42 eso dejaba la pantalla en blanco: el `index.html` cargaba,
-> pedia `/caja/assets/index-<huella>.js`, y ese recurso caia en el `try_files` y contestaba **200
-> `text/html`** — `curl -sf` en verde y navegador en blanco.
->
-> `frontend/nginx.conf` sirve desde #42 **las dos entradas**: la raiz —lo que llega con el prefijo
-> ya quitado— y `/caja/`, que reescribe a la raiz. Medido contra el nginx real de
-> `nginx:1.31.4-alpine` con este `dist/`: por las dos entradas el paquete sale `200
-> application/javascript` de 293 135 B, la hoja `200 text/css` y el escudo `200 image/png`, con el
-> **mismo cuerpo y el mismo `Cache-Control`**; antes de #42, las tres salian `200 text/html` de
-> 1 383 B por la entrada con prefijo. Lo comprueba `yarn sin-traefik`.
->
-> Asi que la direccion que se abre en el navegador es
-> **`http://localhost:${KAMAYUK_PUERTO_INTERFAZ_CAJA:-8082}/caja/`** — la raiz tambien sirve la
-> aplicacion, porque es lo que el cluster necesita, y `/caja` redirige a `/caja/`.
+`caja-interfaz` construye `frontend/Dockerfile` con **`kamayuk-lib` como contexto con nombre**
+(`additional_contexts` en el compose, `--build-context` en CI) y sirve `dist/` con nginx **sin root**
+(uid 101) **en la raiz del contenedor**. Pedirle `/caja/` directamente contesta un 404 que nombra el
+`stripPrefix`: hay un solo camino, el del ingreso, igual en el compose que en el cluster. Las senias
+del ambiente —emisor, cliente y alcance— van en `configuracion.js`, servido con `no-store` y montado
+encima por el `ConfigMap` del descriptor. **No declara `depends_on` del backend**: el motivo esta en
+el propio [`despliegue/compose.yaml`](despliegue/compose.yaml).
 
 ## El descriptor
 

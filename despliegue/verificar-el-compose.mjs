@@ -75,7 +75,8 @@ const SERVICIOS = {
 /** El grafo ENTERO, y no solo el hueco de la interfaz. El orden de arranque es una
     afirmacion sobre la base de datos: el backend no puede atender antes de que el
     migrador haya terminado, y la implantacion no puede escribir en tablas que aun no
-    existen. `caja-interfaz` no depende de nadie porque no habla con nadie. */
+    existen. `caja-interfaz` no depende de nadie: sus archivos se sirven sin backend, y lo
+    que lee lo lee el NAVEGADOR por Traefik (#74, ADR-0042). */
 const DEPENDENCIAS = {
   'caja-migraciones': {},
   'caja-implantacion': { 'caja-migraciones': 'service_completed_successfully' },
@@ -252,6 +253,7 @@ function laFormaDelArchivo(config) {
   }
 
   elConsumidorDeIdentidad(config);
+  elRepartoDelPrefijo(config);
 
   const red = config.networks?.default;
   anotar(
@@ -287,6 +289,51 @@ function elConsumidorDeIdentidad(config) {
       + ` publicador. Lo que cambia en la etapa 5 es lo que cuesta no ponerla: la pasada del`
       + ` consumidor recibe 401, y la implantacion FALLA en vez de terminar callando`,
     `llega con valor «${entorno.KAMAYUK_IDENTIDAD_CREDENCIAL}» sin que nadie la haya puesto`,
+  );
+}
+
+/** El reparto de `/caja` entre la API y la interfaz, que es lo que #74 cambia (ADR-0030 §2).
+
+    Hasta #74 el backend reclamaba `/caja` entero y la interfaz no tenia etiquetas. Ahora son
+    dos enrutadores, cada uno con su prefijo y su prioridad escrita, y el `stripprefix` solo
+    en el de la interfaz. Dos enrutadores con el mismo prefijo no dan error: se reparten las
+    peticiones, y la API la contestaria a veces el nginx con un `index.html` y un 200. */
+function elRepartoDelPrefijo(config) {
+  const etiquetas = (nombre) => config.services?.[nombre]?.labels ?? {};
+  const api = etiquetas('caja');
+  const interfaz = etiquetas('caja-interfaz');
+
+  anotar(
+    api['traefik.http.routers.caja.rule'] === 'PathPrefix(`/caja/api/v1`)',
+    '«caja» enruta SOLO `/caja/api/v1`',
+    `enruta ${api['traefik.http.routers.caja.rule']}`,
+  );
+  anotar(
+    interfaz['traefik.http.routers.caja-interfaz.rule'] === 'PathPrefix(`/caja`)',
+    '«caja-interfaz» enruta `/caja`',
+    `enruta ${interfaz['traefik.http.routers.caja-interfaz.rule']}`,
+  );
+  const prioridadDeLaApi = Number(api['traefik.http.routers.caja.priority']);
+  const prioridadDeLaInterfaz = Number(interfaz['traefik.http.routers.caja-interfaz.priority']);
+  anotar(
+    prioridadDeLaApi > prioridadDeLaInterfaz,
+    'y la API gana a la interfaz por prioridad ESCRITA, no por la longitud de la regla',
+    `API ${api['traefik.http.routers.caja.priority']} contra interfaz ${interfaz['traefik.http.routers.caja-interfaz.priority']}`,
+  );
+  anotar(
+    interfaz['traefik.http.routers.caja-interfaz.middlewares'] === 'caja-quitar-prefijo' &&
+      interfaz['traefik.http.middlewares.caja-quitar-prefijo.stripprefix.prefixes'] === '/caja' &&
+      api['traefik.http.routers.caja.middlewares'] === undefined,
+    'el `stripprefix` de `/caja` va en la interfaz, y en la API no',
+    'el middleware no esta donde debe',
+  );
+
+  // El clon hermano, por contexto con nombre, y apuntando a donde apunta el `link:`.
+  const contexto = config.services?.['caja-interfaz']?.build?.additional_contexts?.['kamayuk-lib'];
+  anotar(
+    typeof contexto === 'string' && resolve(contexto) === resolve(COMPOSE, '../../../kamayuk-lib'),
+    '«caja-interfaz» recibe `kamayuk-lib` como contexto con nombre, junto a este clon',
+    `lo recibe de «${contexto}»`,
   );
 }
 
@@ -346,12 +393,10 @@ function lasDependencias(nombre, servicio) {
         quien +
         '» que este script no espera.' +
         (nombre === 'caja-interfaz'
-          ? ' Esta interfaz no habla con el backend: sus datos salen de `frontend/src/datos/`,' +
-            ' su `nginx.conf` no reenvia y ESLint le prohibe `fetch`. Una dependencia que no' +
-            ' existe hace que el compose mienta sobre el grafo, y obliga a `up -d caja-interfaz`' +
-            ' a levantar la base, el migrador y la implantacion para dibujar una pantalla que no' +
-            ' los usa. El dia que lea algo de verdad, esa linea entra CON su motivo y esta lista' +
-            ' cambia en el mismo PR.'
+          ? ' Esta interfaz sirve archivos: lo que lee lo lee el navegador, por Traefik y contra' +
+            ' `/caja/api/v1` (ADR-0042), no el contenedor. Una dependencia que no existe hace que' +
+            ' el compose mienta sobre el grafo, y obliga a `up -d caja-interfaz` a levantar la' +
+            ' base, el migrador y la implantacion para servir un `index.html`.'
           : ''),
     );
   }

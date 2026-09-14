@@ -12,9 +12,15 @@
 #     GET /v2/hneyra/kamayuk-caja/manifests/<sha>          -> 404 MANIFEST_UNKNOWN
 #     GET /v2/hneyra/kamayuk-caja-migrador/manifests/<sha>  -> 404 MANIFEST_UNKNOWN
 #
-# Y los manifiestos que `infrastructure` emite piden esas etiquetas. Sin ellas, un
+# Y los manifiestos que `infrastructure` emite piden esas dos etiquetas. Sin ellas, un
 # `pulumi up` deja los pods en `ImagePullBackOff` **y nada lo predice**: el manifiesto es
 # valido, el planificador ubica el pod, y el fallo aparece cuando ya se desplego.
+#
+# Desde #16 son TRES: se anade `kamayuk-caja-interfaz`, la interfaz servida por nginx. Sale de
+# OTRO Dockerfile y con OTRO contexto, y por eso `archivo` y `contexto` pasan a la matriz en vez
+# de quedarse fijos en el paso: un `.dockerignore` solo cuenta desde la raiz de SU contexto, asi
+# que construir `frontend/Dockerfile` con el contexto en la raiz se llevaria dentro
+# `node_modules`, los `.env` y las cookies de Keycloak que el arnes deja en `e2e/.estado/`.
 #
 # ## La etiqueta es el `sha` de ESTE repositorio, y esa es la decision
 #
@@ -53,6 +59,13 @@ name: Publicar imágenes
 on:
   push:
     branches: [main]
+  # Y EN LOS PR, PERO SIN PUBLICAR (`rentas`#75; en `caja` desde #74). Hasta aqui la imagen solo se construia al integrar en
+  # `main`, asi que un `Dockerfile` roto se descubria DESPUES del merge — y en un flujo sin
+  # filtro `paths`, dejando sin su tercera imagen a todos los commits siguientes. Con esto, el
+  # `docker build` de verdad corre en el PR; lo unico que no corre es el `push`.
+  #
+  # Sin filtro `paths`, por lo mismo que el `push`: ver la cabecera.
+  pull_request:
   workflow_dispatch:
 
 # Sin `cancel-in-progress`: cancelar una publicacion a medias deja `main` con unas imagenes si y
@@ -74,38 +87,60 @@ jobs:
       # Sin `fail-fast`: si una cae, interesa saber si las otras tambien.
       fail-fast: false
       matrix:
-        # `destino` es la etapa del Dockerfile; `imagen`, el nombre publicado. Los dos difieren
-        # porque el Dockerfile los llama como se leen en ARQ-03 §4 y el registro los necesita con
-        # el prefijo del producto, que es lo unico que impide que `caja` y `catastro` de dos
-        # proyectos distintos colisionen en `ghcr.io/<owner>/`.
+        # `destino` es la etapa de `backend/Dockerfile`; `imagen`, el nombre publicado. Los dos
+        # difieren porque el Dockerfile los llama como se leen en ARQ-03 §4 y el registro los
+        # necesita con el prefijo del producto, que es lo unico que impide que `caja` y
+        # `catastro` de dos proyectos distintos colisionen en `ghcr.io/<owner>/`.
         #
         # `archivo` y `contexto` estan AQUI y no fijos en el paso, y eso dejo de ser cosmetico en
         # cuanto entro la tercera: las dos del backend salen del mismo `backend/Dockerfile` con el
-        # contexto en la raiz —tiene `COPY` que salen de `backend/`—, y la interfaz sale de
+        # contexto en la raiz —tiene `COPY` que salen de `backend/`— y la interfaz sale de
         # `frontend/Dockerfile` con el contexto en `frontend/`, que es lo unico que hace que su
-        # `.dockerignore` se aplique: un `.dockerignore` solo cuenta desde la raiz de SU contexto,
-        # y el de la raiz excluye `frontend/` entero.
+        # `.dockerignore` se aplique.
         #
-        # La interfaz NO se llama `kamayuk-caja-web`: ese nombre ya es el `Deployment` y el
+        # La interfaz NO se llama `kamayuk-caja-web`: ese nombre ya es el del `Deployment` y el
         # `Service` del backend con el perfil `web` de Spring (`infrastructure/src/descriptor.ts`,
         # `despliegueDelPerfil(e, "web", true)`). Se llama `kamayuk-caja-interfaz`, que es ademas
         # como `infrastructure` nombra la del monolito (`sgtm-interfaz`).
         include:
           - destino: aplicacion
             imagen: kamayuk-caja
-            archivo: backend/Dockerfile
-            contexto: .
+            archivo: caja/backend/Dockerfile
+            contexto: caja
           - destino: migrador
             imagen: kamayuk-caja-migrador
-            archivo: backend/Dockerfile
-            contexto: .
+            archivo: caja/backend/Dockerfile
+            contexto: caja
           - destino: interfaz
             imagen: kamayuk-caja-interfaz
-            archivo: frontend/Dockerfile
-            contexto: frontend
+            archivo: caja/frontend/Dockerfile
+            contexto: caja/frontend
+            # VA DESPUES DE `contexto:`, y no es estilo: la prueba que fija esta matriz casa las
+            # cuatro claves CONSECUTIVAS y en ese orden, asi que una clave nueva en medio deja la
+            # entrada sin casar y el rojo dice «2 items» en vez de nombrar lo que paso.
+            contextos: kamayuk-lib=kamayuk-lib
 
     steps:
-      - uses: actions/checkout@v4
+      # El anfitrion BAJA UN NIVEL para que el clon hermano quepa a su lado, igual que en
+      # `frontend.yml`. `actions/checkout` se niega a escribir fuera de `GITHUB_WORKSPACE`, asi
+      # que no se puede clonar hacia arriba: lo que se mueve es este repositorio.
+      #
+      # Y con el bajan las rutas de la matriz: `contexto: caja` es la raiz de ESTE repositorio,
+      # exactamente lo que era `.` antes, asi que el `.dockerignore` que aplica a las dos
+      # imagenes del backend sigue siendo el mismo.
+      - name: Este repositorio
+        uses: actions/checkout@v4
+        with:
+          path: caja
+
+      # De aqui salen los paquetes que `frontend/package.json` declara como `link:` (#74). La
+      # imagen de la interfaz no se construye sin el.
+      - name: Las librerias comunes
+        uses: actions/checkout@v4
+        with:
+          repository: hneyra/kamayuk-lib
+          path: kamayuk-lib
+          token: ${{ secrets.GH_CLONE_KEY || github.token }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -125,20 +160,33 @@ jobs:
 
       # El archivo y el contexto los pone la matriz, y el motivo de cada pareja esta escrito alli.
       #
-      # Para las dos del backend: no hace falta el clon hermano de `infrastructure`, porque su
-      # Dockerfile construye con `-Pkamayuk.sinLibreriasComunes`, que desactiva el composite build
-      # de `comun-verificaciones` y, con el, TODA tarea de prueba. Aqui no corre ni una: las
-      # bloqueantes ya corrieron en `backend.yml`, contra un motor de verdad.
+      # Para las DOS DEL BACKEND el contexto es la RAIZ del repositorio, no `backend/`, y el propio
+      # Dockerfile explica por que: hay `COPY` que salen de `backend/`. Con el contexto en
+      # `backend/` esos archivos sencillamente no existen dentro de la imagen y la tarea que los
+      # copia se salta con NO-SOURCE — compilando en verde.
       #
-      # Para la interfaz tampoco corre ninguna verificacion: `frontend/Dockerfile` hace
-      # `yarn build`, no `yarn verificar`. Las 634 pruebas y los arneses de navegador ya corrieron
-      # en `frontend.yml`.
+      # Tampoco hace falta el clon hermano de `infrastructure`: aquel Dockerfile construye con
+      # `-Pkamayuk.sinLibreriasComunes`, que desactiva el composite build de `comun-verificaciones`
+      # y, con el, TODA tarea de prueba. Aqui no corre ni una: las bloqueantes ya corrieron en
+      # `backend.yml`, contra un motor de verdad.
+      #
+      # Para LA INTERFAZ tampoco corre ninguna verificacion: `frontend/Dockerfile` hace
+      # `yarn build`, no `yarn verificar`. Las pruebas y el arnes de navegador ya corrieron
+      # en `frontend.yml`. Lo que si comprueba esa imagen al construirse es lo que solo se puede
+      # comprobar sobre el `dist/` que va a servir: que no lleva codigo fuente dentro, ni la API de
+      # otro sistema, ni la captura sembrada (#74).
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.contexto }}
           file: ${{ matrix.archivo }}
           target: ${{ matrix.destino }}
-          push: true
+          # El clon hermano, para la interfaz. Vacio en las dos del backend, que no lo necesitan.
+          build-contexts: ${{ matrix.contextos }}
+          # SE CONSTRUYE SIEMPRE, SE PUBLICA SOLO AL INTEGRAR (#75). Con `false` el build corre
+          # entero —todas las etapas, incluidas las dos comprobaciones sobre el `dist` que va a
+          # servir— y lo unico que no ocurre es la subida al registro. Es lo que convierte este
+          # flujo en una verificacion del PR y no solo en un publicador.
+          push: ${{ github.event_name == 'push' }}
           tags: ghcr.io/${{ steps.registro.outputs.propietario }}/${{ matrix.imagen }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.imagen }}
           cache-to: type=gha,mode=max,scope=${{ matrix.imagen }}
@@ -148,6 +196,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: publicar
+    # SOLO AL INTEGRAR. En un PR el trabajo de arriba construye pero no publica (#75), asi que
+    # preguntar aqui por las tres etiquetas daria `MANIFEST_UNKNOWN` — un rojo que no habla de
+    # nada roto. La afirmacion que esta comprobacion sostiene —«todo commit de `main` tiene sus
+    # tres imagenes»— es sobre `main`, no sobre una rama.
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: read
@@ -173,9 +226,9 @@ jobs:
           set -u
           propietario=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           fallo=0
-          # Las tres, y en el mismo orden que la matriz de `publicar`. Son dos listas que tienen
-          # que decir lo mismo: una imagen que se publique y no se pregunte aqui queda sin la
-          # unica afirmacion que decide si el pod arranca.
+          # Las tres, y en el mismo orden que la matriz de `publicar`. Son dos listas que
+          # tienen que decir lo mismo: una imagen que se publique y no se pregunte aqui queda
+          # sin la unica afirmacion que decide si el pod arranca.
           for imagen in kamayuk-caja kamayuk-caja-migrador kamayuk-caja-interfaz; do
             token=$(curl -sS -u "$GHCR_USUARIO:$GHCR_CLAVE" \
               "https://ghcr.io/token?service=ghcr.io&scope=repository:$propietario/$imagen:pull" \

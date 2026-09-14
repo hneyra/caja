@@ -1,92 +1,305 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ESLint } from "eslint";
-import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import {
+  CLIENTE_DE_API,
+  DONDE_SE_LLAMA_A_FETCH,
+  PROHIBICIONES,
+  REGLAS_EXIGIDAS,
+} from '../eslint.prohibiciones.mjs';
 
 /**
- * Las reglas propias de `eslint.config.mjs` muerden.
+ * Las reglas de `eslint.config.js` muerden.
  *
- * Cada prohibicion tiene su muestra que la viola, y esta prueba exige que ESLint la detecte.
- * **Una regla que no puede fallar no protege nada** — el mismo argumento por el que la prueba
- * de aislamiento del backend demuestra que el superusuario omite RLS en vez de afirmarlo, y el
- * mismo que sostiene `ReglasDeArquitecturaMuerdenTest`.
+ * Es el equivalente frontend de `ReglasDeArquitecturaMuerdenTest`: cada prohibicion tiene
+ * una muestra que la viola a proposito, y aqui se exige que ESLint la senale. **Una regla
+ * que no puede fallar no protege nada** — el mismo argumento por el que la prueba de
+ * aislamiento demuestra que el superusuario omite RLS en vez de afirmarlo.
  *
- * Las muestras estan en `ignores` de la configuracion para que `yarn lint` no las senale; aqui
- * se lintan como texto, con una ruta sintetica dentro de `src/`, que es donde la regla tiene
- * que aplicar de verdad.
+ * Tres cosas hacen que esto no sea una lista mas que alguien olvida actualizar:
+ *
+ *   1. La lista de prohibiciones **se importa del propio config**. No hay copia — y desde #137
+ *      tampoco la hay frente a la libreria: `eslint.prohibiciones.mjs` DERIVA las nueve de
+ *      `@kamayuk/verificaciones` y solo les pone las rutas de este arbol. Que siga siendo una
+ *      derivacion lo vigila `las-prohibiciones-son-las-de-la-libreria.test.ts`.
+ *   2. El nombre del archivo de la muestra **se compone** desde el `clave`. Anadir una
+ *      prohibicion sin su muestra es un archivo que no existe, y sale rojo aqui mismo.
+ *   3. El mensaje esperado **es el del config**. Si alguien reescribe el mensaje y deja la
+ *      regla apagada, no hay texto duplicado que lo tape.
+ *
+ * Lo que ninguna derivacion puede sujetar es que alguien BORRE una prohibicion: con ella
+ * se iria su prueba, en verde. Eso lo sujeta `REGLAS_EXIGIDAS`, que es la unica lista
+ * escrita a mano y la que nombra las reglas del producto.
+ *
+ * Las muestras estan en `ignores` de la configuracion para que `yarn lint` no las senale;
+ * aqui se lintan como TEXTO, con una ruta sintetica dentro de `src/`, que es donde la
+ * regla tiene que aplicar de verdad.
  */
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const RAIZ = join(AQUI, "..");
-const MUESTRAS = join(AQUI, "muestras");
-
-/** Ruta sintetica: la muestra se juzga como si viviera en el codigo que se despliega. */
-const rutaEnSrc = (nombre: string) => join(RAIZ, "src", nombre);
+const RAIZ = join(AQUI, '..');
+const MUESTRAS = join(AQUI, 'muestras');
 
 const eslint = new ESLint({ cwd: RAIZ });
 
-async function mensajesDe(muestra: string, ruta: string): Promise<string[]> {
-  const codigo = readFileSync(join(MUESTRAS, muestra), "utf8");
-  const [resultado] = await eslint.lintText(codigo, { filePath: ruta });
-  return (resultado?.messages ?? []).map((m) => `${m.ruleId ?? "?"}: ${m.message}`);
-}
+/**
+ * ESLint se arranca AQUI, y no dentro del primer caso.
+ *
+ * **Medido (#36): el arranque en frio costaba 3,64 s y sus diecinueve hermanas, de 0,02 a
+ * 0,51.** O sea que el primer caso —`'identificador-con-tilde'`, por orden y no por nada que
+ * tenga de especial— pagaba el `import` de `eslint`, de `typescript-eslint` y de `typescript`
+ * entero para todos los demas, dentro de SU presupuesto de tiempo. Por eso llevaba un
+ * `30_000` escrito a mano, y aun asi **reventaba**: en una de las doce corridas de la tanda
+ * tardo **49,80 s** y salio en rojo diciendo «Test timed out in 30000ms», que es un rojo que
+ * habla de la maquina y no de la regla que se venia a comprobar — exactamente el rojo mas
+ * caro, porque no se reproduce.
+ *
+ * Con el arranque aqui, ese caso pasa a costar lo que cuestan sus hermanas y el `30_000`
+ * sobra: los veinte corren con los 5 s de Vitest y de sobra. El coste no desaparece —hay que
+ * cargar TypeScript— pero deja de estar dentro del presupuesto de una prueba que no lo mide,
+ * y si algun dia el arranque se atasca, el rojo sale de este gancho y dice que fue el
+ * arranque.
+ */
+beforeAll(async () => {
+  await eslint.lintText('export const listo = 1;\n', {
+    filePath: join(RAIZ, 'src/pantallas/calentamiento.ts'),
+  });
+}, 60_000);
 
 /**
- * Cada prohibicion, su muestra y el texto que la delata.
+ * Ruta sintetica: la muestra se juzga como si viviera en una pantalla de la aplicacion.
  *
- * El texto se escribe aqui a mano y NO se importa de `eslint.config.mjs`: importandolo, un
- * cambio de mensaje se propagaria a la prueba y la prueba no podria decir nunca que la regla
- * que salto no era la que se esperaba.
+ * **Conserva la extension del archivo de la muestra**, y no es un detalle: una muestra con
+ * JSX tiene que juzgarse como `.tsx`. Juzgada como `.ts`, el analizador de TypeScript no
+ * admite JSX y el rojo habla de un error de sintaxis en vez de la regla que se venia a
+ * comprobar — o peor, la prohibicion no llega a evaluarse y la muestra pasa en verde.
  */
-const PROHIBICIONES: { prohibicion: string; muestra: string; delata: RegExp }[] = [
-  {
-    prohibicion: "identificador con tilde o eñe",
-    muestra: "identificador-con-tilde.ts",
-    delata: /Sin tildes ni eñe en identificadores/,
-  },
-  {
-    prohibicion: "un importe declarado o convertido a number",
-    muestra: "importe-como-number.ts",
-    delata: /Un importe es texto y jamás number/,
-  },
-  {
-    prohibicion: "una petición de red desde la interfaz",
-    muestra: "peticion-de-red.ts",
-    delata: /Esta interfaz no habla con nadie/,
-  },
-  {
-    prohibicion: "un recurso pedido a la raíz del dominio",
-    muestra: "recurso-en-la-raiz.ts",
-    delata: /Un recurso no se pide a la raíz del dominio/,
-  },
-];
+const enUnaPantalla = (nombre: string) => join(RAIZ, 'src/pantallas', nombre);
 
-describe("cada regla propia tiene una muestra que la viola, y ESLint la detecta", () => {
-  it.each(PROHIBICIONES)("$prohibicion", async ({ muestra, delata }) => {
-    const mensajes = await mensajesDe(muestra, rutaEnSrc(muestra));
+/** El archivo de la muestra de esa clave, o `null` si no hay ninguno. */
+function archivoDeLaMuestra(clave: string): string | null {
+  for (const extension of ['.ts', '.tsx']) {
+    const candidato = join(MUESTRAS, `${clave}${extension}`);
+    if (existsSync(candidato)) {
+      return candidato;
+    }
+  }
+  return null;
+}
+
+async function mensajesDe(archivo: string, rutaJuzgada: string): Promise<string[]> {
+  const codigo = readFileSync(archivo, 'utf8');
+  const [resultado] = await eslint.lintText(codigo, { filePath: rutaJuzgada });
+  return (resultado?.messages ?? []).map((m) => m.message);
+}
+
+describe('cada prohibicion tiene su muestra, y ESLint la senala', () => {
+  it.each(PROHIBICIONES.map((p) => ({ ...p })))('$clave', async ({ clave, message }) => {
+    const archivo = archivoDeLaMuestra(clave);
+
     expect(
-      mensajes.some((m) => delata.test(m)),
-      `Se esperaba un mensaje que casara con ${delata}. Se obtuvo:\n${
-        mensajes.length === 0 ? "  (ninguno)" : mensajes.map((m) => `  · ${m}`).join("\n")
-      }`,
-    ).toBe(true);
+      archivo,
+      `La prohibicion «${clave}» no tiene muestra que la viole.\n` +
+        `Escribe verificaciones/muestras/${clave}.ts con codigo que la incumpla a\n` +
+        `proposito. Una regla sin muestra no se ha demostrado que pueda fallar, y una\n` +
+        `regla que no puede fallar no protege nada.`,
+    ).not.toBeNull();
+
+    const mensajes = await mensajesDe(archivo as string, enUnaPantalla(basename(archivo as string)));
+
+    expect(
+      mensajes,
+      `ESLint no senalo la muestra de «${clave}».\n` +
+        `Se esperaba el mensaje del config:\n  ${message}\n` +
+        `Se obtuvo:\n${mensajes.length === 0 ? '  (ninguno)' : mensajes.map((m) => `  · ${m}`).join('\n')}`,
+    ).toContain(message);
+    // Sin tiempo propio: el arranque en frio lo paga `beforeAll`, asi que los veinte casos
+    // caben en los 5 s de Vitest con dos ordenes de magnitud de margen (#36).
   });
 });
 
-describe("el inventario de muestras esta completo", () => {
-  it("no hay ninguna muestra que la prueba no recorra", () => {
-    const enDisco = readdirSync(MUESTRAS).filter((n) => n.endsWith(".ts") || n.endsWith(".tsx"));
-    const recorridas = PROHIBICIONES.map((p) => p.muestra);
-    expect([...enDisco].sort()).toEqual([...recorridas].sort());
+describe('la lista de prohibiciones y la de muestras no se separan', () => {
+  it('cada regla del producto tiene al menos una prohibicion que la sirve', () => {
+    const servidas = new Set(PROHIBICIONES.map((p) => p.regla));
+    const huerfanas = REGLAS_EXIGIDAS.filter((regla) => !servidas.has(regla));
+
+    expect(
+      huerfanas,
+      'Hay reglas del producto que ninguna prohibicion de ESLint expresa. Una regla que\n' +
+        'solo vive en un documento se incumple en seis meses.',
+    ).toEqual([]);
+  });
+
+  it('ninguna prohibicion sirve a una regla que nadie declaro', () => {
+    const noDeclaradas = PROHIBICIONES.filter((p) => !REGLAS_EXIGIDAS.includes(p.regla)).map(
+      (p) => `${p.clave} -> ${p.regla}`,
+    );
+
+    expect(
+      noDeclaradas,
+      'Una prohibicion nueva se declara tambien en REGLAS_EXIGIDAS: si no, borrarla se\n' +
+        'llevaria su prueba por delante y nadie lo notaria.',
+    ).toEqual([]);
+  });
+
+  it('no hay muestras sin prohibicion que las reclame', () => {
+    const claves = new Set(PROHIBICIONES.map((p) => p.clave));
+    const sobrantes = readdirSync(MUESTRAS)
+      .map((archivo) => archivo.replace(/\.tsx?$/, ''))
+      .filter((clave) => !claves.has(clave));
+
+    expect(
+      sobrantes,
+      'Sobra una muestra: viola una regla que ya no existe, asi que nadie la lee y nada\n' +
+        'la mantiene cierta.',
+    ).toEqual([]);
   });
 });
 
-describe("las muestras se juzgan por donde viven", () => {
-  it("dentro de `verificaciones/` las prohibiciones estan apagadas a proposito", async () => {
-    // Si no lo estuvieran, esta misma prueba —que trae la palabra prohibida en su texto— no
-    // podria existir. Que este apagado ahi y encendido en `src/` es la propiedad que importa.
-    const mensajes = await mensajesDe("peticion-de-red.ts", join(RAIZ, "verificaciones", "x.ts"));
-    expect(mensajes.filter((m) => /Esta interfaz no habla con nadie/.test(m))).toEqual([]);
+describe('la excepcion del cliente de API es exactamente una, y en ESTE arbol', () => {
+  const conExcepcion = PROHIBICIONES.filter((p) => p.salvo !== undefined);
+
+  it('solo `fetch` esta exceptuado, y solo en el sitio declarado', () => {
+    // Se comprueba la LISTA ENTERA, no su tamano: anadir un prefijo exige decir cual.
+    //
+    // **Aqui es UNO y en la libreria son DOS, y las dos cifras son correctas** (#137). Alla el
+    // canje PKCE vive en `paquetes/sesion/`, separado del cliente HTTP de `paquetes/api/`; en
+    // este arbol las dos piezas estan en `src/api/` —`cliente.ts` y `identidad.ts`, los tres
+    // `fetch` que hay—, asi que un prefijo las cubre. Por eso lo que se comparte con
+    // `@kamayuk/verificaciones` es la lista de reglas y NO sus rutas.
+    expect(conExcepcion.map((p) => p.clave)).toEqual(['fetch-fuera-del-cliente']);
+    expect(new Set(conExcepcion.flatMap((p) => p.salvo ?? []))).toEqual(
+      new Set(DONDE_SE_LLAMA_A_FETCH),
+    );
+    expect(DONDE_SE_LLAMA_A_FETCH).toEqual([CLIENTE_DE_API]);
+  });
+
+  it.each(
+    conExcepcion.flatMap((p) =>
+      [...(p.salvo ?? [])].map((directorio: string) => ({
+        clave: p.clave,
+        message: p.message,
+        directorio,
+      })),
+    ),
+  )('«$clave» no se senala dentro de $directorio', async ({ clave, message, directorio }) => {
+    const archivo = archivoDeLaMuestra(clave);
+    const mensajes = await mensajesDe(archivo as string, join(RAIZ, directorio, 'x.ts'));
+
+    expect(mensajes).not.toContain(message);
+  });
+
+  it('pero fuera de el, si', async () => {
+    const mensajes = await mensajesDe(
+      archivoDeLaMuestra('fetch-fuera-del-cliente') as string,
+      enUnaPantalla('cualquiera.ts'),
+    );
+
+    expect(mensajes.join('\n')).toMatch(/Las peticiones pasan por «solicitar»/);
+  });
+
+  it('y el cliente de API no queda exento de TODO: solo de su excepcion', async () => {
+    // Que `src/api/` pueda llamar a `fetch` no lo pone fuera del idioma ni de la regla 2.
+    const mensajes = await mensajesDe(
+      archivoDeLaMuestra('municipalidad-en-el-cliente') as string,
+      join(RAIZ, CLIENTE_DE_API, 'x.ts'),
+    );
+
+    expect(mensajes.join('\n')).toMatch(/jamas envia municipalidadId/);
+  });
+});
+
+describe('las reglas no senalan codigo correcto', () => {
+  it('los dos contadores del envoltorio de paginacion se declaran «number», y pasan', async () => {
+    // `totalElementos` y `totalPaginas` son cuentas de cosas, no de dinero: el backend los
+    // publica como `entero` en las mas de sesenta operaciones paginadas. Si la prohibicion los
+    // senalara, toda pantalla con una tabla arrancaria con dos `eslint-disable` — y una regla
+    // que se desactiva por costumbre deja de proteger a la tercera vez.
+    const envoltorio = `
+      export interface Pagina<T> {
+        readonly contenido: readonly T[];
+        readonly pagina: number;
+        readonly tamano: number;
+        readonly totalElementos: number;
+        readonly totalPaginas: number;
+        readonly hayMas: boolean;
+      }
+    `;
+
+    const [resultado] = await eslint.lintText(envoltorio, {
+      filePath: enUnaPantalla('paginacion.ts'),
+    });
+
+    expect(resultado?.messages ?? []).toEqual([]);
+  });
+
+  it('pero el resto de «total…» sigue prohibido: la excepcion no se derrama', async () => {
+    const conDinero = `
+      export interface Liquidacion {
+        readonly totalAPagar: number;
+      }
+    `;
+
+    const [resultado] = await eslint.lintText(conDinero, {
+      filePath: enUnaPantalla('liquidacion.ts'),
+    });
+
+    expect((resultado?.messages ?? []).map((m) => m.message).join('\n')).toMatch(
+      /Un importe se declara «string»/,
+    );
+  });
+
+  it('el codigo que las respeta pasa limpio', async () => {
+    const correcto = `
+      import { solicitar } from '../api/cliente.ts';
+
+      export interface CuentaCorriente {
+        readonly total: string;
+        readonly fechaCalculo: string;
+      }
+
+      export const alicuotaPredial = '0.006';
+
+      export function cuentaDe(contribuyente: string) {
+        // El total llega calculado del backend, con su fecha: aqui solo se pide.
+        return solicitar<CuentaCorriente>(\`/contribuyentes/\${contribuyente}/cuenta\`);
+      }
+    `;
+
+    const [resultado] = await eslint.lintText(correcto, {
+      filePath: enUnaPantalla('correcto.ts'),
+    });
+
+    expect(resultado?.messages ?? []).toEqual([]);
+  });
+
+  it('un «Importe» CON su fecha de calculo pasa limpio', async () => {
+    // **Esta es la mitad que faltaba, y hacia falta.** La muestra de
+    // `importe-sin-fecha` escribe `<Importe valor="…" />` SIN un solo atributo, asi que
+    // un selector que buscara cualquier otro nombre —`fechaDeCalculo` en vez de
+    // `fechaCalculo`— la seguiria senalando igual y la prohibicion pasaria en VERDE
+    // habiendo dejado de proteger nada. Se comprobo: renombrar el atributo dentro del
+    // selector dejaba las 17 pruebas en verde. Lo que lo caza es el caso positivo.
+    const correcto = `
+      import { Importe } from '../ds/index.ts';
+
+      export function FilaDeCuentaCorriente() {
+        return <Importe valor="1842.60" fechaCalculo="2026-09-06" />;
+      }
+    `;
+
+    const [resultado] = await eslint.lintText(correcto, {
+      filePath: enUnaPantalla('correcto.tsx'),
+    });
+
+    expect(
+      (resultado?.messages ?? []).map((m) => m.message),
+      'Un `<Importe>` que SI declara su fecha no puede estar senalado: si lo esta, el\n' +
+        'selector ya no busca el atributo que dice buscar, y entonces la prohibicion\n' +
+        'senala a todo el mundo — que es indistinguible de no senalar a nadie.',
+    ).toEqual([]);
   });
 });
