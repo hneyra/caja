@@ -10,8 +10,10 @@ name: Infraestructura
 # POR QUE ESTE FILTRO NOMBRA ARCHIVOS DE `frontend/` Y DE `backend/`
 # Desde #17 el descriptor afirma cosas que se cumplen en OTROS archivos, y las lee:
 #
-#   · `frontend/nginx.conf`, del que lleva una copia caracter a caracter para meterla en un
-#     `ConfigMap` — un descriptor es una funcion pura y no puede leerlo al componer;
+#   · `frontend/nginx.conf`, porque el ingreso quita `/caja` y ese nginx tiene que servir en la raiz y
+#     contestar 404 a `/caja/` (hasta #74 llevaba una copia caracter a caracter en un `ConfigMap`);
+#   · y desde #74 `frontend/public/configuracion.js` y `frontend/src/api/configuracion.ts`: el
+#     `ConfigMap` monta encima las senias del ambiente, con el global que la interfaz lee;
 #   · `frontend/vite.config.ts` y `frontend/src/**`, porque el prefijo que el ingreso quita y la
 #     `base` que Vite hornea son dos mitades de una sola decision y tienen que moverse juntas;
 #   · `frontend/Dockerfile`, porque `runAsNonRoot` solo lo puede comprobar el kubelet si el `USER`
@@ -35,6 +37,7 @@ on:
       - "frontend/vite.config.ts"
       - "frontend/Dockerfile"
       - "frontend/src/**"
+      - "frontend/public/configuracion.js"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
       - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"
@@ -45,6 +48,7 @@ on:
       - "frontend/vite.config.ts"
       - "frontend/Dockerfile"
       - "frontend/src/**"
+      - "frontend/public/configuracion.js"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
       - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"

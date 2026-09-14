@@ -1,29 +1,24 @@
 <!doctype html>
-<html lang="es">
+<html lang="es-PE">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/png" href="/escudo-catacaos.png" />
-    <!--
-      Source Sans 3, cargada como en `TesoreriaV6.dc.html` (lineas 12-14): las mismas tres
-      etiquetas y la misma URL. Es la unica familia de V6.
-
-      Esto es una peticion a un tercero, y la regla de ESLint que prohibe `fetch` no la
-      alcanza: no es codigo. Se acepta porque la pila de respaldo del token `--familia`
-      termina en `system-ui, sans-serif`, asi que una ventanilla sin salida a internet
-      dibuja la pantalla con la fuente del sistema en vez de quedarse en blanco. El dia que
-      se autohospede, se cambian estas tres lineas y el token no se entera.
-    -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&amp;display=swap"
-    />
-    <title>Tesorería · caja-web</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Caja — Kamayuk</title>
   </head>
   <body>
     <div id="raiz"></div>
+    <!--
+      Las senias del ambiente, ANTES del paquete. Ver `src/api/configuracion.ts`.
+
+      Guion clasico y no `type="module"`, y el orden de estas dos lineas es lo unico que hace que
+      funcione: un modulo se difiere hasta despues del analisis del documento, asi que este se
+      ejecuta primero aunque este escrito arriba o abajo. Al reves —los dos como modulos— la
+      puerta de identidad leeria las senias antes de que nadie las hubiera puesto.
+
+      La ruta es absoluta desde la raiz del sitio; Vite le antepone `base` (`/caja/`) al
+      construir, que es lo mismo que hace con los activos del paquete.
+    -->
+    <script src="/configuracion.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

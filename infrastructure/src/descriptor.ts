@@ -56,7 +56,6 @@ import type {
   VariableDeEntorno,
 } from "@kamayuk/infra-contrato";
 
-import { NGINX_DE_LA_INTERFAZ } from "./nginx-de-la-interfaz";
 
 const SISTEMA = "caja";
 
@@ -75,6 +74,41 @@ const INTERFAZ = `${SISTEMA}-interfaz`;
 
 /** El nombre de sus dos recursos y de su `ConfigMap`. Sale una vez y se usa en cinco sitios. */
 const NOMBRE_DE_LA_INTERFAZ = `kamayuk-${SISTEMA}-interfaz`;
+
+/**
+ * El cliente publico de Keycloak con el que la interfaz entra (#74, ADR-0042).
+ *
+ * El mismo que `rentas`: `kamayuk-backoffice`, publico y con PKCE S256. **Se escribe aqui porque
+ * `EntornoDelDescriptor` no lo publica**: el realm lo describe `infrastructure`, y este contrato
+ * entrega el emisor (`plataforma.emisor`) pero no el cliente.
+ *
+ * **El `redirect_uri` es de `infrastructure`.** La interfaz lo compone como `origin + /caja/` —la
+ * raiz DE LA APLICACION, la leccion de `rentas`#71—; en el cluster `Identidad.ts` lleva toda
+ * redireccion del realm al dominio (`https://<dominio>/*`), y en local el cliente admite
+ * `http://localhost:5181/*` desde `infrastructure`#184. Si un dia no lo admitiera, el rebote acaba
+ * en «Invalid parameter: redirect_uri» y no entra nadie: se nombra aqui para que quien despliegue
+ * sepa donde mirar.
+ */
+const CLIENTE_OIDC_DE_LA_INTERFAZ = "kamayuk-backoffice";
+
+/**
+ * Las senias del ambiente que la interfaz lee al arrancar (#74): el guion `configuracion.js`.
+ *
+ * La interfaz no puede hornear la URL del emisor —la imagen se etiqueta con el `sha` y es la misma
+ * en todos los ambientes—, asi que la lee de `window.__KAMAYUK_CAJA__`, que deja ese guion. La
+ * imagen trae uno vacio en `frontend/public/`, y aqui se monta encima con las de este ambiente. La
+ * razon entera esta en `frontend/src/api/configuracion.ts`.
+ */
+function senasDelAmbiente(e: EntornoDelDescriptor): Record<string, string> {
+  return {
+    // El emisor PUBLICO, el que el navegador alcanza. `plataforma.jwks` NO vale aqui: es una
+    // direccion de la red interna del cluster.
+    oidcRealm: e.plataforma.emisor,
+    oidcCliente: CLIENTE_OIDC_DE_LA_INTERFAZ,
+    // Sin `offline_access`: el token de esta interfaz muere con la pestana (ADR-0030 §3).
+    oidcAlcance: "openid profile",
+  };
+}
 
 /**
  * Su etiqueta `componente`, **distinta de la del backend**, y no es cosmetica.
@@ -426,15 +460,24 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
 }
 
 /**
- * La interfaz de ventanilla: su `ConfigMap`, su `Deployment` y su `Service` (#16, #17).
+ * La interfaz de ventanilla: su `ConfigMap`, su `Deployment` y su `Service` (#16, #17; #74).
  *
  * ## Que corre aqui, y que NO
  *
- * Un `nginx:1.31.4-alpine` sirviendo el `dist/` de `caja-web`. **Sin una sola variable de entorno,
- * y sin un solo `secretKeyRef`**: esta interfaz no tiene credenciales que manejar ni backend al que
- * llamar —sus datos salen de `frontend/src/datos/` y una regla de ESLint le prohibe `fetch`—, asi
- * que un `Secret` montado aqui no seria una comodidad sino una credencial regalada a un proceso
- * que no la usa.
+ * Un `nginx:1.31.5-alpine` sirviendo el `dist/` de `caja-web`. **Sin una sola variable de entorno,
+ * y sin un solo `secretKeyRef`**. Desde #74 la interfaz autentica y lee su API, pero lo hace **el
+ * navegador**: lo unico que este proceso necesita saber del ambiente son las senias del emisor, que
+ * no son secretas —el cliente es publico y su URL la ve cualquiera que abra el navegador— y viajan
+ * en el `ConfigMap`. Un `Secret` montado aqui seria una credencial regalada a un proceso que no la
+ * usa.
+ *
+ * ## El `ConfigMap` lleva `configuracion.js`, y ya no el `nginx.conf` (#74)
+ *
+ * Hasta #74 este `ConfigMap` era una copia byte a byte de `frontend/nginx.conf`, montada sobre el
+ * `default.conf` de la imagen. Era una segunda fuente de la misma configuracion, y `rentas` nunca la
+ * tuvo: su `nginx.conf` va dentro de la imagen, y lo que el ambiente cambia —el emisor— va en un
+ * guion que se sirve. La interfaz de `caja` se rehizo con la forma de `rentas`, y su despliegue
+ * tambien: el `nginx.conf` es el de la imagen, y aqui se monta `configuracion.js`.
  *
  * ## `runAsNonRoot` sin `runAsUser`
  *
@@ -446,24 +489,24 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
  * alguien lo devolviera a un nombre, este `Deployment` dejaria de arrancar y el descriptor no
  * tendria por que enterarse. Por eso `descriptor.test.ts` lee el `Dockerfile` y lo comprueba.
  *
- * ## Las sondas van a `/`
+ * ## Las sondas van a `/index.html`, por su nombre
  *
- * Y no a un `/healthz` inventado: lo que hay que saber es que **la pantalla se sirve**, y con el
- * `try_files` de `nginx.conf` pedir `/` es pedir la pantalla. Comprobar solo que el puerto acepta
- * conexiones daria por sano un nginx levantado sobre un directorio vacio — el mismo argumento con
- * el que el `HEALTHCHECK` de la imagen pide `/` en vez de abrir un socket.
+ * Y no a `/`, que era lo de antes de #74: con el `try_files` de `nginx.conf`, `/` contesta aunque
+ * el `dist/` no se hubiera copiado. Pedir el archivo **por su nombre** es lo unico que distingue
+ * «nginx levantado» de «nginx levantado sobre el `dist/` que se copio» — el mismo argumento del
+ * `HEALTHCHECK` de la imagen.
  */
 function despliegueDeLaInterfaz(e: EntornoDelDescriptor): Manifiesto[] {
   const etiquetas = { ...e.etiquetas, componente: COMPONENTE_DE_LA_INTERFAZ };
-  const configuracion = `${NOMBRE_DE_LA_INTERFAZ}-nginx`;
+  const configuracion = `${NOMBRE_DE_LA_INTERFAZ}-configuracion`;
   return [
     {
       apiVersion: "v1",
       kind: "ConfigMap",
       metadata: { name: configuracion, namespace: e.namespace, labels: etiquetas },
-      // `default.conf` y no `nginx.conf`: es el nombre con el que el `include conf.d/*.conf` de
-      // la imagen lo recoge, y el mismo sitio en el que el `Dockerfile` lo copia.
-      data: { "default.conf": NGINX_DE_LA_INTERFAZ },
+      data: {
+        "configuracion.js": `window.__KAMAYUK_CAJA__ = ${JSON.stringify(senasDelAmbiente(e), null, 2)};\n`,
+      },
     },
     {
       apiVersion: "apps/v1",
@@ -488,20 +531,21 @@ function despliegueDeLaInterfaz(e: EntornoDelDescriptor): Manifiesto[] {
                 resources: RECURSOS_DE_LA_INTERFAZ,
                 readinessProbe: {
                   timeoutSeconds: 3,
-                  httpGet: { path: "/", port: 8080 },
+                  httpGet: { path: "/index.html", port: 8080 },
                   periodSeconds: 10,
                 },
                 livenessProbe: {
                   timeoutSeconds: 3,
-                  httpGet: { path: "/", port: 8080 },
+                  httpGet: { path: "/index.html", port: 8080 },
                   periodSeconds: 20,
                 },
                 volumeMounts: [
                   {
                     name: "configuracion",
-                    mountPath: "/etc/nginx/conf.d/default.conf",
-                    // `subPath`, o el montaje taparia el directorio entero de `conf.d`.
-                    subPath: "default.conf",
+                    mountPath: "/usr/share/nginx/html/configuracion.js",
+                    // `subPath`, o el montaje taparia el directorio entero y con el el `dist/`. El
+                    // coste: un cambio del `ConfigMap` no llega al pod hasta que se reinicia.
+                    subPath: "configuracion.js",
                     readOnly: true,
                   },
                 ],
@@ -552,11 +596,20 @@ const PRIORIDAD_DE_LA_INTERFAZ = 10;
  * ## La decision, escrita donde se aplica y no solo en un PR
  *
  * Desde #17 el ingreso ruta `PathPrefix(/caja)` a `kamayuk-caja-interfaz` en todos los
- * ambientes, y esa interfaz **no habla con su backend**: `frontend/eslint.config.mjs` prohibe
- * `fetch` y `XMLHttpRequest`, `frontend/nginx.conf` no reenvia a ningun sitio y
- * `frontend/verificaciones/cero-red.mjs` mide **0 peticiones de conexion** en un Chromium de
- * verdad. Los datos que dibuja salen de `frontend/src/datos/`, copiados del artboard: numeros de
+ * ambientes, y esa interfaz **no hablaba con su backend**: `frontend/eslint.config.mjs` prohibia
+ * `fetch` y `XMLHttpRequest`, `frontend/nginx.conf` no reenviaba a ningun sitio y
+ * `frontend/verificaciones/cero-red.mjs` media **0 peticiones de conexion** en un Chromium de
+ * verdad. Los datos que dibujaba salian de `frontend/src/datos/`, copiados del artboard: numeros de
  * recibo con forma real, nombres de contribuyentes e importes.
+ *
+ * ## Y desde #74 esa interfaz ya no existe, y la constante SIGUE AQUI
+ *
+ * La maqueta V6 se retiro y la interfaz se rehizo con la forma de `rentas`: puerta PKCE, catalogo
+ * filtrado por lo que la sesion puede abrir y ni una cifra de ejemplo —cada hoja dice por que no
+ * tiene dato—. **Y la ruta de `prod` no vuelve todavia**, a proposito: ADR-0040 fija que se retira
+ * **la ultima**, solo cuando la pantalla autentique y hable con su backend medido en `stg` con un
+ * login de verdad. Esa es la fila C5 de #74, y borrar esta constante antes reproduce el dano que la
+ * decision original describe.
  *
  * Cada mitad esta decidida y argumentada por separado (ADR-0010, #17). Lo que nadie habia
  * decidido es **que las dos ocurran a la vez**: servida en `https://<dominio>/caja`, con el
@@ -665,10 +718,10 @@ function reglaDeDns() {
  * puerto del contenedor, y el mapeo 80 → 8080 lo deshace el `Service` antes. Escribir 80 aqui
  * seria una politica que no admite nada.
  *
- * **Salida**: DNS y nada mas. Y hay que decir lo que eso significa hoy: **esta interfaz no
- * resuelve ni un nombre** — `frontend/nginx.conf` no tiene ningun reenvio ni ningun `resolver`,
- * que es la afirmacion principal de ese archivo—, asi que la regla de DNS es el suelo comun de
- * todo pod del clúster y no una necesidad medida de este. Lo que **no** se declara es lo que
+ * **Salida**: DNS y nada mas. Y hay que decir lo que eso significa hoy: **este nginx no resuelve
+ * ni un nombre** — `frontend/nginx.conf` no tiene ningun reenvio ni ningun `resolver`—, asi que la
+ * regla de DNS es el suelo comun de todo pod del clúster y no una necesidad medida de este. Desde
+ * #74 la interfaz SI habla con su API, pero desde el navegador y por el ingreso: este pod no. Lo que **no** se declara es lo que
  * importa: sin una regla hacia el backend, un reenvio escrito aqui manana no funcionaria en el
  * clúster aunque funcionara en el compose, y eso se ve en el PR que lo escriba en vez de en
  * produccion.

@@ -41,15 +41,18 @@ cd backend && ./gradlew verificarArquitectura
 # 3 · El descriptor de despliegue. Tampoco necesita Pulumi, ni token, ni cluster
 cd ../infrastructure && yarn install && yarn verificar
 
-# 4 · La pantalla. Lo más barato que hay, y lo único que se puede MIRAR hoy
+# 4 · La pantalla. Necesita ../kamayuk-lib clonado al lado; la plataforma, no
 cd ../frontend && yarn install && yarn dev      # http://localhost:5181/caja/
 ```
 
-**Lo más rápido para ver algo funcionando es el punto 4, y no necesita nada de lo anterior**: ni
-Docker, ni PostgreSQL, ni Keycloak, ni el clon hermano. `caja-web` **no habla con nadie** —sus
-datos salen de `frontend/src/datos/`, `eslint.config.mjs` prohíbe `fetch` y el arnés
-`yarn cero-red` lo comprueba en un navegador de verdad—, así que `yarn dev` dibuja las cuatro
-secciones sobre un repositorio recién clonado.
+**Lo más rápido para ver algo funcionando es el punto 4**: ni Docker, ni PostgreSQL, ni Keycloak.
+Sí necesita **`../kamayuk-lib`**, de donde salen sus paquetes por `link:`. `yarn dev` siembra el
+catálogo y la cuenta con las capturas de `src/datos/` y no manda a nadie a Keycloak;
+`yarn dev:con-plataforma` hace la puerta PKCE de verdad contra la plataforma de [DEV-01 §3](entorno-local.md).
+
+> **Este párrafo decía que `caja-web` «no habla con nadie» y no necesita el clon hermano, y desde
+> #74 es falso.** La interfaz se rehizo con el stack de `rentas-web`: lee lo que su sesión puede
+> abrir de `/caja/api/v1` (ADR-0042) y sus paquetes vienen de `kamayuk-lib`.
 
 > **Este párrafo decía «lo que todavía no hay es una aplicación que arrancar: no existe ni una
 > clase de negocio», y es falso desde P5D.** El backend tiene su contexto acotado entero
@@ -70,15 +73,14 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | Arreglar el formato | `./gradlew spotlessApply` | `backend/` |
 | Verificar el descriptor | `yarn verificar` | `infrastructure/` |
 | **Ver la pantalla** | `yarn dev` → <http://localhost:5181/caja/> | `frontend/` |
+| **Ver la pantalla contra la plataforma** | `yarn dev:con-plataforma` → <http://localhost:5181/caja/> | `frontend/` |
 | **Verificar la pantalla** | `yarn verificar` (ESLint, tipos y Vitest) | `frontend/` |
 | **Construir el artefacto de la pantalla** | `yarn build` → `frontend/dist/` | `frontend/` |
-| Los cuatro arneses de navegador | `yarn paleta` · `yarn pegajosa` · `yarn mirar` · `yarn cero-red` | `frontend/`, con `yarn dev` levantado |
-| Que la interfaz sea alcanzable bajo `/caja` | `yarn prefijo` | `frontend/`, con el `dist/` servido (`yarn build && yarn preview`) — **no vale contra `yarn dev`**, y lo dice |
-| Que el artefacto se declare maqueta y no invente a nadie | `yarn maqueta` | `frontend/`, con `yarn build` hecho. No necesita servidor ni Chromium |
-| Que el nginx que se despliega sirva **con y sin** ingreso delante | `yarn sin-traefik` | `frontend/`, con `yarn build` hecho y Docker —o un nginx ya levantado en `CAJA_NGINX`—. Sin ninguno de los dos no se omite: sale con codigo 2 |
+| Los caminos en un navegador de verdad | `yarn e2e:navegador` una vez, y `yarn e2e` (construye y sirve el `dist/` solo) | `frontend/` |
+| La imagen de la interfaz | `docker buildx build --build-context kamayuk-lib=../kamayuk-lib --target interfaz -f frontend/Dockerfile frontend` | la raíz |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |
 | Levantar **lo de este sistema** contra ella | `docker compose -f despliegue/compose.yaml --env-file ../infrastructure/despliegue/.env up -d --build --wait` | la raíz |
-| Levantar **sólo la interfaz** (ni backend, ni base, ni Keycloak — pero **sí la red de la plataforma**, que este compose declara `external: true`) | `docker compose -f despliegue/compose.yaml --env-file ../infrastructure/despliegue/.env up -d --build caja-interfaz --wait` | la raíz |
+| Levantar **sólo la interfaz** (se abre por Traefik, `http://localhost:8080/caja/`; sin backend la puerta abre y el catálogo dice que no pudo leerse) | `docker compose -f despliegue/compose.yaml --env-file ../infrastructure/despliegue/.env up -d --build caja-interfaz --wait` | la raíz |
 | Lo que hay que pasar antes de un PR | `./gradlew build verificarAislamiento verificarArquitectura` · `yarn verificar` (los **dos**: `infrastructure/` y `frontend/`) | los tres |
 
 ## Las dos frases que gobiernan todo lo demás

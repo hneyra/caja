@@ -1,0 +1,7 @@
+// Muestra para `verificaciones/la-frontera-de-caja.test.ts` (#74): lo que la ventanilla no puede
+// escribir. Es `.txt` para que ni `tsc` ni ESLint la lean, y fuera de `muestras/` porque aquel
+// directorio es el de las prohibiciones de ESLint. La guarda la lee como texto y exige que dispare cada regla.
+export const deudaDelOtroSistema = '/rentas/api/v1/consultas/deuda';
+export const senasDeOtro = window.__KAMAYUK_RENTAS__;
+import { algo } from '../../../rentas/frontend/src/datos/lecturas.ts';
+export const campo = { etiqueta: 'Autovaluo del predial', tipo: 'r' };

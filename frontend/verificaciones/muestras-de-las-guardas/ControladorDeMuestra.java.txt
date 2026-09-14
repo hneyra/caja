@@ -1,0 +1,32 @@
+// Muestra para `verificaciones/el-arbol-cuadra-con-el-backend.test.ts` (#74). NO es codigo del
+// backend: es la forma que el lector de controladores tiene que saber leer, con las tres trampas que
+// ya costaron un defecto —el acceso escrito como constante (#77), las alternativas en `oTambien` y
+// dos mapeos con la misma ruta que se distinguen por `params`—.
+@RestController
+@RequestMapping(Api.RAIZ + "/muestras")
+public class ControladorDeMuestra {
+
+    static final String ACCESO_DE_MUESTRA = "acceso_de_muestra";
+
+    /** Un comentario con @GetMapping("/no-cuenta") dentro, que el lector no puede tomar por un mapeo. */
+    @GetMapping
+    @RequiereAcceso(
+            acceso = ACCESO_DE_MUESTRA,
+            oTambien = {"alternativa_uno", "alternativa_dos"},
+            privilegio = Privilegio.LECTURA)
+    public Object listar() {
+        return null;
+    }
+
+    @GetMapping(value = "/{id}", params = "formato")
+    @RequiereAcceso(acceso = "acceso_de_muestra", privilegio = Privilegio.IMPRESION)
+    public Object imprimir() {
+        return null;
+    }
+
+    @PostMapping("/{id}/anulacion")
+    @RequiereAcceso(acceso = ControladorDeMuestra.ACCESO_DE_MUESTRA, privilegio = Privilegio.ELIMINACION)
+    public Object anular() {
+        return null;
+    }
+}

@@ -235,62 +235,31 @@ que haberlo mirado.
 
 ---
 
-## 3 · `Identidad.ts` — el *client* público que esta interfaz no tiene
+## 3 · `Identidad.ts` — el *client* público de esta interfaz
 
-**Rutas exactas:**
+> **Este apartado decía que la interfaz no autentica y que un cliente de OIDC sería una credencial
+> sin uso, y desde #74 es falso.** La interfaz hace la puerta PKCE con el cliente público
+> **`kamayuk-backoffice`** —el mismo de `rentas-web`, porque el realm es uno (ADR-0031 §1)— y lee lo
+> que su sesión puede abrir de `/caja/api/v1` (ADR-0042). El día que el apartado anunciaba —«el día
+> que esta interfaz lea un solo dato real»— llegó, y el cliente estaba **antes**.
 
-- `infrastructure/infra/componentes/Identidad.ts`, línea 116 (`CLIENTE_DEL_BACKOFFICE`)
-- `infrastructure/despliegue/identidad/realm-sgtm.json` — **donde vive de verdad el cliente**
+Lo que hizo falta en `infrastructure`, y ya está:
 
-*(El encargo nombraba sólo el primero. `Identidad.ts` no declara ningún cliente: los lee del realm
-versionado —`realmSgtmJson()`, línea 196— y sólo nombra dos constantes. El archivo que hay que
-tocar para que exista un cliente son los dos.)*
+- **[`infrastructure`#185](https://github.com/hneyra/infrastructure/pull/185)**: `kamayuk-backoffice`
+  admite `http://localhost:5181/*`, el `yarn dev` de esta interfaz, en `realm-kamayuk.json` y en el
+  realm derivado. El dominio público ya estaba admitido con `https://vmd205066.contaboserver.net/*`, y `/caja/` cuelga de él.
+- **Las señas no se hornean**: el emisor, el cliente y el alcance llegan en `configuracion.js`, que el
+  descriptor de este repositorio monta con un `ConfigMap` (`window.__KAMAYUK_CAJA__`). Una misma
+  imagen sirve a `stg` y a `prod`.
 
-### Lo que hay hoy, contado
-
-```
-$ python3 -c "…json.load(open('despliegue/identidad/realm-sgtm.json'))…"
-sgtm-backoffice   | publicClient=True | pkce=S256 | redirect=['http://localhost:5173/*',
-                                                              'http://localhost:8081/*',
-                                                              'https://vmd205066.contaboserver.net/*']
-sgtm-verificacion | publicClient=True | pkce=None  | redirect=[]
-```
-
-**Dos clientes, y ninguno es de esta interfaz.** `sgtm-backoffice` es el del monolito: sus
-redirecciones son `:5173` (su `vite dev`) y `:8081` (su `interfaz` de compose,
-`infrastructure/despliegue/compose.yaml:252`). Ni `:8082` —el puerto que publica el servicio
-`caja-interfaz` de este repositorio— ni `<dominio>/caja/*` están.
-
-Falta, según ADR-0030 §3 y ADR-0031 §1 (*«los clients de los cuatro frontends también, porque el
-realm es uno»*), un cliente público con PKCE `S256` para `caja-web`, con sus redirecciones.
-
-### Y hoy eso es correcto, hasta un día concreto
-
-**Esta interfaz no autentica.** No es un olvido y no está a medias: la ficha de sesión del diseño
-—el nombre, el rol, «Cerrar sesión»— es **decorativa**, no hay token, no hay `redirect` a Keycloak
-y no puede haberlo, porque esta interfaz **no hace ni una petición de red**: sus datos salen de
-`frontend/src/datos/`, `eslint.config.mjs` prohíbe `fetch` en el código y
-`frontend/verificaciones/cero-red.mjs` lo comprueba en un navegador de verdad.
-
-Un cliente de OIDC para una pantalla que no llama a nadie sería una credencial declarada sin uso, y
-eso es peor que no tenerla: aparece en el inventario, alguien la da por buena y nadie mide si sus
-redirecciones siguen siendo las que son.
-
-**Qué se rompe, y cuándo:** el día que esta interfaz lea **un solo dato real**. Ese día el backend
-—que exige `KAMAYUK_OIDC_EMISOR` y **se niega a arrancar sin él**— contestará `401` a todo, y el
-síntoma será una pantalla vacía sin un solo mensaje que nombre a Keycloak. Ese día el cliente tiene
-que existir **antes**, no después, y con él tendrán que entrar el `proxy_pass` de
-`frontend/nginx.conf` —que hoy no existe, y contarlo da cero— y la variable de compilación de Vite
-con la URL de la API.
+**Lo que queda**, y es de allí: el censo de
+`infra/verificaciones/{sondas-contra-la-cadena,upstream-de-la-interfaz}.test.ts` sigue diciendo que el
+`nginx.conf` de caja llega por `configmap`; desde #74 viaja **en la imagen**. Sale rojo al integrar
+este cambio, y se corrige en el PR siguiente de `infrastructure`.
 
 ---
 
 ## Lo que este documento NO es
 
-- **No es una lista de tareas de este repositorio.** Las tres cosas viven en `infrastructure` y
-  las decide quien lo mantiene.
-- **No incluye el `/caja`.** Que la interfaz todavía no sea alcanzable bajo su prefijo —falta
-  declarar `base` en `vite.config.ts` **y** arreglar el literal `src="/escudo-catacaos.png"` de
-  `BarraGlobal.tsx`, las dos a la vez— es un hueco de **este** repositorio y tiene su propio
-  issue, el **#37**, con la tabla de medición dentro. Mientras siga abierto, la única forma de
-  mirar esta pantalla desplegada es el puerto que publica el servicio `caja-interfaz`.
+- **No es una lista de tareas de este repositorio.** Lo que queda vive en `infrastructure` y lo decide
+  quien lo mantiene.
