@@ -25,7 +25,8 @@
  * un nicho sin arrastrar el Codigo Tributario.
  *
  * Su egreso hacia `rentas` **no es para preguntar**: es el `PagoRegistrado` que publica al cobrar,
- * porque **la imputacion es de rentas** (`ADR-0026` §2). Si Caja imputara, la regla del Codigo
+ * porque **la imputacion es de rentas** (`ADR-0026` §2). Lo saca del buzon un proceso aparte, el
+ * `Deployment` del perfil `publicador` (#79), y no la peticion que cobra. Si Caja imputara, la regla del Codigo
  * Tributario estaria escrita dos veces. Y desde la etapa 4 de ADR-0039 tiene un segundo egreso,
  * hacia `identidad` —el sistema, no Keycloak—, que tampoco es para cobrar: es el consumidor del
  * buzon de la autorizacion, corre en un `CronJob` del perfil `batch` y la ventanilla sigue
@@ -347,6 +348,63 @@ const SEGURIDAD = {
   capabilities: { drop: ["ALL"] as ["ALL"] },
 };
 
+/**
+ * El perfil del publicador del buzon de pagos (#79): `PublicadorDelBuzon.PERFIL` en el backend, y
+ * `descriptor.test.ts` lee de alli que digan lo mismo.
+ */
+const PERFIL_DEL_PUBLICADOR = "publicador";
+
+/**
+ * A donde se le entrega el evento de cada pago, y de donde se lee la conciliacion (ADR-0026 §3 y
+ * §4): `KAMAYUK_CAJA_ORIGENES`, un MAPA por nombre de sistema y no una direccion unica —la caja no
+ * sabe cuantos sistemas hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
+ * despliegue de la caja—.
+ *
+ * ## El anfitrion se compone con `namespaceDe`, y hasta #79 no se componia
+ *
+ * Esta linea decia `{rentas: 'http://rentas:8080/rentas/api/v1'}`: el nombre del SERVICIO del
+ * compose de `rentas`, que en el cluster no existe. Medido en `stg` el 2026-09-14 sobre
+ * `deployment/kamayuk-caja-web`: no hay ningun `Service` llamado `rentas`, y el de ese sistema es
+ * `kamayuk-rentas-web`, en SU namespace. La conciliacion habria muerto en la resolucion del nombre,
+ * antes de autenticar; y el publicador, que entonces no estaba desplegado, habria gastado sus
+ * intentos contra la nada. Es el punto 1 de C-17 —`postgres:5432` en vez del motor de la
+ * plataforma— repetido en la otra arista, y por eso la guarda de `descriptor.test.ts` es la misma
+ * para las dos: ningun anfitrion entre sistemas sin punto.
+ *
+ * `kamayuk-rentas-web` es lo que `despliegueDelPerfil(e, "web", true)` de `rentas` publica, igual
+ * que `kamayuk-identidad-web` en `variablesDelConsumidorDeIdentidad`. Al puerto 80 del `Service`,
+ * que es el que reparte al 8080 del pod —el que la regla de egreso abre—, y con la raiz ENTERA: el
+ * `Api.RAIZ` de `rentas` es `/rentas/api/v1`.
+ */
+function origenesDeLosPagos(e: EntornoDelDescriptor): VariableDeEntorno {
+  return {
+    name: "KAMAYUK_CAJA_ORIGENES",
+    value: `{rentas: 'http://kamayuk-rentas-web.${e.namespaceDe("rentas")}/rentas/api/v1'}`,
+  };
+}
+
+/**
+ * Un `Deployment` del artefacto en un perfil, y su `Service` si atiende HTTP.
+ *
+ * Son DOS desde #79: `web`, que atiende la API, y `publicador`, que saca el buzon de pagos. Lo que
+ * cambia con `atiendeHttp` no es un adorno, es lo que cada proceso ES:
+ *
+ *   - **Puertos, `Service` y sondas, solo si atiende.** El publicador no abre puerto —su perfil lleva
+ *     `web-application-type: none`—, asi que no hay `/actuator/health` que pedirle, y una sonda
+ *     `exec` no tendria que preguntar: lo mismo que el `CronJob` y los `Job` de este archivo, que
+ *     tampoco llevan ninguna. Lo que Kubernetes SI ve de el es que el proceso muera, y lo recrea.
+ *     Lo que no ve es un publicador colgado; eso queda escrito como hueco en el PR de #79, no
+ *     tapado con una sonda que mediria otra cosa.
+ *   - **El emisor y su JWKS, solo si atiende.** Son de `spring.security.oauth2.resourceserver`, que
+ *     vive en el bloque `web` del `application.yaml`: un proceso sin peticiones no valida tokens.
+ *     El token que el publicador PIDE sale de `KAMAYUK_CAJA_IDENTIDAD_TOKEN`, que va en los dos.
+ *   - **La prioridad.** `servicio` para quien atiende a la ventanilla y `lote` para quien no: bajo
+ *     presion de memoria, antes se desaloja al publicador —el buzon espera, es para eso— que a la
+ *     API con la que se cobra.
+ *
+ * `maxSurge: 0` vale doble en el publicador: ademas del nodo sin holgura, es lo que impide que el
+ * pod viejo y el nuevo saquen el mismo buzon a la vez durante un despliegue.
+ */
 function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHttp: boolean): Manifiesto[] {
   const nombre = `kamayuk-${SISTEMA}-${perfil}`;
   const etiquetas = { ...e.etiquetas, componente: SISTEMA, perfil };
@@ -364,7 +422,7 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
         template: {
           metadata: { labels: { ...etiquetas, app: nombre } },
           spec: {
-            priorityClassName: e.prioridadDe(perfil === "batch" ? "lote" : "servicio"),
+            priorityClassName: e.prioridadDe(atiendeHttp ? "servicio" : "lote"),
             containers: [
               {
                 name: SISTEMA,
@@ -378,16 +436,21 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                     name: "KAMAYUK_DB_CLAVE",
                     valueFrom: { secretKeyRef: { name: e.secretoDe("app"), key: "clave" } },
                   },
-                  // Sin el emisor la aplicacion se niega a arrancar, y es deliberado: un backend
-                  // que atiende sin poder validar un token responde a la sonda, se declara sano y
-                  // no atiende a nadie (ADR-0005).
-                  { name: "KAMAYUK_OIDC_EMISOR", value: e.plataforma.emisor },
-                  // El JWKS por la red INTERNA, cruzando el namespace de la plataforma (C-14).
-                  // Hasta aqui este descriptor apuntaba las dos al nombre publico: el backend
-                  // habria salido al ingreso para volver a entrar, y con la politica de egreso
-                  // declarada —que nombra el pod de identidad, no internet— no habria salido en
-                  // absoluto. Todo token invalido, por un motivo que no se parece a su causa.
-                  { name: "KAMAYUK_OIDC_JWKS", value: e.plataforma.jwks },
+                  ...(atiendeHttp
+                    ? [
+                        // Sin el emisor la aplicacion se niega a arrancar, y es deliberado: un
+                        // backend que atiende sin poder validar un token responde a la sonda, se
+                        // declara sano y no atiende a nadie (ADR-0005).
+                        { name: "KAMAYUK_OIDC_EMISOR", value: e.plataforma.emisor },
+                        // El JWKS por la red INTERNA, cruzando el namespace de la plataforma
+                        // (C-14). Hasta aqui este descriptor apuntaba las dos al nombre publico:
+                        // el backend habria salido al ingreso para volver a entrar, y con la
+                        // politica de egreso declarada —que nombra el pod de identidad, no
+                        // internet— no habria salido en absoluto. Todo token invalido, por un
+                        // motivo que no se parece a su causa.
+                        { name: "KAMAYUK_OIDC_JWKS", value: e.plataforma.jwks },
+                      ]
+                    : []),
                   // Y el punto de EMISION, tambien por la red interna y por lo mismo (#21 AC-2).
                   // El publicador del buzon corre sin usuario delante —lo despierta un reloj, no
                   // una peticion—, asi que no tiene ningun `Authorization` del que tirar: pide el
@@ -411,14 +474,10 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                       secretKeyRef: { name: e.secretoDe("rentas"), key: "clave" },
                     },
                   },
-                  // A donde se le entrega el evento de cada pago (ADR-0026 §3). Es un MAPA por
-                  // nombre de sistema y no una direccion unica: la caja no sabe cuantos sistemas
-                  // hay, y el dia que aparezca `mercados` tiene que ser una linea aqui y no un
-                  // despliegue de la caja.
-                  {
-                    name: "KAMAYUK_CAJA_ORIGENES",
-                    value: `{rentas: 'http://rentas:8080/rentas/api/v1'}`,
-                  },
+                  // A donde se le entrega el evento de cada pago (ADR-0026 §3), y de donde lee la
+                  // conciliacion el perfil `web`. Ver `origenesDeLosPagos`: hasta #79 era un
+                  // nombre de compose.
+                  origenesDeLosPagos(e),
                   // QUIEN recibe el aviso cuando hay dinero cobrado sin registrar
                   // (ADR-0026 §4). La aplicacion NO ARRANCA sin las dos —lo comprueba
                   // `ResponsableDeLaConciliacion` al construirse, y el propio
@@ -434,7 +493,13 @@ function despliegueDelPerfil(e: EntornoDelDescriptor, perfil: string, atiendeHtt
                   ...operacionDeLaCaja(e),
                 ],
                 ...(atiendeHttp ? { ports: [{ name: "http", containerPort: 8080 }] } : {}),
-                resources: RECURSOS,
+                // Los mismos `limits` para los dos y `requests` mas bajos para el que no atiende,
+                // que es el reparto de `RECURSOS_DE_ARRANQUE` y el que ya llevan el `CronJob` y los
+                // dos `Job` de este descriptor, que corren ESTE MISMO jar. El `request` es lo que
+                // el planificador reserva y bloquea: reservarle a un proceso de fondo lo mismo que
+                // a la ventanilla es quitarle sitio a la ventanilla en un nodo que va justo
+                // (`capacidad.ts`, issue #252).
+                resources: atiendeHttp ? RECURSOS : RECURSOS_DE_ARRANQUE,
                 ...(atiendeHttp ? sondas() : {}),
                 securityContext: SEGURIDAD,
               },
@@ -803,7 +868,25 @@ export const caja: DescriptorDeSistema = {
     };
   },
 
-  despliegue: (e) => [...despliegueDelPerfil(e, "web", true), ...despliegueDeLaInterfaz(e)],
+  /**
+   * TRES piezas desde #79: la API (`web`), el publicador del buzon de pagos (`publicador`) y la
+   * interfaz de ventanilla.
+   *
+   * El publicador es un `Deployment` y no un `CronJob`, al reves que el consumidor de `identidad`,
+   * y la diferencia es de que proceso se trata. El consumidor es un `ApplicationRunner` que hace
+   * una pasada y TERMINA; el publicador es un `@Scheduled` que saca el buzon cada pocos segundos
+   * —`kamayuk.caja.entrega.intervalo`, `PT10S`— y cuya espera es la que la ventanilla le promete al
+   * sistema de origen. Un `CronJob` no baja de un minuto y arrancaria una JVM por vuelta.
+   *
+   * Y va en SU perfil y no en `batch`, que es donde estaba: ver `PublicadorDelBuzon` en el backend.
+   * `batch` termina —y el `CronJob` del consumidor depende de que termine—, asi que un `Deployment`
+   * en `batch` es el `CrashLoopBackOff` que la guarda C-17 §5 de `infrastructure` existe para ver.
+   */
+  despliegue: (e) => [
+    ...despliegueDelPerfil(e, "web", true),
+    ...despliegueDelPerfil(e, PERFIL_DEL_PUBLICADOR, false),
+    ...despliegueDeLaInterfaz(e),
+  ],
 
   /**
    * Su Job de migracion. Cada base tiene sus migraciones y su prueba de aislamiento.
@@ -907,8 +990,17 @@ export const caja: DescriptorDeSistema = {
 
   /**
    * Sus procesos por lotes con ventana: **uno**, el consumidor del buzon de `identidad`
-   * (ADR-0039, etapa 4), y no el publicador de pagos, que sigue siendo un `@Scheduled` sin
-   * `@EnableScheduling` (P6 §4.4) y por eso sigue sin `CronJob`.
+   * (ADR-0039, etapa 4).
+   *
+   * **El publicador de pagos no esta aqui, y desde #79 tampoco «sigue sin desplegar».** Este
+   * parrafo decia que era «un `@Scheduled` sin `@EnableScheduling` (P6 §4.4)», y las dos mitades
+   * eran falsas a la vez: `spring-modulith-starter-core` trae `MomentsAutoConfiguration`, que declara
+   * `@EnableScheduling` en todos los perfiles —medido en `ArranqueDeLaAplicacionTest`—, asi que el
+   * publicador SI se planificaba… dentro de este `CronJob` y del Job de implantacion, los segundos
+   * que viven, sin `KAMAYUK_CAJA_ORIGENES` ni credencial: al menos una vuelta contra `rentas:8080`
+   * cada cinco minutos, y por el codigo un intento gastado por pago pendiente en cada una (no medido
+   * en `stg`, donde no habia pagos). Desde #79 corre en su propio perfil y en su propio `Deployment`
+   * —ver `despliegue`—, y aqui ya no se planifica.
    *
    * ## Que corre, y que NO toca
    *
@@ -1082,7 +1174,9 @@ export const caja: DescriptorDeSistema = {
    * A quien puede llamar. **El egreso declarado ES el grafo de dependencias** (ADR-0029), y
    * tiene que coincidir con ARQ-01 reducido a cuatro nodos. Cada arista, con su motivo:
    *
-   * - **`rentas`**: el `PagoRegistrado` que publica al cobrar, para que rentas impute (ADR-0026 §3)
+   * - **`rentas`**: el `PagoRegistrado` que publica al cobrar, para que rentas impute (ADR-0026 §3).
+   *   Lo manda el `Deployment` del `publicador` (#79), y la conciliacion la lee el de `web`: la regla
+   *   selecciona por `componente: caja`, que llevan los dos, y no por `perfil`.
    * - **`identidad`** (el sistema, no Keycloak): el consumidor del buzon de la autorizacion, que
    *   corre en el `CronJob` del perfil `batch` y nunca en el camino del cobro (ADR-0039, etapa 4).
    *   Se selecciona por `componente: identidad-sistema`, porque `componente: identidad` es Keycloak

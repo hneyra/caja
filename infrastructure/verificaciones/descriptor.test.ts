@@ -273,8 +273,9 @@ describe("ADR-0039 etapa 4 — el consumidor del buzon de identidad, como CronJo
 
   /**
    * Hasta esta etapa `lotes()` devolvia `[]` con su motivo escrito: el unico periodico era el
-   * publicador de pagos, un `@Scheduled` sin `@EnableScheduling`. Ese sigue sin CronJob. El que
-   * hay es OTRO: `CorrerElConsumidorDeIdentidad`, un `ApplicationRunner` del perfil `batch`.
+   * publicador de pagos. Ese no es un CronJob: desde #79 es un `Deployment` de su perfil, y lo mide
+   * el bloque «#79» de abajo. El que hay aqui es OTRO: `CorrerElConsumidorDeIdentidad`, un
+   * `ApplicationRunner` del perfil `batch`.
    */
   it("declara UNO, cada cinco minutos, sin solaparse y con un solo reintento", () => {
     const cron = elCronJob();
@@ -442,6 +443,7 @@ describe("C-17 — que el despliegue pase de verdad", () => {
 
 const NOMBRE_DE_LA_INTERFAZ = "kamayuk-caja-interfaz";
 const NOMBRE_DEL_BACKEND = "kamayuk-caja-web";
+const NOMBRE_DEL_PUBLICADOR = "kamayuk-caja-publicador";
 
 /** Un archivo del repositorio, por su ruta desde la raiz. */
 function delRepositorio(ruta: string): string {
@@ -502,13 +504,14 @@ describe("#17 — la interfaz se despliega, y no se llama como el backend", () =
     const deployments = delDespliegue("Deployment").map((m) => m.metadata.name);
     const services = delDespliegue("Service").map((m) => m.metadata.name);
 
-    expect(deployments).toEqual([NOMBRE_DEL_BACKEND, NOMBRE_DE_LA_INTERFAZ]);
+    // Desde #79 hay un tercer `Deployment`, el del publicador, y SIN `Service`: no atiende HTTP.
+    expect(deployments).toEqual([NOMBRE_DEL_BACKEND, NOMBRE_DEL_PUBLICADOR, NOMBRE_DE_LA_INTERFAZ]);
     expect(services).toEqual([NOMBRE_DEL_BACKEND, NOMBRE_DE_LA_INTERFAZ]);
 
-    // Los cuatro manifiestos, con dos nombres distintos: uno por pieza. Se afirma aparte porque
-    // las dos listas de arriba se pueden cumplir por separado y aun asi chocar entre si.
+    // Tres piezas con tres nombres distintos. Se afirma aparte porque las dos listas de arriba se
+    // pueden cumplir por separado y aun asi chocar entre si.
     const nombres = [...deployments, ...services];
-    expect(new Set(nombres).size, `nombres repetidos: ${nombres.join(", ")}`).toBe(2);
+    expect(new Set(nombres).size, `nombres repetidos: ${nombres.join(", ")}`).toBe(3);
   });
 
   /**
@@ -1157,5 +1160,194 @@ describe("#42 — ningun archivo vivo dice que `vite.config.ts` no declara `base
 
   it("y `base` sigue declarado, que es la premisa de lo anterior", () => {
     expect(/^\s*base:\s*["']\/caja\/["']/m.test(delRepositorio("frontend/vite.config.ts"))).toBe(true);
+  });
+});
+
+/**
+ * #79 — el publicador del buzon de pagos se despliega, y la caja sabe llegar a `rentas`.
+ *
+ * <h2>Lo que habia, medido en `stg` el 2026-09-14</h2>
+ *
+ * En `kamayuk-caja-stg` corrian `kamayuk-caja-web` y `kamayuk-caja-interfaz`, y ningun proceso que
+ * sacara el buzon: en la base de `rentas`, `pago_evento` = 0. Y `KAMAYUK_CAJA_ORIGENES` decia
+ * `{rentas: 'http://rentas:8080/rentas/api/v1'}`, el nombre del servicio del COMPOSE de `rentas`,
+ * que en el clúster no existe: su `Service` es `kamayuk-rentas-web`, en su namespace.
+ *
+ * <h2>Las dos guardas</h2>
+ *
+ *   1. Existe el `Deployment` del perfil `publicador`, con lo que ese proceso necesita y sin lo que
+ *      no, y el perfil es el mismo que el backend declara.
+ *   2. **Ningun anfitrion entre sistemas sin punto.** Un nombre sin punto es un nombre de compose:
+ *      en el clúster, todo lo que no vive en el namespace propio se nombra `servicio.namespace`. Es
+ *      el defecto de C-17 punto 1 (`postgres:5432`) repetido en otra arista, y por eso la guarda no
+ *      mira solo `ORIGENES`: mira toda URL de todo contenedor.
+ */
+describe("#79 — el publicador del buzon, como Deployment de su propio perfil", () => {
+  function deploymentDelPublicador() {
+    const d = delDespliegue("Deployment").find((m) => m.metadata.name === NOMBRE_DEL_PUBLICADOR);
+    expect(d, `no hay ningun Deployment «${NOMBRE_DEL_PUBLICADOR}»: el buzon de pagos no lo saca nadie`).toBeDefined();
+    return d!;
+  }
+
+  function contenedorDelPublicador(): Contenedor {
+    const contenedores = deploymentDelPublicador().spec.template.spec.containers;
+    expect(contenedores).toHaveLength(1);
+    return contenedores[0]!;
+  }
+
+  it("corre la imagen de la aplicacion en el perfil `publicador`, el mismo que declara el backend", () => {
+    const c = contenedorDelPublicador();
+    expect(c.image).toBe(ENTORNO.imagenDe("caja"));
+    expect(valorDe(c, "SPRING_PROFILES_ACTIVE")).toBe("publicador");
+    // Leido del Java y no supuesto: si el backend lo renombra, el `Deployment` arranca un perfil
+    // que no activa nada —ni el publicador, ni `keep-alive`— y sale con codigo 0 en bucle.
+    const java = delRepositorio(
+      "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/PublicadorDelBuzon.java",
+    );
+    expect(java).toContain('PERFIL = "publicador"');
+    expect(java).toContain("@Profile(PublicadorDelBuzon.PERFIL)");
+  });
+
+  it("una sola replica, y nunca dos a la vez durante un despliegue", () => {
+    const spec = deploymentDelPublicador().spec;
+    expect(spec.replicas).toBe(1);
+    expect(spec.strategy?.rollingUpdate?.maxSurge, "con surge, el pod viejo y el nuevo sacarian el mismo buzon").toBe(0);
+  });
+
+  /**
+   * No atiende HTTP: su perfil lleva `web-application-type: none`. Asi que ni puerto, ni `Service`,
+   * ni sondas HTTP que pedir —lo mismo que el `CronJob` y los `Job` de este descriptor—. Lo que si
+   * lleva, como todo pod, son limites y el endurecimiento.
+   */
+  it("sin puerto, sin Service y sin sondas; con limites, endurecimiento y prioridad de lote", () => {
+    const c = contenedorDelPublicador();
+    expect(c.ports ?? []).toEqual([]);
+    expect(delDespliegue("Service").map((s) => s.metadata.name)).not.toContain(NOMBRE_DEL_PUBLICADOR);
+    expect([c.startupProbe, c.readinessProbe, c.livenessProbe]).toEqual([undefined, undefined, undefined]);
+    expect(c.resources.requests.cpu).toBeTruthy();
+    expect(c.resources.requests.memory).toBeTruthy();
+    expect(c.resources.limits.cpu).toBeTruthy();
+    expect(c.resources.limits.memory).toBeTruthy();
+    expect(c.securityContext?.runAsNonRoot).toBe(true);
+    expect(c.securityContext?.allowPrivilegeEscalation).toBe(false);
+    expect(deploymentDelPublicador().spec.template.spec.priorityClassName).toBe("kamayuk-stg-prioridad-lote");
+  });
+
+  it("lleva su base, el emisor de su token, su credencial hacia rentas, ORIGENES y a quien avisar", () => {
+    const c = contenedorDelPublicador();
+    expect(valorDe(c, "KAMAYUK_DB_URL")).toBe(`jdbc:postgresql://${ENTORNO.plataforma.motor}/caja`);
+    expect(valorDe(c, "KAMAYUK_DB_USUARIO")).toBe("kamayuk_app");
+    expect(valorDe(c, "KAMAYUK_CAJA_IDENTIDAD_TOKEN")).toBe(ENTORNO.plataforma.token);
+    expect(valorDe(c, "KAMAYUK_CAJA_IDENTIDAD_CLIENTE")).toBe("kamayuk-caja-servicio-200105");
+    const credencial = (c.env ?? []).find((v) => v.name === "KAMAYUK_CAJA_CREDENCIAL");
+    expect(credencial?.valueFrom?.secretKeyRef).toEqual({ name: "kamayuk-caja-stg-rentas", key: "clave" });
+    expect(valorDe(c, "KAMAYUK_CAJA_ORIGENES")).toBe(
+      "{rentas: 'http://kamayuk-rentas-web.kamayuk-rentas-stg/rentas/api/v1'}",
+    );
+    expect(valorDe(c, "KAMAYUK_CAJA_RESPONSABLE")).toBe("Guardia de plataforma");
+    expect(valorDe(c, "KAMAYUK_CAJA_CANAL")).toBe("guardia@example.pe");
+
+    // Y NO lo que no usa: no valida tokens —el emisor y su JWKS son del bloque `web`—, no lee el
+    // buzon de `identidad` —eso es del CronJob— y nunca la clave de `kamayuk_owner`.
+    for (const ajena of [
+      "KAMAYUK_OIDC_EMISOR",
+      "KAMAYUK_OIDC_JWKS",
+      "KAMAYUK_IDENTIDAD_URL",
+      "KAMAYUK_IDENTIDAD_CREDENCIAL",
+      "KAMAYUK_IMPLANTACION_OWNERCLAVE",
+    ]) {
+      expect(declara(c, ajena), `el publicador declara ${ajena}, y no la usa`).toBe(false);
+    }
+    expect(JSON.stringify(c)).not.toContain(ENTORNO.secretoDe("owner"));
+  });
+
+  it("y la API y el publicador apuntan a `rentas` con el MISMO mapa", () => {
+    const web = delDespliegue("Deployment").find((m) => m.metadata.name === NOMBRE_DEL_BACKEND)!;
+    expect(valorDe(web.spec.template.spec.containers[0]!, "KAMAYUK_CAJA_ORIGENES")).toBe(
+      valorDe(contenedorDelPublicador(), "KAMAYUK_CAJA_ORIGENES"),
+    );
+  });
+
+  /**
+   * La politica de egreso selecciona por `componente: caja`. Si el pod del publicador no llevara esa
+   * etiqueta, la arista hacia `rentas` existiria en el descriptor y no se aplicaria a quien la usa:
+   * trafico denegado con una politica que dice permitirlo.
+   */
+  it("la regla de egreso hacia `rentas` alcanza a su pod", () => {
+    const etiquetas = deploymentDelPublicador().spec.template.metadata.labels;
+    const politicas = caja.egreso(ENTORNO).filter((p) =>
+      Object.entries(p.spec.podSelector.matchLabels ?? {}).every(([k, v]) => etiquetas[k] === v),
+    );
+    const haciaRentas = politicas
+      .flatMap((p) => p.spec.egress ?? [])
+      .filter((r) => (r.to ?? []).some((d) => d.podSelector?.matchLabels?.["componente"] === "rentas"));
+    expect(haciaRentas, "ninguna politica que seleccione al publicador le abre `rentas`").toHaveLength(1);
+    expect(haciaRentas[0]!.to![0]!.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"]).toBe(
+      "kamayuk-rentas-stg",
+    );
+    expect(haciaRentas[0]!.ports).toEqual([{ protocol: "TCP", port: 8080 }]);
+  });
+});
+
+/**
+ * Los anfitriones de las URL de un valor que no llevan punto: nombres de compose.
+ *
+ * Mira `http(s)://` y `jdbc:postgresql://`, y los busca DENTRO del valor, no solo al principio:
+ * `KAMAYUK_CAJA_ORIGENES` es un mapa escrito como texto, y su URL va entre comillas.
+ */
+function anfitrionesSinPunto(valor: string): string[] {
+  return [...valor.matchAll(/(?:https?|jdbc:postgresql):\/\/([^/:'"\s}]+)/g)]
+    .map((m) => m[1]!)
+    .filter((anfitrion) => !anfitrion.includes("."));
+}
+
+describe("#79 — ninguna URL entre sistemas usa un anfitrion sin punto", () => {
+  /** Tal como estaba escrito hasta #79. Si esto no dispara, la guarda no mide nada. */
+  const MUESTRA = "{rentas: 'http://rentas:8080/rentas/api/v1'}";
+
+  /** Y lo que tiene que pasar: con namespace, con la base de la plataforma y con Keycloak. */
+  const CONTRAMUESTRAS = [
+    "{rentas: 'http://kamayuk-rentas-web.kamayuk-rentas-stg/rentas/api/v1'}",
+    "jdbc:postgresql://kamayuk-stg-postgres.kamayuk-stg:5432/caja",
+    "http://kamayuk-identidad-web.kamayuk-identidad-stg/identidad/api/v1",
+  ];
+
+  it("el detector dispara con el nombre de compose y no con un nombre del clúster", () => {
+    expect(anfitrionesSinPunto(MUESTRA)).toEqual(["rentas"]);
+    expect(anfitrionesSinPunto("jdbc:postgresql://postgres:5432/caja")).toEqual(["postgres"]);
+    for (const bien of CONTRAMUESTRAS) expect(anfitrionesSinPunto(bien), bien).toEqual([]);
+  });
+
+  it("y ningun contenedor de ningun manifiesto lleva uno", () => {
+    const contenedores = contenedoresDe([
+      ...caja.despliegue(ENTORNO),
+      ...caja.migracion(ENTORNO),
+      ...caja.implantacion(ENTORNO),
+      ...caja.lotes(ENTORNO),
+    ]);
+    const urls: { donde: string; valor: string }[] = [];
+    const culpables: string[] = [];
+    for (const c of contenedores) {
+      for (const v of c.env ?? []) {
+        if (v.value === undefined || !/:\/\//.test(v.value)) continue;
+        urls.push({ donde: `${c.name}/${v.name}`, valor: v.value });
+        for (const anfitrion of anfitrionesSinPunto(v.value)) {
+          culpables.push(`${c.name}/${v.name} → «${anfitrion}» en ${v.value}`);
+        }
+      }
+    }
+    expect(
+      culpables,
+      "un anfitrion sin punto es un nombre de compose: en el clúster no resuelve, y el sintoma " +
+        "es `UnknownHostException` lejos de su causa (C-17 punto 1, #79). Se compone con " +
+        "`e.namespaceDe(...)` o sale de `e.plataforma`",
+    ).toEqual([]);
+    // Que ha mirado: las URL de base, las de `identidad` y la de `rentas`, en los tres procesos del
+    // jar. Una lista vacia de culpables no dice nada si no se sabe que se leyo.
+    const leidas = urls.map((u) => u.donde);
+    expect(leidas).toContain("caja/KAMAYUK_CAJA_ORIGENES");
+    expect(leidas).toContain("consumidor/KAMAYUK_IDENTIDAD_URL");
+    expect(leidas).toContain("migrador/KAMAYUK_DB_URL");
+    expect(urls.filter((u) => u.donde.endsWith("/KAMAYUK_CAJA_ORIGENES"))).toHaveLength(2);
   });
 });

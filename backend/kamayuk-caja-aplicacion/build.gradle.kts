@@ -146,7 +146,7 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
 // `./gradlew build` sigue corriendo ambas.
 val pruebaDeArranque = tasks.register<Test>("pruebaDeArranque") {
     group = "verification"
-    description = "Levanta el artefacto en los perfiles web y batch contra PostgreSQL real (C-7)."
+    description = "Levanta el artefacto en los perfiles web, batch y publicador contra PostgreSQL real (C-7, #79)."
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath
     filter { includeTestsMatching("*ArranqueDeLaAplicacionTest") }

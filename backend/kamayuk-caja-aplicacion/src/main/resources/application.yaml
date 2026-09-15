@@ -139,3 +139,20 @@ spring:
       on-profile: batch
   main:
     web-application-type: none
+
+# El publicador del buzon de pagos (#79): un proceso de LARGA VIDA que no atiende HTTP.
+# No es `batch` —ese perfil termina, y el CronJob del consumidor de `identidad` depende
+# de que termine— ni `web` —no tiene por que abrir la API—. Ver `PublicadorDelBuzon`.
+---
+spring:
+  config:
+    activate:
+      on-profile: publicador
+  main:
+    web-application-type: none
+    # SIN ESTO EL PROCESO SALE SOLO, con codigo 0. Sin servidor web no queda ningun
+    # hilo que no sea demonio: `spring.threads.virtual.enabled` pone el planificador en
+    # hilos virtuales, y un hilo virtual es siempre demonio. `main` vuelve, la JVM
+    # termina y el `Deployment` lo recrea: el `CrashLoopBackOff` de
+    # `kamayuk-rentas-batch` que C-17 §5 midio. Lo mide `ArranqueDeLaAplicacionTest`.
+    keep-alive: true
