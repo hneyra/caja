@@ -82,7 +82,7 @@ jobs:
       #
       # `path: infrastructure` a secas **no vale**: chocaria con el directorio
       # `infrastructure/` que este repositorio ya tiene dentro.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: caja
 
@@ -90,7 +90,7 @@ jobs:
       # hermano. En CI ese hermano no esta, asi que se clona al lado — con la MISMA estructura
       # de directorios que en local, o el `link:` no resuelve.
       - name: Traer el contrato de `infrastructure`
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: hneyra/infrastructure
           path: infrastructure
@@ -98,7 +98,7 @@ jobs:
           # alcanza al suyo: sin esto, `Not Found` al pedir la rama por omision.
           token: ${{ secrets.GH_CLONE_KEY || github.token }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
