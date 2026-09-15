@@ -1,7 +1,8 @@
 # ============================================================================
 #  CAJA, LEVANTADO CONTRA LA PLATAFORMA (ADR-0031 §4, C-18)
 #
-#  Solo lo de este sistema: su migrador, su implantacion y su backend. NO trae
+#  Solo lo de este sistema: su migrador, su implantacion, su backend, el
+#  publicador de su buzon de pagos (#79) y su interfaz. NO trae
 #  PostgreSQL ni Keycloak — los usa, y los levanta el compose de la plataforma,
 #  que vive en el clon hermano `infrastructure`:
 #
@@ -267,6 +268,63 @@ services:
       timeout: 3s
       retries: 40
       start_period: 30s
+
+  # ── El publicador del buzon de pagos (#79) ──────────────────────────────────
+  #
+  # La MISMA imagen que el backend, con el perfil `publicador`: un proceso de
+  # LARGA VIDA que no atiende HTTP y que saca el buzon cada `PT10S` (ADR-0026 §3).
+  #
+  # POR QUE ES UN SERVICIO APARTE Y NO UNA VARIABLE MAS DEL BACKEND
+  #
+  # Porque en el cluster son dos pods, y este archivo y el descriptor tienen que
+  # decir lo mismo. Y porque son dos procesos distintos: con dos replicas de `web`
+  # habria dos publicadores sacando el mismo buzon —no duplican pagos, que lo
+  # impide `FOR UPDATE SKIP LOCKED`, pero gastan intentos de mas, y los intentos
+  # son lo que separa un evento vivo de uno MUERTO—.
+  #
+  # NI `batch`, QUE ES DONDE ESTUVO HASTA #79. `batch` es el perfil de lo que
+  # TERMINA —la implantacion—, y `KamayukAplicacion.main` sale al acabar sus
+  # `ApplicationRunner`. Ver `PublicadorDelBuzon` en el backend.
+  #
+  # SIN `labels` DE TRAEFIK Y SIN PUERTO: no atiende nada. Y sin `healthcheck`,
+  # porque no hay a donde preguntarle: su perfil lleva `web-application-type: none`.
+  caja-publicador:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: aplicacion
+    image: kamayuk-caja:compose
+    depends_on:
+      # Como el backend: el esquema tiene que estar, y la fila de `municipalidad`
+      # tambien — el publicador recorre el registro de municipalidades para poder
+      # emitir su `SET LOCAL`, y sin ninguna no tiene buzon que sacar.
+      caja-implantacion:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: publicador
+      KAMAYUK_DB_URL: jdbc:postgresql://base:5432/caja
+      KAMAYUK_DB_USUARIO: kamayuk_app
+      KAMAYUK_DB_CLAVE: ${KAMAYUK_CLAVE_APP:?falta KAMAYUK_CLAVE_APP, sale del .env de la plataforma}
+      # El punto de EMISION del token, por la red interna (#21 AC-2): este proceso
+      # corre sin usuario delante —lo despierta un reloj— y pide el suyo con
+      # `client_credentials`.
+      KAMAYUK_CAJA_IDENTIDAD_TOKEN: http://identidad:8080/realms/kamayuk/protocol/openid-connect/token
+      KAMAYUK_CAJA_IDENTIDAD_CLIENTE: kamayuk-caja-servicio-${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
+      # VACIA por omision, como en el backend: en el compose la identidad de
+      # servicio se crea a mano, y mientras no exista lo correcto es que la llamada
+      # salga sin credencial y `rentas` la rechace.
+      KAMAYUK_CAJA_CREDENCIAL: ${KAMAYUK_CAJA_CREDENCIAL:-}
+      # AQUI `rentas` SI EXISTE: es el nombre del servicio del compose de ese
+      # sistema, en la red `kamayuk-plataforma` que los cinco comparten. En el
+      # cluster no existe ningun `Service` con ese nombre, y por eso el descriptor
+      # lo compone con `namespaceDe` (#79). Entrecomillado: el valor lleva dos
+      # puntos dentro y YAML lo leeria como un mapa.
+      KAMAYUK_CAJA_ORIGENES: "{rentas: 'http://rentas:8080/rentas/api/v1'}"
+      # A quien se avisa si hay dinero cobrado sin registrar (ADR-0026 §4). Aqui no
+      # es una formalidad heredada del bloque comun: es ESTE proceso el que
+      # descubre que un pago no se pudo entregar y el que dispara la alerta.
+      KAMAYUK_CAJA_RESPONSABLE: ${KAMAYUK_RESPONSABLE_DE_OPERACION:?falta KAMAYUK_RESPONSABLE_DE_OPERACION en el .env de la plataforma}
+      KAMAYUK_CAJA_CANAL: ${KAMAYUK_CANAL_DE_OPERACION:?falta KAMAYUK_CANAL_DE_OPERACION en el .env de la plataforma}
 
   # ── La interfaz de ventanilla ───────────────────────────────────────────────
   #

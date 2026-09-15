@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | Estado | Vigente |
-| Abierto por | #18, el último del lote de dieciséis de `caja-web` |
+| Abierto por | #18, el último del lote de dieciséis de `caja-web`; ampliado en #79 con el §4 |
 | Medido en | `infrastructure` en `main`, clonado en `../infrastructure`, con vitest 3.2.7 y `docker compose v5.5.1` |
 
 Este repositorio ya declara su interfaz entera: la imagen (#16), el `Deployment`, el `Service`, el
@@ -256,6 +256,44 @@ Lo que hizo falta en `infrastructure`, y ya está:
 `infra/verificaciones/{sondas-contra-la-cadena,upstream-de-la-interfaz}.test.ts` sigue diciendo que el
 `nginx.conf` de caja llega por `configmap`; desde #74 viaja **en la imagen**. Sale rojo al integrar
 este cambio, y se corrige en el PR siguiente de `infrastructure`.
+
+---
+
+## 4 · Los censos que cuentan procesos, y el nodo de `prod` — de #79
+
+**#79 despliega un proceso más**: `kamayuk-caja-publicador`, el `Deployment` del perfil
+`publicador` que saca el buzón de pagos (ADR-0026 §3). Hasta ahora no lo sacaba nadie — medido en
+`stg` el 2026-09-14, `pago_evento` = 0 en la base de `rentas` —, y `KAMAYUK_CAJA_ORIGENES` apuntaba
+a `http://rentas:8080/...`, un nombre de compose que en el clúster no existe.
+
+Nada de esto se puede arreglar aquí: son censos de `infrastructure`, y uno de los rojos **no es un
+censo sino el nodo**. Medido en `/home/jorge/ws/infrastructure/infra` con Node 22 y vitest 3.2.7,
+con este árbol montado como `../caja` (`yarn vitest run`): **7 archivos en rojo, 47 pruebas**, de
+las que 3 (`el-pr-ve-el-rojo-de-stg`) y las 22 de `deriva-de-migraciones` son del entorno de la
+medida —falta `jq` en la imagen de Node, y el árbol montado es un *worktree* sin `origin/main`— y
+no de este cambio. Los que sí:
+
+| # | Dónde | Rojo exacto |
+|---|---|---|
+| 1 | `capacidad.test.ts` — ««prod» cabe» | «El stack no cabe en el nodo por memoria: pide **9824Mi** en el pico del arranque y solo hay **9747Mi** disponibles. Faltan **77Mi**» |
+| 2 | `despliegue-de-los-sistemas.test.ts` — «en prod cabe el pico del arranque, y por memoria con 307Mi» | `expected 9824 to be less than or equal to 9747` |
+| 3 | `despliegue-de-los-sistemas.test.ts` — «en «stg»/«prod» no crece en silencio» | `expected 1550 to be less than or equal to 1500` (CPU del pico, en milicores) |
+| 4 | `despliegue-de-los-sistemas.test.ts` — «C-17 §5 · ningun `Deployment` de un sistema corre un perfil que termina» | `["kamayuk-caja-publicador/caja → publicador"]` — la guarda exige `SPRING_PROFILES_ACTIVE === "web"` |
+| 5 | `compose-de-los-sistemas.ts`, `principalDe()` | «`caja: despliegue` no tiene exactamente un contenedor que corra el jar (tiene 2)» — **lanza**, así que tumba el archivo entero |
+| 6 | `compose-de-los-sistemas.test.ts` — ««caja» trae sus procesos y ninguno mas» | sobra `caja-publicador` |
+| 7 | `imagenes-publicadas.test.ts` — «las VEINTICINCO cargas…» | `expected … to have a length of 25 but got 26` |
+| 8 | `perfil-del-ambiente.test.ts` — C-19 | `{ cpuEnMili: 1690, memoriaEnMi: 5920 }` frente a `{ cpuEnMili: 1640, memoriaEnMi: 5664 }` |
+
+Los rojos 3, 4, 6, 7 y 8 son **cifras y listas que se actualizan**: un proceso más. El 5 es el
+mismo caso que el rojo 2 de §2 —una excepción que tapa los hallazgos de los cinco sistemas— y hay
+que enseñarle a `servicioDe()` el par `publicador` ↔ `caja-publicador`. Los rojos 1 y 2 **no se
+arreglan con una cifra**: `prod` no tiene sitio para el pico del arranque, y lo dice su propio
+mensaje —«se decide si el nodo crece (INF-01 §2, D-25) o si baja la demanda con volumetría
+detrás»—. Este descriptor ya pide lo menos que puede sin mentir: el publicador lleva los
+`requests` de `RECURSOS_DE_ARRANQUE` (50m / 256Mi), los mismos que el `CronJob` y los dos `Job`
+que corren este mismo jar, y los `limits` de siempre.
+
+Queda declarado en [`infrastructure`#198](https://github.com/hneyra/infrastructure/issues/198).
 
 ---
 

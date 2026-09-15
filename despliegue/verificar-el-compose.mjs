@@ -62,14 +62,29 @@ const COMPOSE = fileURLToPath(new URL('./compose.yaml', import.meta.url));
 /** El nombre del proyecto. Es el prefijo de todo contenedor y de toda red que cree. */
 const PROYECTO = 'kamayuk-caja';
 
-/** Los cuatro procesos de este sistema, con la imagen y el objetivo con que se
-    construye cada uno. `caja-implantacion` y `caja` comparten imagen a proposito:
-    ADR-0003, un artefacto y dos perfiles. */
+/** Los cinco procesos de este sistema, con la imagen y el objetivo con que se
+    construye cada uno. `caja-implantacion`, `caja` y `caja-publicador` comparten imagen
+    a proposito: ADR-0003, un artefacto y —desde #79— TRES perfiles. */
 const SERVICIOS = {
   'caja-migraciones': { imagen: 'kamayuk-caja-migrador:compose', objetivo: 'migrador' },
   'caja-implantacion': { imagen: 'kamayuk-caja:compose', objetivo: 'aplicacion' },
   caja: { imagen: 'kamayuk-caja:compose', objetivo: 'aplicacion' },
+  'caja-publicador': { imagen: 'kamayuk-caja:compose', objetivo: 'aplicacion' },
   'caja-interfaz': { imagen: 'kamayuk-caja-interfaz:compose', objetivo: 'interfaz' },
+};
+
+/** El publicador del buzon de pagos (#79), que hasta entonces no lo levantaba nadie: era
+    un `@Scheduled` del perfil `batch`, o sea de los procesos que TERMINAN.
+
+    Se comprueban las tres cosas que lo hacen ser lo que es —su perfil, a donde entrega y
+    que NO reclama ninguna ruta del ingreso— porque las tres se pueden perder sin que el
+    compose deje de resolver: con el perfil `web` seria un segundo backend contestando la
+    mitad de las peticiones de la API, y sin `KAMAYUK_CAJA_ORIGENES` cada vuelta gastaria
+    un intento contra la direccion por omision. */
+const PUBLICADOR = {
+  servicio: 'caja-publicador',
+  perfil: 'publicador',
+  origenes: "{rentas: 'http://rentas:8080/rentas/api/v1'}",
 };
 
 /** El grafo ENTERO, y no solo el hueco de la interfaz. El orden de arranque es una
@@ -81,6 +96,9 @@ const DEPENDENCIAS = {
   'caja-migraciones': {},
   'caja-implantacion': { 'caja-migraciones': 'service_completed_successfully' },
   caja: { 'caja-implantacion': 'service_completed_successfully' },
+  // El publicador espera lo mismo que el backend, y por lo mismo: recorre el registro de
+  // municipalidades para poder emitir su `SET LOCAL`, y sin la implantacion no hay ninguna.
+  'caja-publicador': { 'caja-implantacion': 'service_completed_successfully' },
   'caja-interfaz': {},
 };
 
@@ -253,6 +271,7 @@ function laFormaDelArchivo(config) {
   }
 
   elConsumidorDeIdentidad(config);
+  elPublicadorDelBuzon(config);
   elRepartoDelPrefijo(config);
 
   const red = config.networks?.default;
@@ -289,6 +308,30 @@ function elConsumidorDeIdentidad(config) {
       + ` publicador. Lo que cambia en la etapa 5 es lo que cuesta no ponerla: la pasada del`
       + ` consumidor recibe 401, y la implantacion FALLA en vez de terminar callando`,
     `llega con valor «${entorno.KAMAYUK_IDENTIDAD_CREDENCIAL}» sin que nadie la haya puesto`,
+  );
+}
+
+/** El publicador del buzon (#79): su perfil, a donde entrega y que no enruta nada. */
+function elPublicadorDelBuzon(config) {
+  const servicio = config.services?.[PUBLICADOR.servicio];
+  if (!servicio) return; // ya esta anotado arriba como que falta
+  const entorno = servicio.environment ?? {};
+
+  anotar(
+    entorno.SPRING_PROFILES_ACTIVE === PUBLICADOR.perfil,
+    `«${PUBLICADOR.servicio}» corre el perfil «${PUBLICADOR.perfil}»`,
+    `corre «${entorno.SPRING_PROFILES_ACTIVE}». En «web» seria un segundo backend; en «batch», un`
+      + ` proceso que termina —y por eso el buzon no lo sacaba nadie hasta #79`,
+  );
+  anotar(
+    entorno.KAMAYUK_CAJA_ORIGENES === PUBLICADOR.origenes,
+    `y entrega en «${PUBLICADOR.origenes}»: el servicio del compose de rentas, que aqui SI existe`,
+    `entrega en «${entorno.KAMAYUK_CAJA_ORIGENES}»`,
+  );
+  anotar(
+    (servicio.labels ?? []).length === 0,
+    `y no reclama ninguna ruta del ingreso: no atiende HTTP`,
+    `declara etiquetas de Traefik: ${JSON.stringify(servicio.labels)}`,
   );
 }
 

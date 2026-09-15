@@ -23,7 +23,7 @@ tasks.register("verificarArquitectura") {
 tasks.register("verificarArranque") {
     group = "verification"
     description =
-        "Los dos perfiles del artefacto levantan de verdad, con todos sus beans. " +
+        "Los tres perfiles del artefacto (web, batch, publicador) levantan de verdad. " +
             "Bloqueante. Requiere PostgreSQL 16."
     dependsOn(":kamayuk-caja-aplicacion:pruebaDeArranque")
 }

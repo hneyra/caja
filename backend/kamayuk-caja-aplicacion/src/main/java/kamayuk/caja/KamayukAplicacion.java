@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.Environment;
 import org.springframework.modulith.Modulithic;
 
 /**
@@ -58,13 +59,31 @@ public class KamayukAplicacion {
      * <p>{@code SpringApplication.exit} cierra el contexto y calcula el codigo de salida a partir
      * de los {@code ExitCodeGenerator}, asi que un proceso masivo que falle seguira saliendo
      * distinto de cero.
+     *
+     * <p>Y desde #79 hay un tercer perfil, {@code publicador}, que tampoco atiende HTTP y <b>no</b>
+     * termina: saca el buzon de pagos cada pocos segundos, en un {@code Deployment}. Quien decide
+     * si un proceso sale es {@link #terminaAlAcabar}, y lo decide por {@code batch} y solo por
+     * {@code batch}.
      */
     public static void main(String[] args) {
         ConfigurableApplicationContext contexto =
                 SpringApplication.run(KamayukAplicacion.class, args);
-        if (contexto.getEnvironment().matchesProfiles(PERFIL_BATCH)) {
+        if (terminaAlAcabar(contexto.getEnvironment())) {
             System.exit(SpringApplication.exit(contexto));
         }
+    }
+
+    /**
+     * Si el proceso sale en cuanto acaban sus {@code ApplicationRunner}.
+     *
+     * <p>Sale aparte de {@link #main} para poder medirlo: {@code main} llama a {@code System.exit},
+     * que mataria la JVM de las pruebas. {@code ArranqueDeLaAplicacionTest} lo pregunta con el
+     * entorno de cada perfil levantado de verdad —{@code batch} tiene que salir, porque el {@code
+     * CronJob} del consumidor de {@code identidad} espera que acabe; {@code publicador} no, porque
+     * es un {@code Deployment}—.
+     */
+    public static boolean terminaAlAcabar(Environment entorno) {
+        return entorno.matchesProfiles(PERFIL_BATCH);
     }
 
     /**

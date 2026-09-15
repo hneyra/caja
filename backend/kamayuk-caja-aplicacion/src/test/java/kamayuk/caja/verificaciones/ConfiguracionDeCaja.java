@@ -348,10 +348,10 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
      * es un dato de verdad» es lo que cualquiera puede escribir sobre cualquier escritura.
      *
      * <p>Asi que entra con su motivo, que es el mismo de las cuatro entradas de `rentas` y la de
-     * `catastro`: <b>no hay ningun usuario delante</b>. El publicador corre en el perfil {@code
-     * batch}, recorriendo municipalidades sin peticion HTTP, y lo que marca es que un evento se
-     * entrego o que se agotaron sus intentos. Pedirle una observacion obligaria a inventarla —que
-     * es la mutacion que #538 midio y rechazo—.
+     * `catastro`: <b>no hay ningun usuario delante</b>. El publicador corre en su propio perfil,
+     * {@code publicador} (#79), recorriendo municipalidades sin peticion HTTP, y lo que marca es
+     * que un evento se entrego o que se agotaron sus intentos. Pedirle una observacion obligaria a
+     * inventarla —que es la mutacion que #538 midio y rechazo—.
      *
      * <p><b>Y lo que si tiene usuario, lo pide.</b> {@code ExplicarPagoSinEntregar} —la unica forma
      * de sacar un evento del estado MUERTO— exige {@link kamayuk.caja.dominio.Observacion} y ademas

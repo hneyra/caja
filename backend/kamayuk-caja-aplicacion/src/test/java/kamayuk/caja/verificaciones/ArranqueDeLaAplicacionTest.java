@@ -8,25 +8,35 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.SQLException;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import kamayuk.caja.KamayukAplicacion;
 import kamayuk.caja.autorizacion.ComprobadorDeAcceso;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
+import kamayuk.caja.nucleo.infraestructura.PublicadorDelBuzon;
 import kamayuk.caja.nucleo.infraestructura.web.CierreController;
 import kamayuk.caja.web.Api;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.scheduling.config.ScheduledTask;
+import org.springframework.scheduling.config.ScheduledTaskHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
- * {@code caja} arranca. Los dos perfiles, con el artefacto de verdad.
+ * {@code caja} arranca. Los tres perfiles —{@code web}, {@code batch} y, desde #79, {@code
+ * publicador}—, con el artefacto de verdad.
  *
  * <h2>El hueco que cierra (C-7)</h2>
  *
@@ -75,7 +85,7 @@ import org.springframework.test.context.DynamicPropertySource;
             "KAMAYUK_CAJA_RESPONSABLE=Jefa de Tesoreria",
             "KAMAYUK_CAJA_CANAL=tesoreria@municipalidad.gob.pe",
         })
-@DisplayName("C-7 — caja arranca, en los dos perfiles")
+@DisplayName("C-7 — caja arranca, en sus tres perfiles")
 class ArranqueDeLaAplicacionTest {
 
     private static BaseDeDatosDePrueba base;
@@ -142,6 +152,12 @@ class ArranqueDeLaAplicacionTest {
         assertThat(contexto.getBeanNamesForType(CierreController.class))
                 .as("el controlador que C-6 vio caerse por el comprobador que faltaba")
                 .isNotEmpty();
+
+        assertThat(contexto.getBeanNamesForType(PublicadorDelBuzon.class))
+                .as(
+                        "el publicador no va en web (#79): con replicas, varios publicadores gastan"
+                                + " intentos de mas sobre el mismo buzon")
+                .isEmpty();
     }
 
     @Test
@@ -198,7 +214,115 @@ class ArranqueDeLaAplicacionTest {
                                 "KAMAYUK_CAJA_CANAL=tesoreria@municipalidad.gob.pe")
                         .run()) {
             assertThat(contexto.isActive()).isTrue();
+
+            // #79: el perfil del `CronJob` del consumidor de `identidad` TERMINA. Un `Job` que no
+            // acaba deja a `concurrencyPolicy: Forbid` sin lanzar el siguiente, y la copia local
+            // de la autorizacion se queda congelada sin un solo rojo.
+            assertThat(KamayukAplicacion.terminaAlAcabar(contexto.getEnvironment()))
+                    .as("el perfil batch tiene que salir al acabar sus ApplicationRunner")
+                    .isTrue();
+
+            // Y NO saca el buzon. Planificar, en `batch` SI se planifica —y no por nada de este
+            // repositorio: `MomentsAutoConfiguration`, de `spring-modulith-starter-core`, declara
+            // `@EnableScheduling` en todos los perfiles, y por eso aqui se ven sus dos tareas—.
+            // Lo que no puede estar es el publicador: hasta #79 estaba, y corria unos segundos en
+            // cada Job de implantacion y en cada CronJob del consumidor, con un entorno sin
+            // `KAMAYUK_CAJA_ORIGENES` ni credencial. Cada vuelta le cuenta un intento a cada pago
+            // pendiente contra un `rentas:8080` que en el cluster no existe.
+            assertThat(contexto.getBeanNamesForType(PublicadorDelBuzon.class))
+                    .as(
+                            "el publicador del buzon no es de batch: ahi gasta intentos y lo corta la salida")
+                    .isEmpty();
+            assertThat(tareasPlanificadas(contexto))
+                    .as("ninguna tarea del publicador en el proceso que termina")
+                    .noneSatisfy(tarea -> assertThat(tarea).contains("PublicadorDelBuzon"));
         }
+    }
+
+    /**
+     * El perfil {@code publicador}, arrancado aparte (#79).
+     *
+     * <h2>Lo que mide, y por que asi</h2>
+     *
+     * <p>Hasta #79 el buzon de pagos no lo sacaba nadie en el clúster: {@code PublicadorDelBuzon}
+     * era un {@code @Scheduled} del perfil {@code batch}, sin un solo {@code @EnableScheduling} en
+     * el sistema, y el descriptor no desplegaba ningun proceso que lo llevara. Ahora corre en su
+     * propio perfil, en un {@code Deployment}, y eso son <b>tres</b> afirmaciones distintas:
+     *
+     * <ol>
+     *   <li><b>planifica</b>: el metodo del publicador esta entre las tareas del planificador;
+     *   <li><b>no arranca ningun {@code ApplicationRunner}</b>: ni el consumidor de {@code
+     *       identidad} —aunque {@code kamayuk.identidad.url} este puesta, que es lo que lo activa
+     *       en {@code batch}—, ni la implantacion, ni la carga de cajas;
+     *   <li>y <b>no termina</b>: {@link KamayukAplicacion#terminaAlAcabar} dice que no, y ademas el
+     *       contexto deja vivo al menos un hilo que no es demonio. Lo segundo no es redundante: con
+     *       hilos virtuales el planificador corre en hilos demonio, y un proceso al que {@code
+     *       main} no manda salir sale igual si no le queda ningun otro. Se mide como diferencia
+     *       entre antes y despues de arrancar, porque la JVM de las pruebas ya tiene los suyos.
+     * </ol>
+     *
+     * <p>No se le pasa {@code .web(...)}: que no levante servidor lo tiene que decir el {@code
+     * application.yaml} del jar, que es lo que el {@code Deployment} recibe.
+     */
+    @Test
+    @DisplayName("y el perfil publicador planifica el buzon, no arranca runners y no termina")
+    void elPerfilPublicadorPlanificaYNoTermina() {
+        Set<Thread> antes = hilosQueNoSonDemonio();
+        try (ConfigurableApplicationContext contexto =
+                new SpringApplicationBuilder(KamayukAplicacion.class)
+                        .profiles(PublicadorDelBuzon.PERFIL)
+                        .properties(
+                                "KAMAYUK_DB_URL=" + base.url(),
+                                "KAMAYUK_DB_USUARIO=" + BaseDeDatosDePrueba.APP,
+                                "KAMAYUK_DB_CLAVE=" + base.clave(BaseDeDatosDePrueba.APP),
+                                "KAMAYUK_CAJA_RESPONSABLE=Jefa de Tesoreria",
+                                "KAMAYUK_CAJA_CANAL=tesoreria@municipalidad.gob.pe",
+                                // La que activa el consumidor en `batch`. Aqui tiene que dar igual.
+                                "kamayuk.identidad.url=http://identidad.invalido/identidad/api/v1")
+                        .run()) {
+            assertThat(contexto)
+                    .as("el publicador no atiende HTTP, y lo tiene que decir el application.yaml")
+                    .isNotInstanceOf(WebApplicationContext.class);
+
+            assertThat(tareasPlanificadas(contexto))
+                    .as(
+                            "sin @EnableScheduling el @Scheduled no lo planifica nadie y el buzon"
+                                    + " se queda como esta: pago_evento = 0 en rentas (stg, #79)")
+                    .anySatisfy(tarea -> assertThat(tarea).contains("PublicadorDelBuzon.publicar"));
+
+            assertThat(contexto.getBeansOfType(ApplicationRunner.class))
+                    .as(
+                            "un ApplicationRunner en el publicador correria al arrancar cada pod: el"
+                                    + " consumidor de identidad es del CronJob, y la implantacion"
+                                    + " de su Job")
+                    .isEmpty();
+
+            assertThat(KamayukAplicacion.terminaAlAcabar(contexto.getEnvironment()))
+                    .as("es un Deployment: si main lo manda salir, CrashLoopBackOff")
+                    .isFalse();
+
+            Set<Thread> nuevos = hilosQueNoSonDemonio();
+            nuevos.removeAll(antes);
+            assertThat(nuevos)
+                    .as(
+                            "sin un hilo que no sea demonio la JVM sale sola con codigo 0 aunque"
+                                    + " main no la mande salir (spring.main.keep-alive, #79)")
+                    .isNotEmpty();
+        }
+    }
+
+    /** Lo que el planificador tiene apuntado, por el nombre de cada tarea. */
+    private static List<String> tareasPlanificadas(ConfigurableApplicationContext contexto) {
+        return contexto.getBeansOfType(ScheduledTaskHolder.class).values().stream()
+                .flatMap(quien -> quien.getScheduledTasks().stream())
+                .map(ScheduledTask::toString)
+                .toList();
+    }
+
+    private static Set<Thread> hilosQueNoSonDemonio() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(hilo -> hilo.isAlive() && !hilo.isDaemon())
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     private HttpResponse<String> pedir(String ruta) throws Exception {
