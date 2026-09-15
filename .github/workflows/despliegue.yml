@@ -52,9 +52,9 @@ jobs:
     # Un colgado no consume cuota sin limite: la leccion de `observabilidad-alertas`.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 

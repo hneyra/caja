@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Este repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: caja
 
@@ -47,7 +47,7 @@ jobs:
       # `../../infrastructure/librerias-backend`, asi que los dos clones tienen que quedar
       # hermanos: por eso el `path` de arriba y el de aqui.
       - name: Las librerias comunes de backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: hneyra/infrastructure
           path: infrastructure
@@ -64,7 +64,7 @@ jobs:
       # `sparse-checkout` de un solo directorio: lo unico que hace falta es el archivo, y traer el
       # repositorio entero por dos kilobytes seria pagar el clon de otro sistema en cada corrida.
       - name: Traer el contrato que publica «rentas»
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: hneyra/rentas
           path: rentas
@@ -86,13 +86,19 @@ jobs:
           fi
 
       - name: Instalar JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
 
+      # `@v5` y NO `@v6`, y no es despiste (#90). `v5` es la PRIMERA mayor de `gradle/actions` que
+      # declara `node24`, que es lo que este trabajo persigue. `v6` tambien lo declara, pero mueve
+      # el cache a `gradle-actions-caching`, un componente PROPIETARIO fuera de la MIT y sujeto a
+      # los terminos de uso de Gradle: subir a `v6` seria aceptarlos en nombre del producto, y eso
+      # no lo decide un cambio de version de una accion. Si alguna vez se quiere `v6`, se decide
+      # aparte y se escribe.
       - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       # El wrapper descarga la distribucion de services.gradle.org, que devuelve 502 de vez en
       # cuando. Sin este paso, ese 502 aparece como un build rojo indistinguible de un fallo real,
@@ -132,9 +138,14 @@ jobs:
         working-directory: caja/backend
         run: ./gradlew build --no-daemon
 
+      # `@v7`, y el salto NO se podia hacer de una mayor en una mayor: `upload-artifact@v5` SIGUE
+      # declarando `node20` —su nota de version lo dice: «v5 tenia soporte preliminar de Node 24,
+      # pero por omision seguia corriendo en Node 20»—, asi que subir a `v5` habria dejado el aviso
+      # donde estaba. `node24` empieza en `v6`. `v7` solo anade `archive`, con `true` por omision,
+      # que es el comportamiento de siempre (#90).
       - name: Publicar los informes de prueba
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: informes-de-prueba
           path: caja/backend/**/build/reports/tests/**
