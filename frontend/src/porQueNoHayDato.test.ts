@@ -21,7 +21,7 @@ describe('los dos casos, y a que hojas les toca cada uno', () => {
     expect(porQueNoHayDato(hojaDe('anulacion-recibo'))).toBe(SOLO_ESCRIBE);
   });
 
-  it('las otras seis tienen lecturas servidas que todavia no piden', () => {
+  it('las otras seis tienen lecturas: sin su conector dirian que no las piden (hoy lo tienen, #84)', () => {
     const conLecturas = CLAVES_DE_HOJA.filter((clave) => clave !== 'anulacion-recibo');
     expect(conLecturas).toHaveLength(6);
     for (const clave of conLecturas) {

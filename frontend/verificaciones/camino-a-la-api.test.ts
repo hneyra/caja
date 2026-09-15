@@ -12,6 +12,7 @@ import { PROHIBICIONES } from '../eslint.prohibiciones.mjs';
 import { PREFIJO as RAIZ } from '../src/api/cliente.ts';
 import { RUTAS } from '../src/datos/lecturas.ts';
 import configuracion from '../vite.config.ts';
+import { mapeosDelDirectorio } from './controladores.ts';
 
 /**
  * **El camino a la API de la ventanilla: que exista, que sea UNO, y que sea el suyo** (#74).
@@ -157,6 +158,56 @@ describe('lo que la interfaz lee tiene la forma con que el backend lo publica', 
   });
 });
 
+/** Los componentes de un `record` concreto, por su nombre, aunque el archivo declare varios. */
+function componentesDelRecord(archivo: string, nombre: string): readonly string[] {
+  const fuente = readFileSync(join(REPOSITORIO, archivo), 'utf8');
+  const cabecera = new RegExp(`record ${nombre}\\(([^)]*)\\)`).exec(fuente)?.[1];
+  if (cabecera === undefined) throw new Error(`«${archivo}» no declara el record «${nombre}».`);
+  return cabecera
+    .split(',')
+    .map((parte) => parte.trim().split(/\s+/).pop() ?? '')
+    .filter((n) => n !== '');
+}
+
+describe('lo que las pantallas leen existe en el backend, con la forma que se lee (#84)', () => {
+  const NUCLEO = 'backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web';
+  const { mapeos } = mapeosDelDirectorio(join(REPOSITORIO, NUCLEO));
+  const LECTURAS_DE_DATOS = ['cajas', 'recibos', 'pagosSinEntregar', 'avanceDeRecaudacion', 'recaudacionPorArea'] as const;
+
+  it('EL CENTINELA: se leyeron los mapeos del nucleo, y las cinco rutas de datos estan en RUTAS', () => {
+    expect(mapeos.length).toBeGreaterThan(15);
+    expect(Object.keys(RUTAS).filter((k) => !(k in { sesion: 1, municipalidadDeLaSesion: 1, modulos: 1, accesos: 1, permisosDeLaSesion: 1 })).sort()).toEqual(
+      [...LECTURAS_DE_DATOS].sort(),
+    );
+  });
+
+  it.each(LECTURAS_DE_DATOS)('RUTAS.%s es un `GET` sin `params` que el nucleo publica', (clave) => {
+    const ruta = RUTAS[clave].split('?')[0];
+    const publicados = mapeos.filter((m) => m.verbo === 'GET' && m.parametros === null).map((m) => m.ruta);
+    expect(publicados, `«${ruta}» no la publica ningun controlador del nucleo`).toContain(ruta);
+  });
+
+  it('y las capturas tienen los campos de sus `Resource`, ni uno mas', async () => {
+    const m = await import('../src/datos/tesoreriaMedida.ts');
+    const PAGO = `${NUCLEO}/PagoController.java`;
+    const RECAUDACION = `${NUCLEO}/RecaudacionResource.java`;
+    const IMPORTE = 'backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java';
+    const pares: [string, readonly string[], object | undefined][] = [
+      ['CajaEnListaResource', componentesDelRecord(`${NUCLEO}/CajaEnListaResource.java`, 'CajaEnListaResource'), m.CAJAS_MEDIDAS.contenido[0]],
+      ['ReciboEnListaResource', componentesDelRecord(`${NUCLEO}/ReciboEnListaResource.java`, 'ReciboEnListaResource'), m.RECIBOS_MEDIDOS.contenido[0]],
+      ['PagoResource', componentesDelRecord(PAGO, 'PagoResource'), m.PAGOS_MEDIDOS[0]],
+      ['Avance', componentesDelRecord(RECAUDACION, 'Avance'), m.AVANCE_MEDIDO],
+      ['FilaDeTributo', componentesDelRecord(RECAUDACION, 'FilaDeTributo'), m.AVANCE_MEDIDO.filas[0]],
+      ['Distribucion', componentesDelRecord(RECAUDACION, 'Distribucion'), m.DISTRIBUCION_MEDIDA],
+      ['FilaDePartida', componentesDelRecord(RECAUDACION, 'FilaDePartida'), m.DISTRIBUCION_MEDIDA.filas[0]],
+      ['ImporteActualizado', componentesDelRecord(IMPORTE, 'ImporteActualizado'), m.AVANCE_MEDIDO.neto],
+    ];
+    for (const [nombre, delBackend, captura] of pares) {
+      expect(Object.keys(captura ?? {}), `«${nombre}»`).toEqual(delBackend);
+    }
+  });
+});
+
 describe('el token no toca el almacenamiento del navegador, y el fetch vive en un sitio', () => {
   it('la prohibicion sigue en la lista y sin excepcion', () => {
     const suya = PROHIBICIONES.find((p) => p.clave === 'token-en-almacenamiento');
@@ -187,7 +238,7 @@ describe('el token no toca el almacenamiento del navegador, y el fetch vive en u
  * ofreceria las siete hojas a quien el backend no se las ofrece, y un `sesion ?? SESION_MEDIDA`
  * pondria al administrador en la barra de cualquiera.
  */
-const CAPTURAS = ['src/datos/seguridadMedida.ts', 'src/datos/sesionMedida.ts'];
+const CAPTURAS = ['src/datos/seguridadMedida.ts', 'src/datos/sesionMedida.ts', 'src/datos/tesoreriaMedida.ts'];
 
 describe('las capturas solo las importan las pruebas', () => {
   it.each(CAPTURAS)('«%s» no la importa ningun archivo de produccion', (captura) => {

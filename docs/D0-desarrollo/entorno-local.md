@@ -192,7 +192,8 @@ yarn dev:con-plataforma      # contra la plataforma y el backend de la sección 
 `VITE_KAMAYUK_SIN_PLATAFORMA=true`, y el arranque siembra el catálogo y la cuenta con las capturas
 de `src/datos/seguridadMedida.ts` y `sesionMedida.ts` y no manda a nadie a Keycloak. La consola lo
 dice, porque una interfaz que se ve entera sin nada levantado es justo lo que alguien confunde con
-«el backend contestó». Las pantallas no piden datos: dicen por qué no los tienen.
+«el backend contestó». **Lo que no se siembra son los datos de las hojas**: desde #84 seis pantallas
+los piden, y sin plataforma dicen que la lectura falló en vez de enseñar una cifra.
 
 **`yarn dev:con-plataforma`** apaga la bandera: la puerta PKCE va a Keycloak (`localhost:8180`, el
 cliente `kamayuk-backoffice`, que admite `localhost:5181` desde `infrastructure`#184) y las lecturas

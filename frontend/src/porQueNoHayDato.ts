@@ -17,8 +17,9 @@ import type { Hoja, Operacion } from './pantallas/tipos.ts';
  * existe, y lo vigila `el-arbol-cuadra-con-el-backend`. Quedan dos, y se dicen distinto porque se
  * arreglan en sitios distintos:
  *
- *   · **La hoja lee de operaciones servidas y todavia no las pide.** Es cuestion de conectarla
- *     (#74, fila C2).
+ *   · **La hoja lee de operaciones servidas y todavia no las pide.** Es cuestion de conectarla.
+ *     Desde #84 las seis que leen tienen conector (`datos/conectores.ts`), asi que este caso solo
+ *     lo alcanzaria una hoja nueva que llegara sin el: se queda para que esa hoja lo diga.
  *   · **La hoja solo escribe.** Ninguna lectura que pedir, y esta interfaz no escribe todavia
  *     (ADR-0040). Decir aqui «sin conectar» haria creer que falta un conector, y no falta: falta
  *     una decision.

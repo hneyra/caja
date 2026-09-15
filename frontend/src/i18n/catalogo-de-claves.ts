@@ -1,6 +1,8 @@
 import { ARBOL } from '../pantallas/arbol.ts';
 import { PANTALLAS } from '../pantallas/definiciones/index.ts';
 import type { Modulo, Pantalla } from '../pantallas/tipos.ts';
+import { FRASES_DE_LOS_CONECTORES } from '../datos/conectores.ts';
+import { AUSENCIAS_DE_UNA_LECTURA } from '../datos/useDatosDeLaHoja.ts';
 import { SIN_PEDIR, SOLO_ESCRIBE } from '../porQueNoHayDato.ts';
 import { clavesDelMarco } from './textosDelMarco.ts';
 
@@ -59,6 +61,7 @@ function deLasPantallas(): readonly string[] {
       salida.push(tabla.titulo, ...tabla.columnas.map((c) => c.rotulo));
       if (tabla.nota !== undefined) salida.push(tabla.nota);
       if (tabla.accion !== undefined) salida.push(tabla.accion);
+      if (tabla.vacio !== undefined) salida.push(tabla.vacio);
     }
   }
   return salida;
@@ -75,10 +78,12 @@ function delArbol(): readonly string[] {
 
 /** Las frases con que el sistema explica que no hay dato. */
 function deLasAusencias(): readonly string[] {
-  return [SIN_PEDIR, SOLO_ESCRIBE].flatMap((a) => [
-    a.enElCampo,
-    a.explicacion,
-  ]);
+  // Las de una hoja sin conector, las de una lectura que no contesto (#84) y las palabras de los
+  // huecos que deja una que si contesto.
+  return [
+    ...[SIN_PEDIR, SOLO_ESCRIBE, ...AUSENCIAS_DE_UNA_LECTURA].flatMap((a) => [a.enElCampo, a.explicacion]),
+    ...FRASES_DE_LOS_CONECTORES,
+  ];
 }
 
 /** El catalogo entero, sin repetidos y en orden. */

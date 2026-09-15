@@ -37,9 +37,9 @@ import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
  *   `GET /seguridad/sesion` y `GET /seguridad/sesion/municipalidad` de su propio backend
  *   (ADR-0042). Ver `datos/useCuentaDeLaSesion.ts`.
  * · **El catalogo se filtra hoja por hoja**, no por modulo: ver `permisos.ts`.
- * · **Ninguna pantalla pide datos todavia**: cada una dice por que (`porQueNoHayDato.ts`). Los
- *   conectores llegan en #74, fila C2. Y **ninguna escribe**, por ADR-0040: el pie solo ofrece
- *   exportar e imprimir, e imprimir imprime.
+ * · **Seis pantallas leen** desde #84 (`datos/conectores.ts`) y la que solo escribe dice por que no
+ *   tiene nada que leer (`porQueNoHayDato.ts`). Y **ninguna escribe**, por ADR-0040: el pie solo
+ *   ofrece exportar e imprimir, e imprimir imprime.
  *
  * <h2>El menu de sesion: las cuatro opciones hacen algo, y dos de ellas se van de aqui</h2>
  *

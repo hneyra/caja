@@ -8,9 +8,9 @@
 | `./gradlew verificarAislamiento` | Los cuatro roles, `FORCE ROW LEVEL SECURITY`, el `WITH CHECK`, que sin contexto la consulta **reviente en vez de devolver vacío**, y la trampa del superusuario | PostgreSQL 16 | **9 pruebas** |
 | `./gradlew build` | Lo anterior más Spotless | PostgreSQL 16 | |
 | `yarn verificar` (en `infrastructure/`) | El descriptor de despliegue: lint, tipos y pruebas | nada | **31 pruebas** |
-| `yarn verificar` (en `frontend/`) | `caja-web`: ESLint con sus muestras, `tsc` y Vitest | `../kamayuk-lib` | **33 archivos** (#74) |
+| `yarn verificar` (en `frontend/`) | `caja-web`: ESLint con sus muestras, `tsc` y Vitest | `../kamayuk-lib` | **35 archivos** (#84) |
 | `yarn build` (en `frontend/`) | Que el artefacto que se despliega se construye | `../kamayuk-lib` | |
-| `yarn e2e` (en `frontend/`) | Lo que un emulador de DOM **no puede decir**, sobre el `dist/` servido | Chromium de Playwright | **37 caminos** (#74) |
+| `yarn e2e` (en `frontend/`) | Lo que un emulador de DOM **no puede decir**, sobre el `dist/` servido | Chromium de Playwright | **39 caminos** (#84) |
 | `node docs/00-gobierno/verificar-las-muestras-del-registro.mjs` | Que la guarda de #711 muerde y no muerde de más: que la **fila** se exija, y —desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165)— que el cierre declarado sea uno que **GitHub entienda** | nada | **13 muestras** desde [`infrastructure`#165](https://github.com/hneyra/infrastructure/issues/165) |
 | `node despliegue/verificar-el-compose.mjs` | Que `despliegue/compose.yaml` declara los cuatro servicios, el grafo de arranque entero y las siete variables que exige del `.env` | **Compose** (no un demonio) | **27 afirmaciones** |
 
@@ -147,8 +147,9 @@ Las guardas que ocupan el lugar del artboard que caja no tiene:
 | `la-frontera-de-caja.test.ts` | Ni la API de otro sistema, ni sus señas, ni su código, ni el vocabulario de `rentas` en lo que se sirve (ADR-0042) |
 | `solo-lee.test.ts` | El cliente sólo publica `leer`; nada compone un `metodo:`; ningún destino ofrece Guardar (ADR-0040) |
 | `la-cuenta-no-se-inventa.test.tsx` | La barra dice la cuenta que contesta el backend, o que no la conoce; ningún nombre de persona en `src/` (#44) |
-| `camino-a-la-api.test.ts` | Proxy de Vite, `PREFIJO` y `Api.RAIZ` dicen lo mismo; las lecturas de sesión existen con los campos que se leen |
+| `camino-a-la-api.test.ts` | Proxy de Vite, `PREFIJO` y `Api.RAIZ` dicen lo mismo; las lecturas de sesión y las cinco de datos existen con los campos que se leen (#84) |
+| `src/datos/conectores.test.ts` | Cada hoja que lee reparte a su definición: todo campo de sólo lectura con dato **o** con su palabra, filas del ancho de su tabla, su ruta entre las lecturas de su hoja, la hora de Lima y ningún total sumado en el cliente (#84) |
 | `imagen-y-despliegue.test.ts` | El `Dockerfile`, el `nginx.conf` y `configuracion.js` tienen la forma que el descriptor y el compose esperan |
 
-**Lee el paréntesis.** Vitest imprime `Test Files 33 passed (33)`: el número de fuera es lo que pasó
-y el de dentro, lo que había. Con dos archivos que no cargan, escribe `31 passed (33)`.
+**Lee el paréntesis.** Vitest imprime `Test Files 35 passed (35)`: el número de fuera es lo que pasó
+y el de dentro, lo que había. Con dos archivos que no cargan, escribe `33 passed (35)`.
