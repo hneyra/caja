@@ -16,8 +16,9 @@ import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
  * puesto de desarrollo sin plataforma. Aqui `fetch` **rechaza todo**: si la siembra no pusiera el
  * dato donde las consultas lo buscan —o lo pusiera rancio y salieran a refrescarlo—, no habria arbol.
  *
- * Y se cuentan las peticiones. En `rentas` dos pantallas siguen pidiendo sus datos; en la ventanilla
- * **ninguna pide todavia** (#74, fila C2), asi que sembrada no sale ni una sola peticion.
+ * Y se cuentan las peticiones. Desde #84 seis hojas piden sus datos, como las dos de `rentas`: la
+ * siembra cubre la seguridad y la cuenta, **nunca los datos**, asi que en una hoja que lee sale su
+ * lectura y ninguna mas, y en la que solo escribe no sale ninguna.
  */
 
 beforeAll(() => {
@@ -95,12 +96,20 @@ describe('con el catalogo sembrado, la ventanilla se recorre sin backend', () =>
     expect(screen.getAllByText(SESION_MEDIDA.nombre).length).toBeGreaterThan(0);
   });
 
-  it('NO sale ni una peticion: ni las de seguridad, sembradas, ni de datos, que nadie pide todavia', async () => {
+  it('en una hoja que solo escribe NO sale ni una peticion: la seguridad esta sembrada', async () => {
+    sembrarElCatalogo();
+    await abrir('anulacion-recibo');
+    expect(pedidas, 'La siembra dejo el dato rancio, o una hoja sin lectura empezo a pedir.').toEqual([]);
+  });
+
+  it('y en una que lee, sale SOLO su lectura: la siembra no llega a los datos (rentas#114)', async () => {
     sembrarElCatalogo();
     await abrir('cierre-caja');
-    expect(
-      pedidas,
-      'La siembra dejo el dato rancio, o una pantalla empezo a pedir sin conector declarado.',
-    ).toEqual([]);
+    await waitFor(() => {
+      expect(pedidas.length).toBeGreaterThan(0);
+    });
+    // Los datos de una hoja no se siembran nunca: sembrados, `yarn dev` ensenaria una cifra que nadie
+    // contesto. Asi que la hoja pide, nadie contesta, y la pantalla dice que fallo.
+    expect(pedidas).toEqual(['/caja/api/v1/pagos/sin-entregar']);
   });
 });

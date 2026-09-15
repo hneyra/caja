@@ -81,8 +81,8 @@ function comoPagina<T>(contenido: readonly T[]): Paginado<T> {
  * seguridad, que es justo lo que «sin backend» significa.
  *
  * Se acota a la rama `seguridad`: la cuenta y la municipalidad tambien viven ahi (`LLAVES.sesion`,
- * `LLAVES.municipalidad`), y nada mas se siembra — las pantallas no piden datos todavia y, cuando
- * los pidan, tienen que fallar de verdad sin backend.
+ * `LLAVES.municipalidad`), y nada mas se siembra: desde #84 seis pantallas piden sus datos, y sin
+ * backend tienen que fallar de verdad. Una cifra sembrada se leeria como contestada.
  */
 export function sembrarElCatalogo(): void {
   CONSULTAS.setQueryDefaults(LLAVES.rama, { staleTime: Infinity, gcTime: Infinity });

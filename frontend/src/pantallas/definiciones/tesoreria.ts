@@ -16,8 +16,9 @@ import type { Pantalla } from '../tipos.ts';
  * <h2>Lo que estas definiciones NO traen, y es la decision</h2>
  *
  * · **Ni una cifra.** Los campos `r` no llevan valor y las tablas no llevan filas: entran por los
- *   datos, y mientras no entran la pantalla dice por que (`porQueNoHayDato.ts`). En una ventanilla,
- *   una cifra de ejemplo se lee como real.
+ *   datos (`datos/conectores.ts`, #84), y mientras no entran la pantalla dice por que. En una
+ *   ventanilla, una cifra de ejemplo se lee como real. Lo que SI llevan las tablas que se leen es su
+ *   `vacio`: una lista vacia es una respuesta, y no la ausencia de dato.
  * · **Ni un campo que se escriba.** ADR-0040 acepto conectar la ventanilla para leer, asi que ninguna
  *   pantalla tiene un campo de entrada y el armazon no ofrece «Guardar». Las escrituras estan
  *   declaradas en el arbol y dichas en la nota de su bloque.
@@ -44,6 +45,7 @@ export const TESORERIA = {
             { rotulo: 'Situación', alineadoDerecha: false },
           ],
           columnaDeInsignia: 3,
+          vacio: 'Esta municipalidad no tiene ninguna caja cargada.',
         },
       },
       {
@@ -70,6 +72,7 @@ export const TESORERIA = {
             { rotulo: 'Situación', alineadoDerecha: false },
           ],
           columnaDeInsignia: 3,
+          vacio: 'Esta municipalidad no tiene ninguna caja cargada.',
         },
       },
       {
@@ -100,6 +103,7 @@ export const TESORERIA = {
             { rotulo: 'Estado', alineadoDerecha: false },
           ],
           columnaDeInsignia: 7,
+          vacio: 'Ningún recibo coincide.',
           nota: 'El importe es el del recibo a la fecha de su emisión: un recibo no se recalcula.',
         },
       },
@@ -188,6 +192,7 @@ export const TESORERIA = {
             { rotulo: 'Estado', alineadoDerecha: false },
           ],
           columnaDeInsignia: 6,
+          vacio: 'Ningún pago espera entrega: por este lado, el turno puede cerrarse.',
         },
       },
       {
@@ -236,6 +241,7 @@ export const TESORERIA = {
             { rotulo: 'Anulado S/', alineadoDerecha: true },
             { rotulo: 'Neto S/', alineadoDerecha: true },
           ],
+          vacio: 'No se cobró nada en el periodo.',
         },
       },
     ],
@@ -263,6 +269,7 @@ export const TESORERIA = {
             { rotulo: 'Anulado S/', alineadoDerecha: true },
             { rotulo: 'Neto S/', alineadoDerecha: true },
           ],
+          vacio: 'No se cobró nada en el periodo.',
         },
       },
     ],

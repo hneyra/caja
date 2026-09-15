@@ -61,8 +61,9 @@ cinco `GET` del backend de esta caja —`/seguridad/{modulos,accesos}` y
 **De donde sale el arbol.** Caja no tiene artboard, asi que las siete hojas salen de **sus accesos y
 sus controladores**: `verificaciones/el-arbol-cuadra-con-el-backend.test.ts` lee
 `CatalogoDelSistema.java` y los `*Controller.java` y exige que cada hoja sea un acceso, cada acceso
-una hoja, y cada operacion declarada exista con ese acceso y ese verbo. Las pantallas no piden datos
-todavia: dicen por que no los tienen.
+una hoja, y cada operacion declarada exista con ese acceso y ese verbo. **Desde #84 seis de las siete
+leen** —cajas, recibos, pagos sin entregar, avance y recaudacion por area—, y lo que su lectura no
+trae lo dicen en el hueco en vez de calcularlo; la anulacion solo escribe y lo dice.
 
 **La cuenta no se inventa.** El nombre y la municipalidad de la barra los contesta el backend; con la
 cuenta desconocida para esta copia, la barra lo dice. Es lo que retiro #44, y ahora lo vigila
