@@ -56,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
 
       # `docker compose config` NO necesita demonio: resuelve el archivo y lo imprime. Y si el
       # runner no lo trajera, la verificacion sale ROJA en vez de omitirse — la doctrina de
