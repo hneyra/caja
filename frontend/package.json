@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "caja — la interfaz de ventanilla, con el stack y el metodo de rentas-web sobre las librerias comunes (caja#74). Solo lee: ADR-0040 y ADR-0042.",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "vite",

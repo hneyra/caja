@@ -59,7 +59,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: La autoprueba de la guarda, antes de usarla
         run: node docs/00-gobierno/verificar-las-muestras-del-registro.mjs

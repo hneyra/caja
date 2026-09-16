@@ -25,3 +25,44 @@ afterEach(cleanup);
  * comprobando texto sin traducir.
  */
 import './src/i18n/i18n.ts';
+
+/**
+ * **EL `Request` DEL ARNES ACEPTA LA SENAL QUE CREA EL DOCUMENTO** (#93). Dos realms, y solo aqui.
+ *
+ * En un navegador hay UN realm: el `AbortSignal` que fabrica `new AbortController()` y el `Request`
+ * que lo recibe son del mismo sitio. Bajo Vitest no: el `Request` es el de `undici`, que viene
+ * dentro de Node, y el `AbortController`/`AbortSignal` globales son los que instala jsdom al montar
+ * el documento. Desde **Node 24** eso revienta con
+ * `TypeError: RequestInit: Expected signal ("AbortSignal {}") to be an instance of AbortSignal`,
+ * porque `undici` compara con el `instanceof` ORDINARIO contra el `AbortSignal` que existia al
+ * arrancar Node —antes de que existiera jsdom—, y eso recorre la cadena de prototipos: no se puede
+ * enganar con un `Symbol.hasInstance` propio. La medicion entera, con la fuente de `undici`
+ * delante, esta en `kamayuk-lib`#90; aqui vale el resumen y el mismo arreglo.
+ *
+ * **No es ruido**: quien construye ese `Request` es `createClientSideRequest` de `react-router`, en
+ * CADA navegacion del enrutador de datos que monta `@kamayuk/shell`. Con Node 24 y sin esto salian
+ * **249 rechazos sin atender** en las cuatro guardas que montan el Armazon —`la-siembra-abre-los-
+ * destinos`, `los-destinos-se-recorren`, `la-cuenta-no-se-inventa` y `todo-el-texto-se-traduce`—,
+ * que pasaban igual: un error que se traga alguien es justo lo que hay que quitar de en medio.
+ *
+ * Se arregla donde esta la costura —el `Request` del arnes— y no tocando los globales del
+ * documento: el nativo de Node ya no es alcanzable desde aqui, y ponerle a jsdom otro
+ * `AbortController` haria que su propio `addEventListener(…, { signal })` rechazara la senal por el
+ * mismo motivo, al reves. La senal entra **tal cual**, porque `react-router` lee `request.signal`
+ * para cortar sus cargadores.
+ */
+const RequestDelEntorno = globalThis.Request;
+
+class RequestQueAceptaLaSenalDelDocumento extends RequestDelEntorno {
+  constructor(entrada: RequestInfo | URL, init?: RequestInit) {
+    if (init?.signal) {
+      const { signal, ...sinLaSenal } = init;
+      super(entrada, sinLaSenal);
+      Object.defineProperty(this, 'signal', { value: signal, configurable: true });
+    } else {
+      super(entrada, init);
+    }
+  }
+}
+
+globalThis.Request = RequestQueAceptaLaSenalDelDocumento;

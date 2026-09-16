@@ -135,9 +135,14 @@ leen el backend de este mismo repositorio —`Api.java`, los controladores, `Cat
 y los `Resource` de sesión—, así que un cambio allí puede poner roja la pantalla, y por eso
 `frontend.yml` los nombra en su `paths:`.
 
-**Medir con Node 22**, que es el de CI y el de la imagen. Con Node 24 las pruebas del armazón de
-`@kamayuk/shell` fallan con `RequestInit: Expected signal … to be an instance of AbortSignal`, que no
-es un defecto de este código.
+**Medir con Node 24**, que es el de CI y el de la imagen desde #93. Hasta entonces era 22, y el
+motivo escrito era que con 24 salía `RequestInit: Expected signal … to be an instance of
+AbortSignal`. No era un defecto de este código —sale de `undici`, que compara la señal con el
+`instanceof` ordinario contra el `AbortSignal` que existía al arrancar Node, y bajo Vitest el
+`AbortController` global es el de jsdom, o sea de otro realm— pero tampoco era ruido: quien
+construye ese `Request` es `react-router` en cada navegación. El arreglo vive en
+`frontend/vitest.setup.ts`, que le da al arnés un `Request` que acepta la señal del documento; la
+medición entera está en `kamayuk-lib`#90.
 
 Las guardas que ocupan el lugar del artboard que caja no tiene:
 

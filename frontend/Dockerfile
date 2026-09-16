@@ -40,7 +40,7 @@
 # ## Las dos etapas se tratan distinto a proposito
 #
 # `construccion` se tira: nada de ella se publica, y por eso su base es la etiqueta movil
-# `node:22-alpine` —la version mayor es la que `frontend.yml` declara (`node-version: "22"`) y lo
+# `node:24-alpine` —la version mayor es la que `frontend.yml` declara (`node-version: "24"`) y lo
 # que fija que se instale es `yarn.lock` con `--frozen-lockfile`—.
 #
 # `interfaz` SI se publica, asi que su base va clavada: `nginx:1.31.5-alpine`, no `stable-alpine`
@@ -48,7 +48,7 @@
 # el numero es la correccion cuando el escaneo encuentre algo, no ignorar el hallazgo.
 
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS construccion
+FROM node:24-alpine AS construccion
 
 # EL `WORKDIR` REPRODUCE LA DISPOSICION DE CLONES HERMANOS, Y NO ES COSMETICO (#75).
 #
