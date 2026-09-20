@@ -1,13 +1,14 @@
 # Decisiones de arquitectura (ADR)
 
-**Dos decisiones propias, y ninguna es la que este indice esperaba.** Lo que la caja hace lo siguen decidiendo dos ADR que no son suyos —el camino del dinero (0026), que decide `rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la plataforma—. Las dos propias son de su interfaz.
+**Tres decisiones propias, y ninguna es la que este indice esperaba.** Lo que la caja hace lo siguen decidiendo dos ADR que no son suyos —el camino del dinero (0026), que decide `rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la plataforma—. Las tres propias son de su interfaz.
 
 | # | Decision | Estado |
 |---|---|---|
 | [0040](ADR-0040-la-ventanilla-se-conecta.md) | Si la ventanilla se conecta, y que hace falta antes | **Aceptado** — se conecta, solo para leer (#74) |
 | [0042](ADR-0042-la-ventanilla-lee-su-propia-copia.md) | La ventanilla compone su sesion desde su propia copia, y no habla con nadie mas | **Aceptado** |
+| [0044](ADR-0044-la-ventanilla-anula-donde-esta-el-recibo.md) | La ventanilla anula donde esta el recibo, y esa es su primera escritura | **Aceptado** — amplia la 0040 (#100) |
 
-La **0041** no falta: es de `infrastructure` (Grafana detras del realm de operacion). La numeracion es del producto, no de cada repositorio.
+La **0041** no falta: es de `infrastructure` (Grafana detras del realm de operacion), y la **0043** es de `normativa`. La numeracion es del producto, no de cada repositorio.
 
 > **Este indice predecia que la primera propia seria D-17** —a quien se le cobra lo que no es tributo—, y se equivoco: llego antes una que nadie habia planteado, porque el despliegue la hizo urgente. La prediccion se deja escrita en vez de borrarla; una tabla que solo contiene aciertos no dice nada sobre lo que cuesta prever.
 
@@ -61,3 +62,8 @@ u **Obsoleto**, siempre con esa letra.
 El ADR nuevo de este repositorio es el **0033**, no el 0001. Los treinta y dos existen y estan
 repartidos; empezar de nuevo daria dos `ADR-0001` distintos en el mismo producto, y el dia que
 alguien cite «ADR-0004» habria que preguntar de cual habla.
+
+**Y el siguiente se elige mirando los SEIS arboles, no este.** El 0044 salio de contar lo que habia
+el 2026-09-20 en `infrastructure`, `rentas`, `catastro`, `normativa`, `identidad` y aqui: el mayor
+era el 0043, de `normativa`. Un numero elegido leyendo solo este indice habria sido el 0043 otra
+vez, y el choque no da ningun error — da dos documentos distintos con el mismo nombre.

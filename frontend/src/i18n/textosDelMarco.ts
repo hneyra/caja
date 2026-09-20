@@ -166,12 +166,70 @@ type LasQueSeDibujan = Pick<
   'pidiendo' | 'enEspera' | 'reintentar' | 'incidencia' | 'lecturaSinEstado'
 >;
 
+/**
+ * **Las palabras de un ACTO y de la accion que lo abre** (#100, ADR-0044).
+ *
+ * Es el mismo caso que #98 y se resuelve igual: `TextosDeLasPiezas` es un `Partial`, y lo que no se
+ * pasa lo pone la libreria **en castellano**. Mientras ninguna definicion declaraba un acto,
+ * ninguna de estas llegaba al DOM; con el primero —el que anula un cobro— llegan las doce de golpe,
+ * y la primera que se lee es «Esto no se deshace», que es justo la que menos puede salir a medias.
+ *
+ * **Se toma solo lo que se dibuja**, con el mismo criterio que el saco de al lado, y son doce
+ * porque son las que este acto y su accion pueden producir:
+ *
+ *   · las del formulario —cerrarlo, lo que le falta por rellenar y lo que le falta a la observacion—;
+ *   · las de la confirmacion de lo irreversible, que son tres;
+ *   · y las que hablan de una costura rota —nadie atiende el acto, el manejador rechazo sin dar su
+ *     fallo—, que entran por lo mismo que `lecturaSinEstado`: un aviso de defecto que solo se lee
+ *     en castellano es medio aviso.
+ *
+ * **`actoHecho` NO entra**: este acto declara su propio `hecho.titulo`, asi que la de la libreria no
+ * se dibuja nunca. Prometer su traduccion seria inventario que nadie reclama — el dia que un acto
+ * no declare el suyo, entra aqui y su prueba lo pide.
+ */
+export const FRASES_DEL_ACTO = {
+  cerrarElActo: 'Cerrar',
+  escribiendo: 'Enviando…',
+  faltaRellenar: 'Falta rellenar: {{rotulos}}.',
+  observacionCorta: 'La observación tiene {{tiene}} caracteres y necesita al menos {{minimo}}.',
+  observacionLarga: 'La observación tiene {{tiene}} caracteres y no puede pasar de {{maximo}}.',
+  sinQuienLoAtienda: 'Nadie atiende «{{clave}}» en esta pantalla: pulsarlo no haría nada.',
+  estoNoSeDeshace: 'Esto no se deshace',
+  siConfirmar: 'Sí, confirmar',
+  cancelar: 'Cancelar',
+  rechazoSinFallo:
+    'La escritura «{{clave}}» no se completó, y nadie ha dado su fallo: esta pantalla no sabe decir por qué.',
+  faltaElDato: 'Todavía no se sabe «{{nombre}}», y sin él no hay a dónde ir.',
+  datoAusente: '—',
+} as const satisfies Record<keyof LasDelActo, string>;
+
+/**
+ * Las de `TextosDeLasPiezas` que el acto de esta ventanilla **si** dibuja. Derivado del tipo de la
+ * libreria, por lo mismo que `LasQueSeDibujan`.
+ */
+type LasDelActo = Pick<
+  TextosDeLasPiezas,
+  | 'cerrarElActo'
+  | 'escribiendo'
+  | 'faltaRellenar'
+  | 'observacionCorta'
+  | 'observacionLarga'
+  | 'sinQuienLoAtienda'
+  | 'estoNoSeDeshace'
+  | 'siConfirmar'
+  | 'cancelar'
+  | 'rechazoSinFallo'
+  | 'faltaElDato'
+  | 'datoAusente'
+>;
+
 /** Todo lo que este archivo aporta al inventario del locale. Ver `catalogo-de-claves.ts`. */
 export function clavesDelMarco(): readonly string[] {
   return [
     ...Object.values(FRASES_DEL_MARCO),
     ...Object.values(FRASES_DEL_INTERPRETE),
     ...Object.values(FRASES_DE_LAS_LECTURAS),
+    ...Object.values(FRASES_DEL_ACTO),
   ];
 }
 
@@ -189,6 +247,23 @@ export function useTextosDelInterprete(): Partial<TextosDeLaPantalla> {
       reintentar: t(FRASES_DE_LAS_LECTURAS.reintentar),
       incidencia: (identificador: string) => t(FRASES_DE_LAS_LECTURAS.incidencia, { identificador }),
       lecturaSinEstado: (clave: string) => t(FRASES_DE_LAS_LECTURAS.lecturaSinEstado, { clave }),
+      // Las doce del acto que anula (#100). Las cinco que llevan un dato dentro van con `{{…}}` y
+      // no concatenadas: donde cae el dato lo decide el idioma, no este archivo.
+      cerrarElActo: t(FRASES_DEL_ACTO.cerrarElActo),
+      escribiendo: t(FRASES_DEL_ACTO.escribiendo),
+      faltaRellenar: (rotulos: readonly string[]) =>
+        t(FRASES_DEL_ACTO.faltaRellenar, { rotulos: rotulos.join(', ') }),
+      observacionCorta: (minimo: number, tiene: number) =>
+        t(FRASES_DEL_ACTO.observacionCorta, { minimo, tiene }),
+      observacionLarga: (maximo: number, tiene: number) =>
+        t(FRASES_DEL_ACTO.observacionLarga, { maximo, tiene }),
+      sinQuienLoAtienda: (clave: string) => t(FRASES_DEL_ACTO.sinQuienLoAtienda, { clave }),
+      estoNoSeDeshace: t(FRASES_DEL_ACTO.estoNoSeDeshace),
+      siConfirmar: t(FRASES_DEL_ACTO.siConfirmar),
+      cancelar: t(FRASES_DEL_ACTO.cancelar),
+      rechazoSinFallo: (clave: string) => t(FRASES_DEL_ACTO.rechazoSinFallo, { clave }),
+      faltaElDato: (nombre: string) => t(FRASES_DEL_ACTO.faltaElDato, { nombre }),
+      datoAusente: t(FRASES_DEL_ACTO.datoAusente),
     }),
     [t],
   );

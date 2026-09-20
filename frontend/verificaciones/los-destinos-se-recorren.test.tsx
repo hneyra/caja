@@ -12,14 +12,14 @@ import {
 } from '../src/datos/seguridadMedida.ts';
 import { MUNICIPALIDAD_MEDIDA, SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import type { ClaveDeHoja } from '../src/pantallas/arbol.ts';
-import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
+import { bloquesDe, pantallaDe } from '../src/pantallas/definiciones/index.ts';
 
 /**
- * **Las siete hojas de la ventanilla se abren, en la aplicacion montada, por su hash** (#74).
+ * **Las seis hojas de la ventanilla se abren, en la aplicacion montada, por su hash** (#74, #100).
  *
- * Es `los-cuarenta-destinos-se-recorren` de `rentas` con dos cambios. Siete destinos y no cuarenta.
+ * Es `los-cuarenta-destinos-se-recorren` de `rentas` con dos cambios. Seis destinos y no cuarenta.
  * Y **el filtro se mide por hoja**, porque en `caja` es la hoja lo que se filtra (`permisos.ts`):
- * una cuenta sin `cierre_caja` no ve «Cierre y arqueo» ni la abre por su hash, y ve las otras seis.
+ * una cuenta sin `cierre_caja` no ve «Cierre y arqueo» ni la abre por su hash, y ve las otras cinco.
  *
  * Se monta la aplicacion entera y se llega a cada destino por su hash, que es como se llega de
  * verdad: montar la pantalla suelta no comprueba que el destino este en el catalogo, ni que el
@@ -90,10 +90,12 @@ async function abrir(clave: string) {
   });
 }
 
-describe('las siete hojas se recorren, en la aplicacion montada', () => {
-  it('EL CENTINELA: el catalogo trae un modulo y siete destinos', () => {
+describe('las seis hojas se recorren, en la aplicacion montada', () => {
+  it('EL CENTINELA: el catalogo trae un modulo y seis destinos', () => {
     expect(CATALOGO).toHaveLength(1);
-    expect(DESTINOS).toHaveLength(7);
+    // Seis desde #100: `anulacion-recibo` dejo de ser una hoja y anular se ofrece donde esta el
+    // recibo, como accion (ADR-0044).
+    expect(DESTINOS).toHaveLength(6);
   });
 
   it.each(DESTINOS)('«$destino.clave» — $destino.rotulo', async ({ destino }) => {
@@ -102,7 +104,7 @@ describe('las siete hojas se recorren, en la aplicacion montada', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: destino.rotulo }), `«${destino.clave}» no abrio por su hash`).toBeTruthy();
     expect(screen.getByText(new RegExp(escapar(definicion.instruccion)))).toBeTruthy();
-    for (const bloque of definicion.bloques) {
+    for (const bloque of bloquesDe(definicion)) {
       expect(
         screen.getByRole('heading', { level: 2, name: bloque.titulo }),
         `«${destino.clave}» no pinto el bloque «${bloque.titulo}»`,

@@ -24,7 +24,15 @@ import type { NombreDeIcono } from '@kamayuk/ui';
  *   · **No hay `BASE`**: cada operacion se leyo en su metodo, con su verbo.
  *   · **El icono se nombra** en vez de deducirse de un trazo: no hay trazo de artboard del que
  *     deducirlo.
+ *
+ * <h2>Y desde #100, una hoja puede servir MAS DE UN acceso</h2>
+ *
+ * La correspondencia dejo de ser una a una: `anulacion_recibo` no tiene hoja propia —no podia pedir
+ * nada, y quien solo lo tenia no veia ni un recibo— y lo sirve una **accion** dentro de
+ * `duplicado-recibo`, donde el recibo ya esta elegido y a la vista (ADR-0044). Ver `AccionDeLaHoja`.
  */
+
+import type { DefinicionDeActo, DefinicionDeBloque, DefinicionDePantalla } from '@kamayuk/ui';
 
 export type {
   CampoDeCasilla,
@@ -32,11 +40,27 @@ export type {
   CampoDeLista,
   CampoDeSoloLectura,
   ColumnaDeTabla as Columna,
+  DefinicionDeAccion as Accion,
+  DefinicionDeActo as Acto,
   DefinicionDeBloque as Bloque,
   DefinicionDeCampo as Campo,
-  DefinicionDePantalla as Pantalla,
   DefinicionDeTabla as Tabla,
+  Texto,
 } from '@kamayuk/ui';
+
+/**
+ * Una pantalla de la ventanilla: **bloques, y desde #100 tambien actos**.
+ *
+ * Hasta ADR-0044 era `DefinicionDePantalla` a secas —solo bloques—, porque ninguna pantalla
+ * escribia. La anulacion de un cobro es un acto: un formulario con su observacion obligatoria
+ * (regla 10) que **solo existe abierto**, y que abre una accion del bloque donde ya esta el recibo.
+ *
+ * **Se ensancha a dos piezas y no a las siete** que `PiezaDeLaPantalla` admite, a proposito: lo que
+ * esta ventanilla dibuja hoy es esto, y un tipo mas ancho haria compilar un aviso o unas pestanas
+ * que ninguna guarda de este arbol sabe recorrer —`bloquesDe()` las dejaria fuera en silencio—. El
+ * dia que entre una tercera, entra aqui y en quien las recorre, a la vez.
+ */
+export type Pantalla = DefinicionDePantalla<DefinicionDeBloque | DefinicionDeActo>;
 
 /** El verbo de una operacion. Solo los dos que este backend usa: no hay `PUT` ni `PATCH`. */
 export type Verbo = 'GET' | 'POST';
@@ -53,6 +77,30 @@ export interface Operacion {
   readonly controlador: string;
 }
 
+/**
+ * **Una accion de una hoja que sirve OTRO acceso del catalogo** (#100, ADR-0044).
+ *
+ * Hasta aqui la correspondencia era una a una: un acceso, una hoja. `anulacion_recibo` la rompio, y
+ * no por casualidad: su unica operacion es una escritura sobre un recibo, de modo que su hoja no
+ * podia pedir nada y quien solo la tenia no veia ni un recibo que anular ([#100](https://github.com/hneyra/caja/issues/100)).
+ *
+ * Asi que un acceso se puede servir **desde una accion dentro de la hoja donde ya esta su sujeto**.
+ * Lo que la accion declara es lo mismo que declara una hoja —que acceso sirve y que operacion
+ * llama—, y `verificaciones/el-arbol-cuadra-con-el-backend.test.ts` lo ata igual: ningun acceso del
+ * catalogo se queda sin quien lo sirva, y ninguna operacion declarada deja de existir.
+ */
+export interface AccionDeLaHoja {
+  /** La `clave` del acto que abre, en la definicion de la pantalla de esta misma hoja. */
+  readonly clave: string;
+  /** El codigo de acceso de `CatalogoDelSistema` que esta accion sirve. **No** es el de la hoja. */
+  readonly acceso: string;
+  /**
+   * La operacion que llama. **Siempre una escritura**: lo que se lee es de la hoja, y una lectura
+   * declarada aqui se le escaparia a `lecturasDe()`. Lo comprueba la guarda del arbol.
+   */
+  readonly operacion: Operacion;
+}
+
 /** Una hoja del arbol: un acceso del catalogo, y la pantalla que abre. */
 export interface Hoja {
   /** La clave que empareja la hoja con su pantalla, y la que viaja al hash: el acceso con guiones. */
@@ -61,6 +109,12 @@ export interface Hoja {
   /** El codigo de acceso de `CatalogoDelSistema` que esta hoja representa. */
   readonly acceso: string;
   readonly operaciones: readonly Operacion[];
+  /**
+   * Las acciones de esta hoja que sirven **otro** acceso del catalogo (#100). Ver `AccionDeLaHoja`.
+   *
+   * Solo la declara `duplicado-recibo`, con la anulacion: las otras cinco no ofrecen ninguna.
+   */
+  readonly acciones?: readonly AccionDeLaHoja[];
   /**
    * **Lo que la ruta de esta hoja guarda** (`kamayuk-lib`#67), y que `catalogo.ts` copia al destino.
    *

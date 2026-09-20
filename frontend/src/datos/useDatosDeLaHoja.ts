@@ -83,7 +83,8 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
   const consulta = useQuery({
     queryKey: conector?.clave ?? ['sin-conector', clave],
     queryFn: ({ signal }) => conector?.pedir(signal) ?? Promise.resolve(null),
-    // Sin conector no se pide nada: es lo que mantiene a `anulacion-recibo` fuera de la red.
+    // Sin conector no se pide nada. Hoy lo tienen las seis hojas; lo que mantiene la rama es una
+    // hoja nueva que llegara sin el, y entonces `porQueNoHayDato` dice cual de los dos casos es.
     enabled: conector !== undefined,
     retry: false,
   });
@@ -137,6 +138,9 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
       tablas: unir(reparto.tablas, aporte.reparto.tablas),
       conteos: unir(reparto.conteos, aporte.reparto.conteos),
       sinDato: unir(reparto.sinDato, aporte.reparto.sinDato),
+      // Y lo que las piezas leen por su nombre (#100). La segunda lectura va encima: el estado del
+      // recibo lo dice ella, y lo que la primera sabe es cual se eligio.
+      nombrados: unir(reparto.nombrados ?? new Map(), aporte.reparto.nombrados ?? new Map()),
     }),
     ...conLasLecturas,
     ausencia: aporte.ausencia ?? reparto.ausencia ?? conector.ausencia,
@@ -162,6 +166,7 @@ function deUnReparto(reparto: Reparto): Omit<DatosDeLaPantalla, 'ausencia'> {
     tablas: reparto.tablas,
     conteos: reparto.conteos,
     ausenciaPorCampo: reparto.sinDato,
+    ...(reparto.nombrados === undefined ? {} : { nombrados: reparto.nombrados }),
   };
 }
 

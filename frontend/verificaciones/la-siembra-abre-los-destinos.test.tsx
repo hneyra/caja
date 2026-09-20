@@ -6,7 +6,7 @@ import { Aplicacion, CONSULTAS } from '../src/aplicacion.tsx';
 import { CATALOGO } from '../src/catalogo.ts';
 import { SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import type { ClaveDeHoja } from '../src/pantallas/arbol.ts';
-import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
+import { bloquesDe, pantallaDe } from '../src/pantallas/definiciones/index.ts';
 
 /**
  * **La siembra abre las hojas de la ventanilla sin que nadie conteste** (`rentas`#114; aqui #74).
@@ -16,9 +16,17 @@ import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
  * puesto de desarrollo sin plataforma. Aqui `fetch` **rechaza todo**: si la siembra no pusiera el
  * dato donde las consultas lo buscan —o lo pusiera rancio y salieran a refrescarlo—, no habria arbol.
  *
- * Y se cuentan las peticiones. Desde #84 seis hojas piden sus datos, como las dos de `rentas`: la
+ * Y se cuentan las peticiones. Desde #84 las hojas piden sus datos, como las dos de `rentas`: la
  * siembra cubre la seguridad y la cuenta, **nunca los datos**, asi que en una hoja que lee sale su
- * lectura y ninguna mas, y en la que solo escribe no sale ninguna.
+ * lectura y ninguna mas.
+ *
+ * <h2>Lo que #100 quito de aqui</h2>
+ *
+ * Habia una prueba de `anulacion-recibo`: abierta por su hash, no salia ni una peticion. Esa hoja
+ * ya no existe —anular es una accion de `duplicado-recibo` (ADR-0044)—, y dejar la prueba con su
+ * hash la habria convertido en verde por el motivo equivocado: un hash que no es ningun destino no
+ * pide nada **porque no abre nada**. En su sitio se mide lo que si es cierto: abrir una hoja no
+ * manda ninguna escritura, y la que escribe no sale hasta que alguien lo pide.
  */
 
 beforeAll(() => {
@@ -85,7 +93,7 @@ describe('con el catalogo sembrado, la ventanilla se recorre sin backend', () =>
     const definicion = pantallaDe(destino.clave as ClaveDeHoja);
 
     expect(screen.getByRole('heading', { level: 1, name: destino.rotulo }), `«${destino.clave}» no abrio por su hash`).toBeTruthy();
-    for (const bloque of definicion.bloques) {
+    for (const bloque of bloquesDe(definicion)) {
       expect(screen.getByRole('heading', { level: 2, name: bloque.titulo })).toBeTruthy();
     }
   });
@@ -96,10 +104,16 @@ describe('con el catalogo sembrado, la ventanilla se recorre sin backend', () =>
     expect(screen.getAllByText(SESION_MEDIDA.nombre).length).toBeGreaterThan(0);
   });
 
-  it('en una hoja que solo escribe NO sale ni una peticion: la seguridad esta sembrada', async () => {
+  it('abrir la hoja que escribe no escribe nada: sale su lectura y ninguna escritura (#100)', async () => {
     sembrarElCatalogo();
-    await abrir('anulacion-recibo');
-    expect(pedidas, 'La siembra dejo el dato rancio, o una hoja sin lectura empezo a pedir.').toEqual([]);
+    await abrir('duplicado-recibo');
+    await waitFor(() => {
+      expect(pedidas.length).toBeGreaterThan(0);
+    });
+    // La lista, y nada mas: sin recibo elegido no se pide su ficha, y la anulacion no sale sola.
+    // Es lo que hace cierto que la unica escritura de esta interfaz la dispare una persona.
+    expect(pedidas).toEqual(['/caja/api/v1/recibos']);
+    expect(pedidas.filter((url) => url.includes('/anulacion'))).toEqual([]);
   });
 
   it('y en una que lee, sale SOLO su lectura: la siembra no llega a los datos (rentas#114)', async () => {

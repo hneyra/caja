@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMemo } from 'react';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
-import { ACCESO_POR_DESTINO, CATALOGO, CODIGO_POR_CLAVE } from '../catalogo.ts';
+import { ACCESOS_POR_DESTINO, CATALOGO, CODIGO_POR_CLAVE } from '../catalogo.ts';
 import type { CatalogoCompuesto } from '../permisos.ts';
 import { componer } from '../permisos.ts';
 import type { AccesoDelSistema, ModuloDelSistema, PermisosDeLaSesion } from './lecturas.ts';
@@ -71,6 +71,27 @@ const VACIO: CatalogoCompuesto = {
   sinPermiso: [],
 };
 
+/**
+ * **La matriz de la sesion, por si alguien mas la necesita** (#100).
+ *
+ * Es la MISMA consulta que compone el catalogo —la misma llave, la misma `queryFn`—, asi que no
+ * sale ni una peticion de mas: TanStack las junta. Existe porque el catalogo no es el unico que
+ * mira los permisos desde #100: la accion de anular tiene que decir **por que** no se puede pulsar,
+ * y para eso hace falta la matriz y no el arbol ya filtrado.
+ *
+ * Mientras no ha contestado, `{}`: ninguna cuenta puede nada hasta que el backend lo diga. Es el
+ * lado seguro, y ademas no se llega a ver —el armazon no se monta hasta que el catalogo esta
+ * compuesto—.
+ */
+export function usePermisosDeLaSesion(): PermisosDeLaSesion {
+  const permisos = useQuery({
+    queryKey: LLAVES.permisos,
+    queryFn: ({ signal }) => pedirUno<PermisosDeLaSesion>(RUTAS.permisosDeLaSesion, signal),
+    retry: false,
+  });
+  return permisos.data ?? {};
+}
+
 export function useCatalogoPermitido(): CatalogoDeLaSesion {
   const { t } = useTranslation();
 
@@ -104,7 +125,7 @@ export function useCatalogoPermitido(): CatalogoDeLaSesion {
       accesos.data.contenido,
       permisos.data,
       (modulo) => CODIGO_POR_CLAVE.get(modulo.clave) ?? '',
-      (destino) => ACCESO_POR_DESTINO.get(destino) ?? '',
+      (destino) => ACCESOS_POR_DESTINO.get(destino) ?? [],
     );
   }, [modulos.data, accesos.data, permisos.data]);
 

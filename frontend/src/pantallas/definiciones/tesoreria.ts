@@ -1,8 +1,8 @@
-import type { ClaveDeHoja } from '../arbol.ts';
+import { ACTO_DE_ANULACION, type ClaveDeHoja } from '../arbol.ts';
 import type { Pantalla } from '../tipos.ts';
 
 /**
- * **Las siete pantallas de Tesorería, como dato** (#74).
+ * **Las seis pantallas de Tesorería, como dato** (#74, #100).
  *
  * <h2>De donde sale cada campo y cada columna</h2>
  *
@@ -19,12 +19,14 @@ import type { Pantalla } from '../tipos.ts';
  *   datos (`datos/conectores.ts`, #84), y mientras no entran la pantalla dice por que. En una
  *   ventanilla, una cifra de ejemplo se lee como real. Lo que SI llevan las tablas que se leen es su
  *   `vacio`: una lista vacia es una respuesta, y no la ausencia de dato.
- * · **Ni un campo que escriba en el BACKEND.** ADR-0040 acepto conectar la ventanilla para leer, y
- *   el armazon no ofrece «Guardar» en ninguna hoja. Las escrituras estan declaradas en el arbol y
- *   dichas en la nota de su bloque. Desde #98 hay **un** campo de entrada —el dia de la
- *   conciliacion, en `cierre-caja`—, y no es una excepcion a lo anterior: lo que escribe es la
- *   direccion de la hoja (`eleccion.enLaRuta`, `kamayuk-lib`#94), y de ahi sale el `?fecha=` de una
- *   lectura. `catalogo.ts` no lo cuenta como hoja que se escribe, y `solo-lee.test.ts` lo mide.
+ * · **Ningun campo de BLOQUE que escriba en el backend**, asi que el pie del armazon sigue sin
+ *   ofrecer «Guardar» en ninguna hoja. Desde #98 hay **un** campo de entrada —el dia de la
+ *   conciliacion, en `cierre-caja`— y no es una excepcion: lo que escribe es la direccion de la hoja
+ *   (`eleccion.enLaRuta`, `kamayuk-lib`#94), y de ahi sale el `?fecha=` de una lectura.
+ * · **Y una sola cosa que SI escribe en el backend**: el acto que anula un cobro (#100, ADR-0044),
+ *   con su propio primario, su confirmacion y su observacion obligatoria. Tampoco pasa por el pie.
+ *   Las demas escrituras del arbol siguen declaradas y sin llamarse. `catalogo.ts` deja las dos
+ *   fuera de `seEscribe`, cada una por su motivo, y `solo-lee.test.ts` mide los dos.
  * · **Ni un desplegable con opciones inventadas.** Las cajas, los cajeros y las areas son datos de la
  *   instalacion: un «C-1, C-2, C-3» escrito aqui seria una lista falsa con aspecto de filtro.
  *
@@ -50,6 +52,25 @@ export const NUMERO_DE_LA_FILA = 'numero';
  * dos veces, el bloque diria «nadie ha dado el estado de esta lectura» y nadie sabria por que.
  */
 export const LECTURA_DE_LA_CONCILIACION = 'conciliacion';
+
+/**
+ * **Los cuatro datos con nombre que la accion de anular lee** (#100).
+ *
+ * `cuando`, `impedida` y las plantillas de un `Texto` leen `DatosDeLaPantalla.nombrados` por su
+ * nombre, que es una cadena. Escritas sueltas en la definicion y otra vez en quien las pone, un
+ * renombrado no da ningun error: el impedimento deja de cumplirse y el boton sale **habilitado**,
+ * que es el peor de los dos fallos posibles. Aqui hay un solo sitio.
+ *
+ * Los dos primeros los pone la lectura (`datos/conectores.ts`); los dos ultimos, lo que la sesion
+ * puede (`datos/laAnulacion.ts`), que sale de `GET /seguridad/sesion/permisos`.
+ */
+export const NUMERO_DEL_RECIBO = 'numeroDelRecibo';
+export const ESTADO_DEL_RECIBO = 'estadoDelRecibo';
+export const PUEDE_ANULAR = 'puedeAnular';
+export const PUEDE_LEER_RECIBOS = 'puedeLeerRecibos';
+
+/** Lo que el backend llama a un recibo ya anulado. Es un dato suyo, no una palabra: no se traduce. */
+export const ANULADO = 'ANULADO';
 
 export const TESORERIA = {
   'caja-tributaria': {
@@ -108,7 +129,7 @@ export const TESORERIA = {
   },
   'duplicado-recibo': {
     instruccion:
-      'busque el recibo por el documento del pagador, la caja, el cajero o las fechas, y ábralo para ver su duplicado.',
+      'busque el recibo por el documento del pagador, la caja, el cajero o las fechas, ábralo para ver su duplicado y, si procede, anúlelo desde aquí.',
     bloques: [
       {
         titulo: 'Recibos localizados',
@@ -150,6 +171,41 @@ export const TESORERIA = {
       {
         titulo: 'El recibo elegido',
         nota: 'Lo que dice el papel que se entregó en ventanilla.',
+        // **Anular se ofrece aquí, y no en una hoja aparte** (#100, ADR-0044): aquí el recibo ya
+        // está elegido, con su pagador, su importe y su estado a la vista.
+        //
+        // Los cuatro impedimentos van en este orden y gana el primero que se cumple, porque es el
+        // orden en que se arreglan: primero lo que no depende de esta pantalla —el privilegio—, y
+        // después lo que sí. Nunca un botón apagado sin motivo: lo dibuja `BotonConMotivo`.
+        acciones: [
+          {
+            rotulo: 'Anular el recibo',
+            principal: true,
+            abre: ACTO_DE_ANULACION,
+            // Lo que el acto necesita saber de dónde se abrió: sobre qué recibo se actúa.
+            con: { [NUMERO_DEL_RECIBO]: { desde: NUMERO_DEL_RECIBO } },
+            impedida: [
+              {
+                si: { dato: PUEDE_ANULAR, vale: false },
+                motivo:
+                  'Su cuenta no puede anular cobros en esta caja. El privilegio lo concede quien administra la seguridad, sobre la opción «Anulación de recibo».',
+              },
+              {
+                si: { dato: PUEDE_LEER_RECIBOS, vale: false },
+                motivo:
+                  'Su cuenta puede anular, pero no puede ver los recibos, y un cobro no se anula sin verlo. Pida lectura sobre «Anulación de recibo» o sobre «Duplicado de recibo».',
+              },
+              {
+                si: { dato: NUMERO_DEL_RECIBO, hay: false },
+                motivo: 'Elija primero un recibo en la lista de arriba: aquí no se anula un número tecleado a ciegas.',
+              },
+              {
+                si: { dato: ESTADO_DEL_RECIBO, vale: ANULADO },
+                motivo: 'Este recibo ya está anulado, y un recibo no se anula dos veces.',
+              },
+            ],
+          },
+        ],
         campos: [
           { etiqueta: 'Número', tipo: 'r' },
           { etiqueta: 'Estado', tipo: 'r' },
@@ -173,17 +229,46 @@ export const TESORERIA = {
           nota: 'La cantidad y el precio unitario sólo los tiene una tasa: en una línea de tributo llegan vacíos, y se marcan.',
         },
       },
-    ],
-  },
-  'anulacion-recibo': {
-    instruccion:
-      'la anulación de un recibo exige su motivo, quién la autoriza y el memorando que la respalda.',
-    bloques: [
+      /*
+       * **El acto que anula, y la ÚNICA escritura de esta interfaz** (#100, ADR-0044).
+       *
+       * Sólo existe abierto: lo abre la acción del bloque de arriba y lo envía el manejador que
+       * `datos/laAnulacion.ts` registra. Sus tres campos son los de `PeticionDeAnulacion` del
+       * backend —`motivo`, `autorizadoPor` y `nDeMemorando`—, con su misma obligatoriedad; la
+       * `observacion` va aparte porque va **siempre** (regla 10), y sus límites son los de
+       * `Observacion` del dominio. Que los cuatro sigan cuadrando con el backend lo mide
+       * `verificaciones/el-arbol-cuadra-con-el-backend.test.ts`, leyendo los `.java`.
+       *
+       * El primer campo es de sólo lectura y dice **sobre qué recibo se está actuando**: un
+       * formulario de anulación que no nombra el recibo es el mismo número a ciegas que la acción
+       * impide.
+       */
       {
-        titulo: 'Anular un recibo',
-        nota:
-          'Anular no borra: reversa lo cobrado y deja el recibo marcado como anulado. Esta pantalla todavía no anula: la ventanilla se conectó para leer (ADR-0040).',
-        campos: [],
+        tipo: 'acto',
+        clave: ACTO_DE_ANULACION,
+        titulo: 'Anular el recibo',
+        nota: 'Anular no borra: reversa lo cobrado, deja el recibo marcado como anulado y avisa al sistema que emitió la orden.',
+        campos: [
+          { etiqueta: 'Recibo', tipo: 'r', nombre: NUMERO_DEL_RECIBO },
+          { etiqueta: 'Motivo', tipo: 'a1', nombre: 'motivo' },
+          { etiqueta: 'Autorizado por', tipo: '', nombre: 'autorizadoPor', opcional: true },
+          { etiqueta: 'N.° de memorando', tipo: '', nombre: 'nDeMemorando', opcional: true },
+        ],
+        observacion: {
+          etiqueta: 'Observación',
+          ayuda: 'Por qué se anula, para quien lea la bitácora. El motivo de arriba es otra cosa: es el sustento del acto, y se imprime en el duplicado.',
+          // Los de `Observacion` del dominio: el `CHECK` de la auditoría y el ancho de la columna.
+          largo: { minimo: 5, maximo: 500 },
+        },
+        advertencia:
+          'Anular reversa lo cobrado y publica el aviso al sistema de origen. No se deshace desde la ventanilla.',
+        hecho: {
+          titulo: 'El cobro quedó anulado',
+          texto: {
+            plantilla:
+              'El recibo {numeroDelRecibo} queda anulado. El sistema que emitió la orden recibirá el aviso para reversar lo aplicado.',
+          },
+        },
       },
     ],
   },

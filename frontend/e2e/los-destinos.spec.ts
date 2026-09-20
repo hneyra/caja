@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test';
 
 import { ARBOL } from '../src/pantallas/arbol.ts';
 import type { ClaveDeHoja } from '../src/pantallas/arbol.ts';
-import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
+import { bloquesDe, pantallaDe } from '../src/pantallas/definiciones/index.ts';
 import { abrir, conLaSeguridadContestada } from './instalacion.ts';
 
 /**
- * **Las siete hojas de la ventanilla se abren y se ven, en Chromium** (#74; en `rentas`, «los cuarenta»).
+ * **Las seis hojas de la ventanilla se abren y se ven, en Chromium** (#74, #100).
  *
  * `verificaciones/los-destinos-se-recorren.test.tsx` ya las recorre en jsdom. Esto mide lo que jsdom
  * no puede: que se VEAN —con caja y con el CSS de la libreria aplicado—, sobre el `dist/` de verdad.
@@ -21,8 +21,10 @@ test.beforeEach(async ({ page }) => {
 
 const DESTINOS = ARBOL.flatMap((modulo) => modulo.hojas.map((hoja) => ({ destino: hoja })));
 
-test('EL CENTINELA: hay siete destinos que recorrer', () => {
-  expect(DESTINOS).toHaveLength(7);
+test('EL CENTINELA: hay seis destinos que recorrer', () => {
+  // Seis desde #100: `anulacion-recibo` dejo de ser una hoja, y anular se ofrece como accion
+  // dentro de `duplicado-recibo` (ADR-0044).
+  expect(DESTINOS).toHaveLength(6);
 });
 
 for (const { destino } of DESTINOS) {
@@ -33,7 +35,9 @@ for (const { destino } of DESTINOS) {
     await expect(titulo, `«${destino.clave}» no abrio por su hash`).toBeVisible();
 
     const definicion = pantallaDe(destino.clave as ClaveDeHoja);
-    for (const bloque of definicion.bloques) {
+    // Los BLOQUES: un acto no se dibuja con la pantalla —solo existe abierto— y su titulo no es un
+    // encabezado de la pagina (#100).
+    for (const bloque of bloquesDe(definicion)) {
       await expect(page.getByRole('heading', { level: 2, name: bloque.titulo })).toBeVisible();
     }
 

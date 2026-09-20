@@ -6,7 +6,7 @@ import { formatearImporte } from '@kamayuk/formato';
 import { Importe, Insignia } from '@kamayuk/ui';
 import type { ClaveDeHoja } from '../../src/pantallas/arbol.ts';
 import type { Campo, Operacion, Pantalla, Tabla } from '../../src/pantallas/tipos.ts';
-import { leer } from '../../src/api/cliente.ts';
+import { escribir, leer } from '../../src/api/cliente.ts';
 
 /**
  * Las barreras que pone el COMPILADOR, y la prueba de que muerden.
@@ -156,7 +156,7 @@ export const tablaConFilas: Tabla = {
  * sin hoja» lo sostiene `Record<ClaveDeHoja, Pantalla>`, y `ClaveDeHoja` sale del propio `ARBOL`.
  */
 export const pantallaHuerfana: Partial<Record<ClaveDeHoja, Pantalla>> = {
-  // @ts-expect-error — «cierre-cajita» no es ninguna de las siete hojas del arbol.
+  // @ts-expect-error — «cierre-cajita» no es ninguna de las seis hojas del arbol.
   'cierre-cajita': { instruccion: 'no lleva a ninguna parte', bloques: [] },
 };
 
@@ -169,13 +169,41 @@ export const operacionConVerboInventado: Operacion = {
 };
 
 /**
- * **Y la ventanilla solo lee** (#74, ADR-0040): `leer` no acepta opciones de escritura.
+ * **Leer sigue sin poder escribir** (#74, ADR-0040): `leer` no acepta opciones de escritura.
  *
- * `solicitar` de `@kamayuk/api` sabe escribir; lo que decide que aqui no se escriba es que
- * `api/cliente.ts` solo exporte `leer`. Si alguien le anadiera un tercer parametro con `metodo`, esta
- * barrera deja de fallar y `tsc` se pone rojo con TS2578.
+ * `solicitar` de `@kamayuk/api` sabe escribir; lo que decide que no se escriba por aqui es la forma
+ * de `leer`. Desde #100 hay ademas un `escribir`, y esta barrera se queda tal cual: lo que impide
+ * que una lectura se convierta en una escritura por descuido no es que no exista la escritura, es
+ * que `leer` no tenga donde recibir un verbo. Si alguien le anadiera un tercer parametro con
+ * `metodo`, esta barrera deja de fallar y `tsc` se pone rojo con TS2578.
  */
 export function leerNoEscribe(): Promise<unknown> {
   // @ts-expect-error — `leer` no tiene un parametro de opciones: no hay `metodo` que pasarle.
   return leer('/cobros', undefined, { metodo: 'POST' });
+}
+
+/* ── #100 (ADR-0044): se escribe, y la forma de `escribir` dice CUANTO ──────────────────── */
+
+/**
+ * **Una escritura sin cuerpo no existe**: `escribir` lo exige.
+ *
+ * Es lo que impide que `escribir('/cobros/…/anulacion')` compile y mande un `POST` vacio, que es
+ * como el backend recibiria una anulacion sin motivo y sin observacion — y contestaria 422 despues
+ * de que alguien confirmara un acto irreversible.
+ */
+export function escribirExigeSuCuerpo(): Promise<unknown> {
+  // @ts-expect-error — falta el cuerpo, que es obligatorio.
+  return escribir('/cobros/001-000123/anulacion');
+}
+
+/**
+ * **Y el verbo no es suyo**: `escribir` manda `POST` y no admite otro.
+ *
+ * Los otros cuatro que `@kamayuk/api` sabe hacer no los usa este backend —un recibo no se corrige,
+ * se anula (regla 4)—, y un parametro que nadie pasa es una puerta abierta sin nadie detras. El dia
+ * que haga falta un `PUT`, entra con su decision y esta barrera se cae a proposito.
+ */
+export function escribirNoEligeElVerbo(): Promise<unknown> {
+  // @ts-expect-error — `escribir` no recibe un verbo: el tercer parametro es la senal.
+  return escribir('/cobros/001-000123/anulacion', {}, 'DELETE');
 }

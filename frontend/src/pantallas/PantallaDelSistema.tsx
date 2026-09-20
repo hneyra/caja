@@ -3,6 +3,7 @@ import {
   type DatosDeLaPantalla,
   type DefinicionDePantalla,
   type HojaDelMarco,
+  type ManejadoresDeLosActos,
   type NavegacionDeLaPantalla,
   type PiezaDeLaPantalla,
 } from '@kamayuk/ui';
@@ -27,6 +28,13 @@ import { tonoDe } from './tono.ts';
  * porque las guardas montan la pantalla **fuera del armazon**, donde no hay ni catalogo ni ruta; sin
  * ellas el boton de la fila sale impedido con su motivo, que es lo que la libreria hace y no un
  * boton mudo.
+ *
+ * <h2>Y desde #100, quien atiende lo que la hoja ESCRIBE</h2>
+ *
+ * `actos` es el registro `clave del acto -> manejador` que la anulacion necesita (ADR-0044). Es
+ * opcional por lo mismo que las dos de arriba: montada fuera de la costura, la pantalla se dibuja
+ * igual y su primario sale **impedido con su motivo** —«nadie atiende esto»—, que es exactamente lo
+ * que hay que ver en una guarda que no quiere escribir nada.
  */
 export interface PantallaDelSistemaProps {
   readonly definicion: DefinicionDePantalla<PiezaDeLaPantalla>;
@@ -34,6 +42,7 @@ export interface PantallaDelSistemaProps {
   readonly alEnsuciar?: () => void;
   readonly hoja?: HojaDelMarco;
   readonly navegacion?: NavegacionDeLaPantalla;
+  readonly actos?: ManejadoresDeLosActos;
 }
 
 export function PantallaDelSistema({
@@ -42,6 +51,7 @@ export function PantallaDelSistema({
   alEnsuciar,
   hoja,
   navegacion,
+  actos,
 }: PantallaDelSistemaProps) {
   const { t } = useTranslation();
   const textos = useTextosDelInterprete();
@@ -55,6 +65,7 @@ export function PantallaDelSistema({
       {...(alEnsuciar === undefined ? {} : { alEnsuciar })}
       {...(hoja === undefined ? {} : { hoja })}
       {...(navegacion === undefined ? {} : { navegacion })}
+      {...(actos === undefined ? {} : { actos })}
     />
   );
 }

@@ -19,6 +19,7 @@ import {
 import i18n, { ABRE, CIERRA, IDIOMA_MARCADO, IDIOMA_POR_OMISION } from '../src/i18n/i18n.ts';
 import { MUNICIPALIDAD_MEDIDA, SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import {
+  FRASES_DEL_ACTO,
   FRASES_DEL_INTERPRETE,
   FRASES_DE_LAS_LECTURAS,
   FRASES_DEL_MARCO,
@@ -394,10 +395,35 @@ describe('y el marco tampoco: las treinta y dos palabras del armazon (#133)', ()
     expect(marcada(result.current.reintentar)).toBe(true);
     expect(marcada(result.current.incidencia?.('K-1'))).toBe(true);
     expect(marcada(result.current.lecturaSinEstado?.('conciliacion'))).toBe(true);
+    // Las doce de un acto (#100): sin ellas, «Esto no se deshace» —la frase que mas importa de esta
+    // pantalla— saldria en castellano dentro de una ventanilla traducida.
+    expect(marcada(result.current.cerrarElActo)).toBe(true);
+    expect(marcada(result.current.escribiendo)).toBe(true);
+    expect(marcada(result.current.faltaRellenar?.(['Motivo']))).toBe(true);
+    expect(marcada(result.current.observacionCorta?.(5, 2))).toBe(true);
+    expect(marcada(result.current.observacionLarga?.(500, 501))).toBe(true);
+    expect(marcada(result.current.sinQuienLoAtienda?.('anular-el-recibo'))).toBe(true);
+    expect(marcada(result.current.estoNoSeDeshace)).toBe(true);
+    expect(marcada(result.current.siConfirmar)).toBe(true);
+    expect(marcada(result.current.cancelar)).toBe(true);
+    expect(marcada(result.current.rechazoSinFallo?.('anular-el-recibo'))).toBe(true);
+    expect(marcada(result.current.faltaElDato?.('numeroDelRecibo'))).toBe(true);
+    expect(marcada(result.current.datoAusente)).toBe(true);
+    // Y las cinco que llevan dato dentro lo PONEN: una plantilla cuyo hueco no se rellena sale
+    // marcada igual, y esta prueba pasaria sobre una frase que dice «{{minimo}}».
+    expect(result.current.observacionCorta?.(5, 2)).toContain('5');
+    expect(result.current.faltaRellenar?.(['Motivo'])).toContain('Motivo');
+    expect(result.current.sinQuienLoAtienda?.('anular-el-recibo')).toContain('anular-el-recibo');
+    expect(result.current.rechazoSinFallo?.('anular-el-recibo')).toContain('anular-el-recibo');
+    expect(result.current.faltaElDato?.('numeroDelRecibo')).toContain('numeroDelRecibo');
     // El saco que se pasa es EXACTAMENTE el inventario: ni una clave que no este en el locale, ni
     // una del locale que no se pase.
     expect(Object.keys(result.current).sort()).toEqual(
-      [...Object.keys(FRASES_DEL_INTERPRETE), ...Object.keys(FRASES_DE_LAS_LECTURAS)].sort(),
+      [
+        ...Object.keys(FRASES_DEL_INTERPRETE),
+        ...Object.keys(FRASES_DE_LAS_LECTURAS),
+        ...Object.keys(FRASES_DEL_ACTO),
+      ].sort(),
     );
   });
 
