@@ -181,6 +181,9 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     'pagosSinEntregar',
     'avanceDeRecaudacion',
     'recaudacionPorArea',
+    // Desde #98. Su `?fecha=` no va en `RUTAS` —lo pone `rutaDeLaConciliacion()`, porque lo elige
+    // quien mira—, asi que aqui la ruta se compara pelada, como las demas.
+    'conciliacion',
   ] as const;
 
   it('EL CENTINELA: se leyeron los mapeos del nucleo, y las rutas de datos estan en RUTAS', () => {
@@ -221,6 +224,7 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     const DUPLICADO = `${NUCLEO}/DuplicadoResource.java`;
     const RECIBO = `${NUCLEO}/ReciboResource.java`;
     const TURNO = `${NUCLEO}/TurnoDelDiaResource.java`;
+    const CONCILIACION = `${NUCLEO}/ConciliacionController.java`;
     const ARQUEO = `${NUCLEO}/ArqueoResource.java`;
     const ESTADO = `${NUCLEO}/EstadoDelCierreController.java`;
     const IMPORTE = 'backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java';
@@ -245,6 +249,15 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
       ['EstadoDelCierreResource', componentesDelRecord(ESTADO, 'EstadoDelCierreResource'), m.CIERRE_MEDIDO],
       ['ArqueoResource', componentesDelRecord(ARQUEO, 'ArqueoResource'), m.CIERRE_MEDIDO.arqueo],
       ['ArqueoResource.LineaResource', componentesDelRecord(ARQUEO, 'LineaResource'), m.CIERRE_MEDIDO.arqueo.lineas[0]],
+      // #98: la conciliacion y sus lineas. `LineaResource` es la que importa: sus cinco nulos son
+      // deliberados, y una captura que los omitiera dejaria sin ejercer el caso del origen que no
+      // contesta — que es el unico que la pantalla tiene que saber decir.
+      ['ConciliacionResource', componentesDelRecord(CONCILIACION, 'ConciliacionResource'), m.CONCILIACION_MEDIDA],
+      [
+        'ConciliacionResource.LineaResource',
+        componentesDelRecord(CONCILIACION, 'LineaResource'),
+        m.CONCILIACION_MEDIDA.lineas[0],
+      ],
     ];
     for (const [nombre, delBackend, captura] of pares) {
       expect(Object.keys(captura ?? {}), `«${nombre}»`).toEqual(delBackend);

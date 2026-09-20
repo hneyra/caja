@@ -1,12 +1,26 @@
 import { formatearFecha, formatearImporte } from '@kamayuk/formato';
-import { coordenada, type Ausencia, type Coordenada, type DatosDeUnaTabla, type EnLaRuta } from '@kamayuk/ui';
+import {
+  coordenada,
+  type Ausencia,
+  type Coordenada,
+  type DatosDeUnaTabla,
+  type EnLaRuta,
+  type EstadoDeUnaLectura,
+} from '@kamayuk/ui';
+import { peldanoDe } from '@kamayuk/sesion';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
 import type { ClaveDeHoja } from '../pantallas/arbol.ts';
-import { NUMERO_DE_LA_FILA, TABLA_DE_LINEAS, TABLA_DE_RECIBOS } from '../pantallas/definiciones/tesoreria.ts';
+import {
+  LECTURA_DE_LA_CONCILIACION,
+  NUMERO_DE_LA_FILA,
+  TABLA_DE_LINEAS,
+  TABLA_DE_RECIBOS,
+} from '../pantallas/definiciones/tesoreria.ts';
 import type {
   AvanceDeRecaudacion,
   CajaEnLista,
+  ConciliacionDelDia,
   DistribucionDeRecaudacion,
   DuplicadoDeUnRecibo,
   EstadoDelCierre,
@@ -16,7 +30,7 @@ import type {
   ReciboEnLista,
   TurnoDelDia,
 } from './lecturas.ts';
-import { RUTAS, pedirPagina, pedirUno, rutaDelCierre, rutaDelDuplicado } from './lecturas.ts';
+import { RUTAS, pedirPagina, pedirUno, rutaDeLaConciliacion, rutaDelCierre, rutaDelDuplicado } from './lecturas.ts';
 
 /**
  * **Que pantalla de la ventanilla pide que, y que de lo que llega dibuja cada campo** (#84).
@@ -26,25 +40,31 @@ import { RUTAS, pedirPagina, pedirUno, rutaDelCierre, rutaDelDuplicado } from '.
  *
  * <h2>Que se conecta y que no, y por que</h2>
  *
- * Una lectura se conecta si la pantalla puede pedirla **con lo que ya tiene**. De los tres huecos
- * que #84 declaro queda **uno**, y lo dice en su hueco en vez de inventarse lo que le falta:
+ * Una lectura se conecta si la pantalla puede pedirla **con lo que ya tiene**, o si puede **ofrecer
+ * elegir lo que le falta**. De los tres huecos que #84 declaro **no queda ninguno**, y cada uno se
+ * cerro por un camino distinto:
  *
- *   · **La conciliacion** (`GET /conciliacion?fecha=`): exige la fecha, y la pantalla no deja
- *     elegirla. Ponerle «hoy» del reloj del navegador seria decidir por quien concilia que dia mira.
- *
- * **El segundo se cerro en #99**: `GET /recibos/{nro}/duplicado` ya se pide, porque la lista deja
- * elegir una fila y **lo elegido vive en la ruta**. Ver `LecturaDeLoElegido`, mas abajo.
- *
- * **Y el tercero en #97**: el arqueo del turno lo era porque ninguna lectura publicaba el
- * `turnoId`, y pedirlo habria sido adivinar un numero; ahora lo publica `GET /turnos/del-dia`, y
- * `cierre-caja` **encadena** —pide su turno, y si tiene uno abierto pide el arqueo de ESE turno—.
+ *   · **El recibo elegido, en #99**: `GET /recibos/{nro}/duplicado` se pide porque la lista deja
+ *     elegir una fila y **lo elegido vive en la ruta**. Ver `LecturaDeLoElegido`, mas abajo.
+ *   · **El arqueo del turno, en #97**: lo era porque ninguna lectura publicaba el `turnoId`, y
+ *     pedirlo habria sido adivinar un numero; ahora lo publica `GET /turnos/del-dia`, y
+ *     `cierre-caja` **encadena** —pide su turno, y si tiene uno abierto pide el arqueo de ESE—.
+ *   · **La conciliacion, en #98**: `GET /conciliacion?fecha=` exige un dia, y **la hoja lo ofrece
+ *     elegir** con un selector cuyo valor vive en la ruta (`eleccion.enLaRuta`, `kamayuk-lib`#94).
+ *     Sigue sin ponerse «hoy» del reloj del navegador: seria decidir por quien concilia que dia
+ *     mira, y ademas la regla 6 lo prohibe — lo escribe el javadoc de `ConciliacionController`.
  *
  * <h2>Dos maneras distintas de pedir una segunda lectura, y no se confunden</h2>
  *
- * `duplicado-recibo` usa `deLoElegido`: lo que se pide sale de la **ruta**, porque lo elige una
- * persona y tiene que sobrevivir a una recarga. `cierre-caja` no puede: su `turnoId` no lo elige
- * nadie, **sale de la respuesta anterior**, asi que su cadena vive dentro de un solo `pedir` y por
- * eso `Conector.rutas` es una lista.
+ * `deLoElegido` es la de lo que **elige una persona**: sale de la **ruta**, porque tiene que
+ * sobrevivir a una recarga y viajar en un enlace. La usan `duplicado-recibo` —con el numero en el
+ * sujeto— y, desde #98, `cierre-caja` —con el dia en `?fecha=`—; que una sea un recibo y la otra
+ * un dia no cambia el mecanismo, y por eso no hay un tercero.
+ *
+ * Lo que `cierre-caja` **no** puede pedir asi es su arqueo: el `turnoId` no lo elige nadie, **sale
+ * de la respuesta anterior**, asi que esa cadena vive dentro de un solo `pedir` y por eso
+ * `Conector.rutas` es una lista. La misma hoja usa las dos, y no se estorban: son dos preguntas
+ * distintas —de quien es el turno, y que dia se concilia— y solo la segunda la contesta quien mira.
  *
  * <h2>Lo que NO se hace, y es la regla que gobierna este archivo</h2>
  *
@@ -158,10 +178,29 @@ export type PasoDeLoElegido =
   | { readonly paso: 'fallo'; readonly error: unknown }
   | { readonly paso: 'dato'; readonly respuesta: never };
 
-/** Lo que la segunda lectura anade al reparto de la primera, y lo que se dice arriba mientras tanto. */
+/**
+ * Lo que la segunda lectura anade al reparto de la primera, y **como lo dice**.
+ *
+ * <h2>Dos maneras de decirlo, y cada hoja usa la suya**</h2>
+ *
+ * · **`ausencia`** — habla por la pantalla entera: en `duplicado-recibo` lo unico que queda por
+ *   decir despues de que llegue la lista **es** lo que le pase al recibo elegido, asi que manda.
+ * · **`lecturas`** (#98) — habla **por una pieza**: el estado de la lectura que un bloque declara
+ *   (`bloque.lectura.clave`), que el interprete dibuja en el sitio de ese bloque.
+ *
+ * `cierre-caja` necesita la segunda y no la primera, y no es un capricho: su frase de arriba ya la
+ * decide el turno —«no abrio turno hoy», «ya cerro», «tiene dos ventanillas»—, y una conciliacion
+ * que la pisara borraria de la pantalla el motivo por el que faltan otros diez campos. Con
+ * `lecturas`, cada cosa dice lo suyo donde se mira.
+ *
+ * Las dos son opcionales y **no se excluyen**; sin ninguna, manda la ausencia de la primera lectura.
+ */
 export interface Aporte {
   readonly reparto: Reparto;
-  readonly ausencia: Ausencia;
+  /** Ausente cuando esta lectura no habla por la pantalla entera: entonces manda la de la primera. */
+  readonly ausencia?: Ausencia;
+  /** El estado de las lecturas que una pieza declara, por su `clave` (#98). */
+  readonly lecturas?: ReadonlyMap<string, EstadoDeUnaLectura>;
 }
 
 /** Las palabras de los huecos que una lectura que SI contesto deja. Todas pasan por el locale. */
@@ -170,12 +209,15 @@ export const SIN_TURNO = 'sin turno';
 export const TURNO_CERRADO = 'turno cerrado';
 export const VARIAS_CAJAS = 'varias cajas';
 export const SIN_DECLARAR = 'sin declarar';
-export const SIN_FECHA = 'sin fecha';
 export const SIN_PEDIR_AQUI = 'sin pedir';
 
 /** Lo que dicen «Puede cerrarse» y «Cuadra». Son palabras, no datos del backend: se traducen. */
 const SI = 'sí';
 const NO = 'no';
+
+/** Lo que dice la situacion de una linea de la conciliacion. Tambien palabras, y `tono.ts` las lee. */
+const CUADRA = 'CUADRA';
+const NO_CUADRA = 'NO CUADRA';
 
 /** Un reparto que no aporta nada: el de una lectura que todavia no tiene nada que repartir. */
 const NADA: Reparto = {
@@ -216,9 +258,6 @@ const RECIBO_QUE_NO_LLEGO: Ausencia = {
   tono: 'atencion',
 };
 
-/** Lo que le falta a `cierre-caja` pase lo que pase con el turno. Se pega a las cuatro de abajo. */
-const Y_LA_CONCILIACION = ' La conciliación necesita la fecha, y elegirla todavía no está disponible.';
-
 /**
  * Las cuatro situaciones de `cierre-caja` (#97), y no una frase fija.
  *
@@ -229,32 +268,28 @@ const Y_LA_CONCILIACION = ' La conciliación necesita la fecha, y elegirla todav
 const CIERRE_CON_TURNO: Ausencia = {
   enElCampo: SIN_PEDIR_AQUI,
   explicacion:
-    'Esta pantalla lee su turno abierto, su arqueo y los pagos que impiden cerrarlo. Lo que usted cuente en el cajón no se registra desde aquí, así que el arqueo no dice lo declarado ni si cuadra: dice lo cobrado.' +
-    Y_LA_CONCILIACION,
+    'Esta pantalla lee su turno abierto, su arqueo, los pagos que impiden cerrarlo y la conciliación del día que se elija. Lo que usted cuente en el cajón no se registra desde aquí, así que el arqueo no dice lo declarado ni si cuadra: dice lo cobrado.',
   tono: 'info',
 };
 
 const CIERRE_SIN_TURNO: Ausencia = {
   enElCampo: SIN_TURNO,
   explicacion:
-    'Usted no tiene turno abierto hoy, así que no hay arqueo que mostrar: la ventanilla se abre con su primer cobro del día.' +
-    Y_LA_CONCILIACION,
+    'Usted no tiene turno abierto hoy, así que no hay arqueo que mostrar: la ventanilla se abre con su primer cobro del día.',
   tono: 'info',
 };
 
 const CIERRE_YA_CERRADO: Ausencia = {
   enElCampo: TURNO_CERRADO,
   explicacion:
-    'Su turno de hoy ya está cerrado y su arqueo, firmado. Un cajero tiene un solo turno al día por ventanilla, así que volver a cobrar hoy exige reversar ese cierre, y reversar no se hace desde aquí.' +
-    Y_LA_CONCILIACION,
+    'Su turno de hoy ya está cerrado y su arqueo, firmado. Un cajero tiene un solo turno al día por ventanilla, así que volver a cobrar hoy exige reversar ese cierre, y reversar no se hace desde aquí.',
   tono: 'info',
 };
 
 const CIERRE_CON_VARIOS: Ausencia = {
   enElCampo: VARIAS_CAJAS,
   explicacion:
-    'Tiene turno abierto en más de una ventanilla, y esta pantalla no elige por usted cuál arquear: arquear una por otra no daría error, daría una cifra.' +
-    Y_LA_CONCILIACION,
+    'Tiene turno abierto en más de una ventanilla, y esta pantalla no elige por usted cuál arquear: arquear una por otra no daría error, daría una cifra.',
   tono: 'info',
 };
 
@@ -264,10 +299,11 @@ export const FRASES_DE_LOS_CONECTORES: readonly string[] = [
   TURNO_CERRADO,
   VARIAS_CAJAS,
   SIN_DECLARAR,
-  SIN_FECHA,
   SIN_PEDIR_AQUI,
   SI,
   NO,
+  CUADRA,
+  NO_CUADRA,
   ...[
     ELIJA_UN_RECIBO,
     PIDIENDO_EL_RECIBO,
@@ -477,6 +513,88 @@ const DUPLICADO_RECIBO: Conector = {
   deLoElegido: EL_RECIBO_ELEGIDO,
 };
 
+/**
+ * **La conciliacion del dia que se elija** (#98): `GET /conciliacion?fecha=`.
+ *
+ * Es una `LecturaDeLoElegido` como la del recibo —lo que se pide sale de la ruta—, y se diferencia
+ * en **donde lo cuenta**: no habla por la pantalla entera, porque la frase de arriba de esta hoja
+ * ya la decide el turno (#97). Lo suyo viaja en `lecturas`, y lo dibuja el bloque que declara
+ * `lectura: { clave: 'conciliacion' }` con sus cuatro estados en su sitio.
+ *
+ * Los cuatro pasos de `PasoDeLoElegido` son exactamente los cuatro estados de una lectura, asi que
+ * la conversion es directa y no inventa ninguno:
+ *
+ *   · `sin-elegir` -> `en-espera`, que es «todavia no hay nada que pedir» y **no** «esta pidiendo»;
+ *   · `fallo` -> el peldano de `@kamayuk/sesion`, que distingue el **422** de una fecha mal escrita
+ *     —llega por la barra de direcciones— de una averia. Con `tono: atencion` cuando no lo es:
+ *     escribir mal un dia no manda a avisar a soporte. **Sin `reintentar`**, porque insistir sobre
+ *     un 422 sale igual las veces que se pulse.
+ */
+const LA_CONCILIACION_DEL_DIA: LecturaDeLoElegido = {
+  enLaRuta: 'fecha',
+  clave: (fecha) => ['cierre-caja', 'conciliacion', fecha],
+  ruta: RUTAS.conciliacion,
+  pedir: (fecha, senal) => pedirUno<ConciliacionDelDia>(rutaDeLaConciliacion(fecha), senal),
+  repartir: (paso) => {
+    if (paso.paso === 'sin-elegir') return { reparto: NADA, lecturas: estadoDeLaConciliacion({ estado: 'en-espera' }) };
+    if (paso.paso === 'pidiendo') return { reparto: NADA, lecturas: estadoDeLaConciliacion({ estado: 'pidiendo' }) };
+    if (paso.paso === 'fallo') {
+      const peldano = peldanoDe(paso.error);
+      return {
+        reparto: NADA,
+        lecturas: estadoDeLaConciliacion({
+          estado: 'fallo',
+          peldano,
+          tono: peldano.esAveria ? 'mal' : 'atencion',
+        }),
+      };
+    }
+    return {
+      reparto: conLaConciliacion(paso.respuesta as ConciliacionDelDia),
+      lecturas: estadoDeLaConciliacion({ estado: 'con-datos' }),
+    };
+  },
+};
+
+/** El estado de la lectura que el bloque «El cuadre del dia» declara. */
+const estadoDeLaConciliacion = (estado: EstadoDeUnaLectura): ReadonlyMap<string, EstadoDeUnaLectura> =>
+  new Map([[LECTURA_DE_LA_CONCILIACION, estado]]);
+
+/**
+ * El bloque del cuadre, con lo que contesto la conciliacion.
+ *
+ * **Dos cosas que no se calculan aqui, y las dos por el mismo motivo**: el cuadre del dia y el de
+ * cada linea los decide el backend —`Linea.cuadra()` mira tres condiciones y no una— y viajan
+ * hechos. Comparar en el cliente daria lo mismo casi siempre, y el dia que no, nadie sabria cual de
+ * los dos creer.
+ *
+ * **Y una que se dice en vez de rellenarse**: cuando el origen no contesto, `diferencia` llega
+ * **nula**, y en su celda va `porQueNoSeSabe` —lo que el `Resource` publica— y no un cero. Un cero
+ * ahi es indistinguible de un dia sin cobros, y la conciliacion diria que cuadra.
+ */
+function conLaConciliacion(conciliacion: ConciliacionDelDia): Reparto {
+  return {
+    ...NADA,
+    // En mayusculas, como los estados que el backend publica: es un dato, y `tono.ts` pinta
+    // «NO CUADRA» en rojo por lo que dice.
+    valores: new Map([[coordenada(3, 0), conciliacion.cuadra ? CUADRA : NO_CUADRA]]),
+    filas: new Map([
+      [
+        3,
+        conciliacion.lineas.map((l) => [
+          l.sistema,
+          String(l.registrados),
+          String(l.anulados),
+          String(l.enTransito),
+          formatearImporte(l.neto.importe),
+          l.diferencia === null ? (l.porQueNoSeSabe ?? NULO) : formatearImporte(l.diferencia),
+          l.cuadra ? CUADRA : NO_CUADRA,
+        ]),
+      ],
+    ]),
+  };
+}
+
 /** Lo que `cierre-caja` junta de sus lecturas. `cierre` es nulo si no hay UN turno abierto. */
 export interface DatosDelCierre {
   readonly turno: TurnoDelDia;
@@ -539,10 +657,7 @@ const CIERRE_CAJA: Conector = {
       return {
         ...NADA,
         filas: new Map([[1, pagos]]),
-        sinDato: new Map([
-          ...bloqueSinDato(0, 10, ausencia.enElCampo),
-          ...bloqueSinDato(2, 2, SIN_FECHA),
-        ]),
+        sinDato: new Map(bloqueSinDato(0, 10, ausencia.enElCampo)),
         ausencia,
       };
     }
@@ -557,7 +672,7 @@ const CIERRE_CAJA: Conector = {
       [coordenada(0, 5), formatearImporte(arqueo.anulado.importe)],
       [coordenada(0, 6), formatearImporte(arqueo.neto.importe)],
     ];
-    const sinDato: [Coordenada, string][] = [...bloqueSinDato(2, 2, SIN_FECHA)];
+    const sinDato: [Coordenada, string][] = [];
 
     // Los tres que el arqueo EN VIVO no puede saber: nadie ha contado el cajon todavia. El
     // backend los manda nulos desde #97 —antes mandaba 0,00 y `cuadra: false`—, y aqui cada
@@ -597,6 +712,7 @@ const CIERRE_CAJA: Conector = {
     };
   },
   ausencia: CIERRE_CON_TURNO,
+  deLoElegido: LA_CONCILIACION_DEL_DIA,
 };
 
 /** `avance-recaudacion`: el periodo, sus tres totales y una fila por concepto. */

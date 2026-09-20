@@ -50,6 +50,10 @@ function deLasPantallas(): readonly string[] {
     for (const bloque of pantalla.bloques) {
       salida.push(bloque.titulo);
       if (bloque.nota !== '') salida.push(bloque.nota);
+      // Lo que un bloque dice mientras su lectura no se puede pedir (#98): es una frase de la hoja,
+      // la escribe la definicion y la traduce el interprete, asi que entra por aqui como las demas.
+      const espera = bloque.lectura?.espera;
+      if (typeof espera === 'string') salida.push(espera);
       for (const campo of bloque.campos) {
         salida.push(campo.etiqueta);
         if ('opciones' in campo) salida.push(...campo.opciones);

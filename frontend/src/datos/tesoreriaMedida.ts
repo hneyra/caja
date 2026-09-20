@@ -1,11 +1,12 @@
 import type {
   AvanceDeRecaudacion,
   CajaEnLista,
+  ConciliacionDelDia,
   DistribucionDeRecaudacion,
   DuplicadoDeUnRecibo,
   EstadoDelCierre,
-  PagoDelBuzon,
   Paginado,
+  PagoDelBuzon,
   ReciboEnLista,
   TurnoDelDia,
 } from './lecturas.ts';
@@ -267,4 +268,57 @@ export const DISTRIBUCION_MEDIDA: DistribucionDeRecaudacion = {
   ],
   neto: { importe: '1962.60', actualizadoA: '2026-03-15' },
   netoSinPartida: { importe: '1842.60', actualizadoA: '2026-03-15' },
+};
+
+/**
+ * `GET /conciliacion?fecha=2026-03-15` (#98).
+ *
+ * **Las dos lineas son los dos casos, y el segundo es el que importa**: `rentas` contesto y su
+ * diferencia es cero; `mercados` no contesto, asi que sus cuatro cifras del origen llegan **nulas**
+ * y `porQueNoSeSabe` dice por que. Una pantalla que pintara cero ahi diria que el dia cuadra.
+ *
+ * Y el dia **no cuadra**, que es lo coherente con sus lineas: `rentas` tiene un pago en transito
+ * —`PAGOS_MEDIDOS` es justo ese— y de `mercados` no se sabe nada.
+ */
+export const CONCILIACION_MEDIDA: ConciliacionDelDia = {
+  fecha: '2026-03-15',
+  cuadra: false,
+  lineas: [
+    {
+      sistema: 'rentas',
+      registrados: 12,
+      anulados: 1,
+      enTransito: 1,
+      muertos: 0,
+      explicados: 0,
+      cobrado: { importe: '1867.60', actualizadoA: '2026-03-15' },
+      anulado: { importe: '25.00', actualizadoA: '2026-03-15' },
+      neto: { importe: '1842.60', actualizadoA: '2026-03-15' },
+      recibidosEnElOrigen: 12,
+      aplicadosEnElOrigen: 11,
+      rechazadosEnElOrigen: 0,
+      importeAplicadoEnElOrigen: '1842.60',
+      diferencia: '0.00',
+      porQueNoSeSabe: null,
+      cuadra: false,
+    },
+    {
+      sistema: 'mercados',
+      registrados: 3,
+      anulados: 0,
+      enTransito: 0,
+      muertos: 0,
+      explicados: 0,
+      cobrado: { importe: '120.00', actualizadoA: '2026-03-15' },
+      anulado: { importe: '0.00', actualizadoA: '2026-03-15' },
+      neto: { importe: '120.00', actualizadoA: '2026-03-15' },
+      recibidosEnElOrigen: null,
+      aplicadosEnElOrigen: null,
+      rechazadosEnElOrigen: null,
+      importeAplicadoEnElOrigen: null,
+      diferencia: null,
+      porQueNoSeSabe: 'El sistema de origen no contesto: Connection refused',
+      cuadra: false,
+    },
+  ],
 };

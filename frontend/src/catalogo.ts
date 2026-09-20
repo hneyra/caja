@@ -1,5 +1,5 @@
 import type { Catalogo, ModuloDelCatalogo } from '@kamayuk/shell';
-import { seEscribe, tipoDe } from '@kamayuk/ui';
+import { eleccionDe, seEscribe, tipoDe } from '@kamayuk/ui';
 
 import { ARBOL, type ClaveDeHoja } from './pantallas/arbol.ts';
 import type { Modulo } from './pantallas/tipos.ts';
@@ -18,18 +18,24 @@ import { pantallaDe } from './pantallas/definiciones/index.ts';
  *   · **Cada destino lleva su acceso**, por `ACCESO_POR_DESTINO`: es lo que deja a `permisos.ts`
  *     filtrar hoja por hoja.
  *   · **`seEscribe` sale siempre `false`** —se calcula igual que en `rentas`, del dato—, porque
- *     ninguna definicion de la ventanilla tiene un campo que se escriba (ADR-0040). Si alguna lo
- *     ganara, el armazon ofreceria «Guardar» sin que nadie lo hubiera decidido, y lo impide
- *     `verificaciones/solo-lee.test.ts`.
+ *     ninguna definicion de la ventanilla tiene un campo que escriba en el backend (ADR-0040). Si
+ *     alguna lo ganara, el armazon ofreceria «Guardar» sin que nadie lo hubiera decidido, y lo
+ *     impide `verificaciones/solo-lee.test.ts`.
+ *
+ * **Y desde #98 hay un campo de entrada que NO cuenta**, con su motivo: el que declara
+ * `eleccion.enLaRuta` (`kamayuk-lib`#94) no escribe en ningun backend — escribe en la direccion de
+ * la hoja, y de ahi sale el parametro de una LECTURA. Contarlo pondria «Guardar» en el pie de
+ * `cierre-caja` sin que exista nada que guardar, que es exactamente lo que ADR-0040 no quiere. Un
+ * campo de entrada sin `eleccion` sigue contando, y eso es lo que mide la guarda.
  *
  * **No traduce ni filtra**: traduce `traducirCatalogo()` y filtra `permisos.ts`, por lo mismo que
  * en `rentas`.
  */
 
-/** Si alguna de las pantallas de una hoja tiene un campo que se escribe. */
+/** Si alguna de las pantallas de una hoja tiene un campo que escribe en el backend. Ver arriba. */
 function laHojaSeEscribe(clave: ClaveDeHoja): boolean {
   return pantallaDe(clave).bloques.some((bloque) =>
-    bloque.campos.some((campo) => seEscribe(tipoDe(campo.tipo))),
+    bloque.campos.some((campo) => seEscribe(tipoDe(campo.tipo)) && eleccionDe(campo) === undefined),
   );
 }
 

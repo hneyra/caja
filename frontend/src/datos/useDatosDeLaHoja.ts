@@ -99,21 +99,37 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
     retry: false,
   });
 
+  /*
+   * **El aporte de la segunda lectura se calcula ANTES de las tres salidas de arriba** (#98).
+   *
+   * Porque no depende de la primera: la conciliacion de un dia no espera a que llegue el turno. Y
+   * porque su estado tiene que viajar aunque la primera este pidiendo o haya fallado — si no, el
+   * bloque que declara `lectura` dibuja «nadie ha dado el estado de «conciliacion»», que el
+   * interprete dice en castellano y sin pasar por `t()`. Lo destapo `todo-el-texto-se-traduce`
+   * montando la hoja sin backend.
+   */
+  const aporte = deLoElegido?.repartir(pasoDe(elegido, delDetalle));
+  const conLasLecturas = aporte?.lecturas === undefined ? {} : { lecturas: aporte.lecturas };
+
   if (conector === undefined) return { ausencia: porQueNoHayDato(hojaDe(clave)) };
-  if (consulta.isPending) return { ausencia: CARGANDO };
-  if (consulta.isError) return { ausencia: alFallar(consulta.error) };
+  if (consulta.isPending) return { ...conLasLecturas, ausencia: CARGANDO };
+  if (consulta.isError) return { ...conLasLecturas, ausencia: alFallar(consulta.error) };
 
   const reparto = conector.repartir(consulta.data as never, elegido);
   // El reparto puede afinar la frase con lo que llego: `cierre-caja` la necesita, porque «no
   // abrio turno», «ya cerro» y «tiene dos ventanillas» dejan los mismos huecos y se arreglan en
   // tres sitios distintos (#97). Los demas no la ponen, y manda la del conector.
-  if (deLoElegido === undefined) {
+  if (aporte === undefined) {
     return { ...deUnReparto(reparto), ausencia: reparto.ausencia ?? conector.ausencia };
   }
 
   // La lista ya contesto; lo que quede por decir es de la segunda lectura, y **nunca tapa la
   // lista**: un recibo que no existe deja la de arriba donde estaba.
-  const aporte = deLoElegido.repartir(pasoDe(elegido, delDetalle));
+  //
+  // Y lo dice de una de las dos maneras (#98): hablando por la pantalla entera —`aporte.ausencia`,
+  // que es lo que hace `duplicado-recibo`— o por la PIEZA que la declara —`aporte.lecturas`, que es
+  // lo que hace la conciliacion de `cierre-caja`—. Sin lo segundo, elegir un dia borraria de la
+  // pantalla el motivo por el que faltan los diez campos del arqueo, que lo decide el turno (#97).
   return {
     ...deUnReparto({
       valores: unir(reparto.valores, aporte.reparto.valores),
@@ -122,7 +138,8 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
       conteos: unir(reparto.conteos, aporte.reparto.conteos),
       sinDato: unir(reparto.sinDato, aporte.reparto.sinDato),
     }),
-    ausencia: aporte.ausencia,
+    ...conLasLecturas,
+    ausencia: aporte.ausencia ?? reparto.ausencia ?? conector.ausencia,
   };
 }
 

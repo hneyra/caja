@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { TextosDelArmazon } from '@kamayuk/shell';
-import { TEXTOS_DE_LA_UI, type TextosDelInterprete } from '@kamayuk/ui';
+import { TEXTOS_DE_LA_UI, type TextosDeLaPantalla, type TextosDeLasPiezas, type TextosDelInterprete } from '@kamayuk/ui';
 
 /**
  * **Las palabras que el MARCO dice por su cuenta, traducidas por este sistema** (#133).
@@ -125,20 +125,70 @@ export const FRASES_DEL_INTERPRETE = {
   registros: '{{count}} registro',
 } as const satisfies Record<keyof TextosDelInterprete, string>;
 
+/**
+ * **Las palabras de una pieza que depende de una LECTURA** (#98).
+ *
+ * <h2>Por que hacen falta el dia que un bloque declara `lectura`, y no antes</h2>
+ *
+ * `<Pantalla textos>` recibe un `Partial`, o sea que lo que este sistema no pasa lo pone la
+ * libreria por omision — **en castellano**. Mientras ninguna definicion declaraba `lectura`,
+ * ninguna de estas frases llegaba al DOM. Con la primera —la conciliacion del dia, que no se puede
+ * pedir hasta que se elige uno— llegan las cinco de golpe, y la pantalla saldria a medias en un
+ * segundo idioma: el cuerpo traducido y la espera en castellano. Es el mismo defecto que #133
+ * cerro para el marco, en la otra mitad.
+ *
+ * <h2>Por que es un saco aparte y no mas claves en `FRASES_DEL_INTERPRETE`</h2>
+ *
+ * Porque aquel es `satisfies Record<keyof TextosDelInterprete, string>` y `TextosDelInterprete`
+ * son **tres**: una cuarta clave no compila. Estas viven en `TextosDeLasPiezas`, el saco hermano, y
+ * de el se toma **solo lo que se dibuja** — como hace `rentas` con las de sus tablas. Las demas
+ * piezas de #44 y #66 —actos, acciones, maestro-detalle— esta ventanilla no las usa, y prometer su
+ * traduccion seria inventario que nadie reclama.
+ *
+ * `lecturaSinEstado` entra aunque el sistema **no deba** producirla nunca —`useDatosDeLaHoja` da el
+ * estado de sus lecturas en sus cuatro ramas—: es lo que el interprete dice cuando alguien se
+ * olvida, y un aviso de defecto que solo se lee en castellano es medio aviso.
+ */
+export const FRASES_DE_LAS_LECTURAS = {
+  pidiendo: 'Pidiendo al servidor…',
+  enEspera: 'Todavía no hay nada que pedir.',
+  reintentar: 'Reintentar',
+  incidencia: 'Incidencia {{identificador}}',
+  lecturaSinEstado: 'Esta parte de la pantalla no sabe en qué estado está su lectura: nadie ha dado el de «{{clave}}».',
+} as const satisfies Record<keyof LasQueSeDibujan, string>;
+
+/**
+ * Las de `TextosDeLasPiezas` que esta ventanilla **si** dibuja. Derivado del tipo de la libreria: el
+ * dia que una cambie de nombre, esto deja de compilar en vez de dejar una clave huerfana.
+ */
+type LasQueSeDibujan = Pick<
+  TextosDeLasPiezas,
+  'pidiendo' | 'enEspera' | 'reintentar' | 'incidencia' | 'lecturaSinEstado'
+>;
+
 /** Todo lo que este archivo aporta al inventario del locale. Ver `catalogo-de-claves.ts`. */
 export function clavesDelMarco(): readonly string[] {
-  return [...Object.values(FRASES_DEL_MARCO), ...Object.values(FRASES_DEL_INTERPRETE)];
+  return [
+    ...Object.values(FRASES_DEL_MARCO),
+    ...Object.values(FRASES_DEL_INTERPRETE),
+    ...Object.values(FRASES_DE_LAS_LECTURAS),
+  ];
 }
 
-/** Las tres del interprete, pasadas por `t()`. Memorizadas sobre `t`, como las del marco. */
-export function useTextosDelInterprete(): TextosDelInterprete {
+/** Las del interprete y las de las lecturas, pasadas por `t()`. Memorizadas sobre `t`, como las del marco. */
+export function useTextosDelInterprete(): Partial<TextosDeLaPantalla> {
   const { t } = useTranslation();
 
-  return useMemo<TextosDelInterprete>(
+  return useMemo<Partial<TextosDeLaPantalla>>(
     () => ({
       opcional: t(FRASES_DEL_INTERPRETE.opcional),
       marcadorDeFecha: t(FRASES_DEL_INTERPRETE.marcadorDeFecha),
-      registros: (cuantos) => t(FRASES_DEL_INTERPRETE.registros, { count: cuantos }),
+      registros: (cuantos: number) => t(FRASES_DEL_INTERPRETE.registros, { count: cuantos }),
+      pidiendo: t(FRASES_DE_LAS_LECTURAS.pidiendo),
+      enEspera: t(FRASES_DE_LAS_LECTURAS.enEspera),
+      reintentar: t(FRASES_DE_LAS_LECTURAS.reintentar),
+      incidencia: (identificador: string) => t(FRASES_DE_LAS_LECTURAS.incidencia, { identificador }),
+      lecturaSinEstado: (clave: string) => t(FRASES_DE_LAS_LECTURAS.lecturaSinEstado, { clave }),
     }),
     [t],
   );

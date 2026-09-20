@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import {
   CIERRE_MEDIDO,
+  CONCILIACION_MEDIDA,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
@@ -130,7 +131,7 @@ test('«duplicado-recibo»: con el recibo en la direccion se pide al abrir, y un
  *
  * Es la cadena entera y el `turnoId` no esta escrito en `src/`: sale de `/turnos/del-dia`.
  */
-test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja los tres bloques', async ({ page }) => {
+test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja sus bloques', async ({ page }) => {
   const pedidas = await contestaLosDatos(page);
   await abrir(page, 'cierre-caja');
 
@@ -147,4 +148,58 @@ test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja los
     '/caja/api/v1/turnos/7/cierre',
     '/caja/api/v1/turnos/del-dia',
   ]);
+});
+
+/**
+ * **La conciliacion del dia: elegirlo, pedirlo y leerlo, en un navegador de verdad** (#98).
+ *
+ * <h2>Por que este camino tiene que estar aqui y no puede quedarse en jsdom</h2>
+ *
+ * Porque lo que se mide es **el gesto**: abrir el calendario, pulsar un dia, y que de ahi salga un
+ * `?fecha=aaaa-mm-dd` en la barra de direcciones y una peticion con ese mismo dia. El calendario
+ * vive dentro de una capa de Radix, y abrir una capa bajo jsdom cuesta minutos y caduca
+ * —`kamayuk-lib`#94 lo midio de tres maneras y lo dejo escrito—. En Chromium cuesta milisegundos.
+ *
+ * Es ademas la unica prueba del producto que recorre entero lo que #94 monto: definicion -> campo
+ * -> ruta -> lectura -> tabla.
+ */
+test('«cierre-caja» no concilia hasta que se elige un dia, y entonces lo pide con el', async ({ page }) => {
+  const pedidas = await contestaLosDatos(page);
+  await page.route('**/caja/api/v1/conciliacion**', async (ruta) => {
+    const url = new URL(ruta.request().url());
+    pedidas.push(`${url.pathname}${url.search}`);
+    await ruta.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CONCILIACION_MEDIDA) });
+  });
+  await abrir(page, 'cierre-caja');
+
+  // Sin dia elegido: el bloque dice que lo espera, y NO se ha pedido la conciliacion.
+  await expect(page.getByText('Elija arriba el día que quiere conciliar y aquí saldrá su cuadre.')).toBeVisible();
+  expect(pedidas.filter((p) => p.startsWith('/caja/api/v1/conciliacion'))).toEqual([]);
+  // Y no se pinta ningun cero mientras tanto.
+  await expect(page.getByRole('row').filter({ hasText: 'mercados' })).toHaveCount(0);
+
+  // El calendario del campo, y un dia de el.
+  await page.getByRole('button', { name: 'dd/mm/aaaa' }).click();
+  await page.getByRole('gridcell').filter({ hasText: /^15$/ }).first().click();
+
+  // Lo que viaja es ISO, y lo que se lee es dd/mm/aaaa.
+  await expect(page).toHaveURL(/[?&]fecha=\d{4}-\d{2}-\d{2}/);
+  const elegida = new URL(page.url().replace('#/', '')).searchParams.get('fecha') ?? '';
+  expect(elegida).toMatch(/^\d{4}-\d{2}-15$/);
+  await expect(page.getByRole('button', { name: `15/${elegida.slice(5, 7)}/${elegida.slice(0, 4)}` })).toBeVisible();
+
+  // Y la peticion salio con ese mismo dia, una sola vez.
+  await expect
+    .poll(() => pedidas.filter((p) => p.startsWith('/caja/api/v1/conciliacion')))
+    .toEqual([`/caja/api/v1/conciliacion?fecha=${elegida}`]);
+
+  // La tabla se llena, y la linea del origen que no contesto dice por que en vez de un cero.
+  const sinContestar = page.getByRole('row').filter({ hasText: 'mercados' });
+  await expect(sinContestar).toBeVisible();
+  await expect(sinContestar).toContainText('El sistema de origen no contesto: Connection refused');
+  // Con los dos filtros: «rentas» tambien es el destino de un pago sin entregar, dos bloques mas
+  // arriba, y una sola condicion casa con las dos filas.
+  await expect(page.getByRole('row').filter({ hasText: 'rentas' }).filter({ hasText: 'NO CUADRA' })).toContainText(
+    'S/ 1,842.60',
+  );
 });

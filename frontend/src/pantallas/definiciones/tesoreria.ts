@@ -19,9 +19,12 @@ import type { Pantalla } from '../tipos.ts';
  *   datos (`datos/conectores.ts`, #84), y mientras no entran la pantalla dice por que. En una
  *   ventanilla, una cifra de ejemplo se lee como real. Lo que SI llevan las tablas que se leen es su
  *   `vacio`: una lista vacia es una respuesta, y no la ausencia de dato.
- * · **Ni un campo que se escriba.** ADR-0040 acepto conectar la ventanilla para leer, asi que ninguna
- *   pantalla tiene un campo de entrada y el armazon no ofrece «Guardar». Las escrituras estan
- *   declaradas en el arbol y dichas en la nota de su bloque.
+ * · **Ni un campo que escriba en el BACKEND.** ADR-0040 acepto conectar la ventanilla para leer, y
+ *   el armazon no ofrece «Guardar» en ninguna hoja. Las escrituras estan declaradas en el arbol y
+ *   dichas en la nota de su bloque. Desde #98 hay **un** campo de entrada —el dia de la
+ *   conciliacion, en `cierre-caja`—, y no es una excepcion a lo anterior: lo que escribe es la
+ *   direccion de la hoja (`eleccion.enLaRuta`, `kamayuk-lib`#94), y de ahi sale el `?fecha=` de una
+ *   lectura. `catalogo.ts` no lo cuenta como hoja que se escribe, y `solo-lee.test.ts` lo mide.
  * · **Ni un desplegable con opciones inventadas.** Las cajas, los cajeros y las areas son datos de la
  *   instalacion: un «C-1, C-2, C-3» escrito aqui seria una lista falsa con aspecto de filtro.
  *
@@ -39,6 +42,14 @@ import type { Pantalla } from '../tipos.ts';
 export const TABLA_DE_RECIBOS = 'recibos';
 export const TABLA_DE_LINEAS = 'lineas';
 export const NUMERO_DE_LA_FILA = 'numero';
+
+/**
+ * **El nombre de la lectura del cuadre del dia** (#98), por lo mismo que los de arriba.
+ *
+ * El bloque lo declara en su `lectura.clave` y `datos/conectores.ts` pone su estado con el. Escrito
+ * dos veces, el bloque diria «nadie ha dado el estado de esta lectura» y nadie sabria por que.
+ */
+export const LECTURA_DE_LA_CONCILIACION = 'conciliacion';
 
 export const TESORERIA = {
   'caja-tributaria': {
@@ -229,11 +240,26 @@ export const TESORERIA = {
       },
       {
         titulo: 'Conciliación del día',
-        nota: 'Lo cobrado en ventanilla contra lo que cada sistema de origen dice haber aplicado.',
+        nota: 'Elija el día que quiere conciliar. La fecha viaja en la dirección de esta pantalla, así que el enlace se puede guardar y compartir.',
         campos: [
-          { etiqueta: 'Fecha', tipo: 'r' },
-          { etiqueta: 'Cuadra', tipo: 'r' },
+          // **El unico campo que se escribe en toda la ventanilla, y no es una escritura** (#98):
+          // lo que mueve es la direccion de la hoja, no el backend. `GET /conciliacion` exige la
+          // fecha a proposito —regla 6: una conciliacion que se responde sola con la fecha del
+          // reloj no es reproducible al dia siguiente—, asi que aqui no hay «hoy» por omision.
+          { etiqueta: 'Fecha', tipo: 'd', eleccion: { enLaRuta: 'fecha' } },
         ],
+      },
+      {
+        titulo: 'El cuadre del día',
+        nota: 'Lo cobrado en ventanilla contra lo que cada sistema de origen dice haber aplicado.',
+        // Es un bloque aparte del selector, y por eso: **los cuatro estados de una lectura
+        // sustituyen al cuerpo**, y con el selector dentro no habria con que elegir el dia
+        // justamente en el estado que pide elegirlo.
+        lectura: {
+          clave: LECTURA_DE_LA_CONCILIACION,
+          espera: 'Elija arriba el día que quiere conciliar y aquí saldrá su cuadre.',
+        },
+        campos: [{ etiqueta: 'Cuadra', tipo: 'r' }],
         tabla: {
           titulo: 'Por sistema de origen',
           columnas: [
@@ -247,6 +273,7 @@ export const TESORERIA = {
           ],
           columnaDeInsignia: 6,
           nota: 'Cuando el sistema de origen no contesta, la línea dice por qué no se sabe en vez de mostrar un cero.',
+          vacio: 'Ese día no tiene ningún cobro registrado en esta caja.',
         },
       },
     ],

@@ -12,11 +12,12 @@ import {
 } from '../pantallas/definiciones/tesoreria.ts';
 import { lecturasDe } from '../porQueNoHayDato.ts';
 import { CONECTORES, instanteEnLima, type Conector, type Reparto } from './conectores.ts';
-import { rutaDelDuplicado } from './lecturas.ts';
+import { rutaDeLaConciliacion, rutaDelDuplicado } from './lecturas.ts';
 import {
   AVANCE_MEDIDO,
   CAJAS_MEDIDAS,
   CIERRE_MEDIDO,
+  CONCILIACION_MEDIDA,
   DISTRIBUCION_MEDIDA,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
@@ -95,6 +96,10 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
     const decididos = new Set<Coordenada>();
     const problemas: string[] = [];
     definicion.bloques.forEach((bloque, b) => {
+      // Un bloque que depende de una LECTURA no dibuja sus campos hasta que ella contesta: sus
+      // cuatro estados sustituyen al cuerpo (#98). Sus campos no son huecos que decidir, y lo que
+      // los llena cuando la lectura contesta se mide aparte, mas abajo.
+      if (bloque.lectura !== undefined) return;
       bloque.campos.forEach((campo, c) => {
         if (campo.tipo !== 'r') return;
         const k = coordenada(b, c);
@@ -105,7 +110,14 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
       });
     });
     expect(problemas).toEqual([]);
-    const huerfanas = [...reparto.valores.keys(), ...reparto.sinDato.keys()].filter((k) => !decididos.has(k));
+    const deUnaLectura = new Set(
+      definicion.bloques.flatMap((bloque, b) =>
+        bloque.lectura === undefined ? [] : bloque.campos.map((_, c) => coordenada(b, c)),
+      ),
+    );
+    const huerfanas = [...reparto.valores.keys(), ...reparto.sinDato.keys()].filter(
+      (k) => !decididos.has(k) && !deUnaLectura.has(k),
+    );
     expect(huerfanas, 'el reparto pone valor en una coordenada que no es un campo de solo lectura').toEqual([]);
   });
 
@@ -171,12 +183,15 @@ describe('lo que el reparto decide, con los casos que la captura planta', () => 
     expect(reparto?.valores.get(coordenada(0, 3))).not.toBe(formatearImporte('1962.60'));
   });
 
-  it('en el cierre, el arqueo ya no espera al turno; la conciliacion sigue esperando la fecha', () => {
+  it('en el cierre, ni el arqueo espera al turno ni la conciliacion deja un hueco por la fecha', () => {
     const cierre = repartoDe('cierre-caja');
     expect(cierre.valores.get(coordenada(0, 2)), 'recibos emitidos').toBe('12');
     expect(cierre.valores.get(coordenada(0, 6)), 'neto').toBe(formatearImporte('1842.60'));
     expect(cierre.valores.get(coordenada(0, 1)), 'puede cerrarse').toBe('no');
-    expect(cierre.sinDato.get(coordenada(2, 1))).toBe('sin fecha');
+    // Y NINGUN campo dice «sin fecha»: la palabra se fue con el hueco (#98). Lo que se dice
+    // mientras no hay dia elegido es la espera del bloque del cuadre, que no es el hueco de un
+    // campo — el bloque entero no se dibuja.
+    expect([...cierre.sinDato.values()]).not.toContain('sin fecha');
     expect(cierre.filas.get(0), 'una fila por forma de pago').toHaveLength(2);
     expect(cierre.filas.get(1), 'y los pagos que impiden cerrar').toHaveLength(1);
   });
@@ -280,7 +295,7 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
     expect(valores?.get(coordenada(1, 6))).toBe(formatearImporte('1842.60'));
     expect(valores?.get(coordenada(1, 7))).toBe(formatearFecha('2026-03-15'));
     expect(aporte?.reparto.sinDato.size).toBe(0);
-    expect(aporte?.ausencia.explicacion).toBe('');
+    expect(aporte?.ausencia?.explicacion).toBe('');
   });
 
   it('el total es el que llego, y no la suma de las lineas', () => {
@@ -320,12 +335,91 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
     });
     const otro = deLoElegido?.repartir({ paso: 'fallo', error: new Error('red') });
 
-    expect(cuatroCeroCuatro?.ausencia.enElCampo).toBe('no está');
-    expect(cuatroCeroCuatro?.ausencia.tono).toBe('atencion');
-    expect(otro?.ausencia.enElCampo).toBe('fallo');
-    expect(cuatroCeroCuatro?.ausencia.explicacion).not.toBe(otro?.ausencia.explicacion);
+    expect(cuatroCeroCuatro?.ausencia?.enElCampo).toBe('no está');
+    expect(cuatroCeroCuatro?.ausencia?.tono).toBe('atencion');
+    expect(otro?.ausencia?.enElCampo).toBe('fallo');
+    expect(cuatroCeroCuatro?.ausencia?.explicacion).not.toBe(otro?.ausencia?.explicacion);
     // Y ninguno de los dos toca la lista: lo unico que traen son los ocho huecos del bloque.
     expect(cuatroCeroCuatro?.reparto.tablas.size).toBe(0);
     expect(cuatroCeroCuatro?.reparto.sinDato.size).toBe(8);
+  });
+});
+
+/**
+ * **La conciliacion del dia que se elija** (#98).
+ *
+ * Es la misma forma que el recibo de #99 —`deLoElegido`, lo elegido en la ruta— y se diferencia en
+ * **donde lo cuenta**: por la pieza que declara la lectura y no por la pantalla entera, porque la
+ * frase de arriba de esta hoja ya la decide el turno (#97). Lo que se mide aqui es eso, y que
+ * **sin dia no hay nada que repartir**: ni un cero, ni una fila.
+ */
+describe('la conciliacion se pide con la fecha elegida, y no antes (#98)', () => {
+  const deLoElegido = CONECTORES['cierre-caja']?.deLoElegido;
+  const conLaConciliacion = (respuesta: unknown = CONCILIACION_MEDIDA) =>
+    deLoElegido?.repartir({ paso: 'dato', respuesta: respuesta as never });
+
+  it('sale de la ruta, con la fecha dentro de la clave de consulta y de la peticion', () => {
+    expect(deLoElegido?.enLaRuta).toBe('fecha');
+    expect(deLoElegido?.ruta).toBe('/conciliacion');
+    expect(rutaDeLaConciliacion('2026-03-15')).toBe('/conciliacion?fecha=2026-03-15');
+    // La clave lleva el dia dentro: dos dias no comparten entrada de cache.
+    expect(deLoElegido?.clave('2026-03-15')).toEqual(['cierre-caja', 'conciliacion', '2026-03-15']);
+    expect(deLoElegido?.clave('2026-03-16')).not.toEqual(deLoElegido?.clave('2026-03-15'));
+  });
+
+  it('sin dia elegido no reparte NADA, y lo dice por su pieza y no por la pantalla', () => {
+    const aporte = deLoElegido?.repartir({ paso: 'sin-elegir' });
+    expect(aporte?.reparto.valores.size).toBe(0);
+    expect(aporte?.reparto.filas.size).toBe(0);
+    expect(aporte?.lecturas?.get('conciliacion')).toEqual({ estado: 'en-espera' });
+    // **No toca la ausencia de la pantalla**: la de esta hoja la decide el turno (#97), y pisarla
+    // borraria el motivo por el que faltan los diez campos del arqueo.
+    expect(aporte?.ausencia).toBeUndefined();
+  });
+
+  it('mientras se pide dice que se esta pidiendo, que no es lo mismo que no haber elegido', () => {
+    expect(deLoElegido?.repartir({ paso: 'pidiendo' }).lecturas?.get('conciliacion')).toEqual({ estado: 'pidiendo' });
+  });
+
+  it('una fecha mal escrita da 422, y se dice con lo que dijo el backend y SIN tono de averia', () => {
+    const malEscrita = new ErrorDeLaApi(422, 'GET /conciliacion', {
+      codigo: 'VALIDACION',
+      mensaje: "El parametro 'fecha' no es una fecha ISO: 15-03-2026",
+    });
+    const fallo = deLoElegido?.repartir({ paso: 'fallo', error: malEscrita }).lecturas?.get('conciliacion');
+    expect(fallo).toMatchObject({
+      estado: 'fallo',
+      peldano: { detalle: "El parametro 'fecha' no es una fecha ISO: 15-03-2026" },
+      // Escribir mal un dia no manda a avisar a soporte: manda a corregir el dia.
+      tono: 'atencion',
+    });
+    // Y una averia de verdad SI lleva el tono de averia.
+    expect(deLoElegido?.repartir({ paso: 'fallo', error: new Error('red') }).lecturas?.get('conciliacion')).toMatchObject(
+      { estado: 'fallo', tono: 'mal' },
+    );
+  });
+
+  it('con el dia contestado, el cuadre y sus lineas se llenan', () => {
+    const aporte = conLaConciliacion();
+    expect(aporte?.lecturas?.get('conciliacion')).toEqual({ estado: 'con-datos' });
+    expect(aporte?.reparto.valores.get(coordenada(3, 0))).toBe('NO CUADRA');
+    expect(aporte?.reparto.filas.get(3)).toHaveLength(2);
+  });
+
+  it('la linea del origen que NO contesto dice por que, y nunca un cero', () => {
+    const filas = conLaConciliacion()?.reparto.filas.get(3);
+    // `rentas` contesto: su diferencia es una cifra formateada.
+    expect(filas?.[0]).toEqual(['rentas', '12', '1', '1', formatearImporte('1842.60'), formatearImporte('0.00'), 'NO CUADRA']);
+    // `mercados` no: en el sitio de la diferencia va el motivo, que es lo que el backend publica.
+    expect(filas?.[1]?.[5]).toBe('El sistema de origen no contesto: Connection refused');
+    expect(filas?.[1]?.[5]).not.toBe(formatearImporte('0.00'));
+  });
+
+  it('el cuadre del dia es el que dice el backend, no uno deducido de las lineas', () => {
+    // Las lineas siguen sin cuadrar y el dia dice que cuadra: la pantalla repite lo que llego. Un
+    // reparto que lo dedujera de las lineas saldria rojo aqui.
+    expect(conLaConciliacion({ ...CONCILIACION_MEDIDA, cuadra: true })?.reparto.valores.get(coordenada(3, 0))).toBe(
+      'CUADRA',
+    );
   });
 });
