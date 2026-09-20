@@ -67,6 +67,11 @@ export const ARBOL = [
           { verbo: 'GET', ruta: '/recibos', controlador: 'ReciboController' },
           { verbo: 'GET', ruta: '/recibos/{nro}/duplicado', controlador: 'ReciboController' },
         ],
+        // **El recibo elegido viaja en la ruta** (#99): `#/duplicado-recibo/001-000123`. Es lo que
+        // hace que recargar —o pasarle el enlace a quien tiene que revisar ese recibo— siga
+        // ensenando el mismo, y que la segunda lectura sepa cual pedir sin guardarlo en ningun
+        // estado. Es la unica hoja que declara algo: las otras seis no eligen nada.
+        enLaRuta: { sujeto: true },
       },
       {
         clave: 'anulacion-recibo',

@@ -1,15 +1,23 @@
-import { formatearImporte } from '@kamayuk/formato';
+import { formatearFecha, formatearImporte } from '@kamayuk/formato';
 import { coordenada, type Coordenada } from '@kamayuk/ui';
 import { describe, expect, it } from 'vitest';
 
+import { ErrorDeLaApi } from '../api/cliente.ts';
 import { ARBOL, hojaDe, type ClaveDeHoja } from '../pantallas/arbol.ts';
 import { pantallaDe } from '../pantallas/definiciones/index.ts';
+import {
+  NUMERO_DE_LA_FILA,
+  TABLA_DE_LINEAS,
+  TABLA_DE_RECIBOS,
+} from '../pantallas/definiciones/tesoreria.ts';
 import { lecturasDe } from '../porQueNoHayDato.ts';
 import { CONECTORES, instanteEnLima, type Conector, type Reparto } from './conectores.ts';
+import { rutaDelDuplicado } from './lecturas.ts';
 import {
   AVANCE_MEDIDO,
   CAJAS_MEDIDAS,
   DISTRIBUCION_MEDIDA,
+  DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
 } from './tesoreriaMedida.ts';
@@ -34,10 +42,30 @@ const RESPUESTAS: Readonly<Record<string, unknown>> = {
 
 const CONECTADAS = Object.entries(CONECTORES) as [ClaveDeHoja, Conector][];
 
-function repartoDe(clave: ClaveDeHoja): Reparto {
+/** Los dos repartos de una hoja en uno, como los une el gancho. */
+function unir(uno: Reparto, otro: Reparto): Reparto {
+  return {
+    valores: new Map([...uno.valores, ...otro.valores]),
+    filas: new Map([...uno.filas, ...otro.filas]),
+    tablas: new Map([...uno.tablas, ...otro.tablas]),
+    conteos: new Map([...uno.conteos, ...otro.conteos]),
+    sinDato: new Map([...uno.sinDato, ...otro.sinDato]),
+  };
+}
+
+/**
+ * Lo que la pantalla tiene **con su primera lectura contestada y sin elegir nada**.
+ *
+ * Es el estado en que se abre una hoja, y el que el recorrido de abajo mide: ningun campo sin
+ * decidir, ninguna fila con celdas de mas. La segunda lectura entra por su paso `sin-elegir`, que
+ * es lo que pone la palabra en los huecos que ella llenaria.
+ */
+function repartoDe(clave: ClaveDeHoja, elegido: string | null = null): Reparto {
   const conector = CONECTORES[clave];
   if (conector === undefined) throw new Error(`«${clave}» no tiene conector`);
-  return conector.repartir(RESPUESTAS[clave] as never);
+  const base = conector.repartir(RESPUESTAS[clave] as never, elegido);
+  const deLoElegido = conector.deLoElegido;
+  return deLoElegido === undefined ? base : unir(base, deLoElegido.repartir({ paso: 'sin-elegir' }).reparto);
 }
 
 describe('que hoja pide', () => {
@@ -86,21 +114,41 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
     }
   });
 
+  it('y lo mismo las tablas con nombre: el nombre es el de una tabla de esta pantalla', () => {
+    const porClave = new Map(
+      definicion.bloques.flatMap((bloque) =>
+        bloque.tabla?.clave === undefined ? [] : [[bloque.tabla.clave, bloque.tabla] as const],
+      ),
+    );
+    for (const [nombre, datos] of reparto.tablas) {
+      const tabla = porClave.get(nombre);
+      expect(tabla, `ninguna tabla de «${clave}» se llama «${nombre}»`).toBeDefined();
+      for (const fila of datos.filas) expect(fila.celdas).toHaveLength(tabla?.columnas.length ?? -1);
+    }
+  });
+
   it('su ruta es una lectura que su hoja declara', () => {
     const conector = CONECTORES[clave];
     const rutas = lecturasDe(hojaDe(clave)).map((o) => o.ruta);
     expect(rutas).toContain(conector?.ruta.split('?')[0]);
+  });
+
+  it('y la de lo elegido, si la tiene, tambien', () => {
+    const deLoElegido = CONECTORES[clave]?.deLoElegido;
+    if (deLoElegido === undefined) return;
+    const rutas = lecturasDe(hojaDe(clave)).map((o) => o.ruta);
+    expect(rutas).toContain(deLoElegido.ruta);
   });
 });
 
 describe('lo que el reparto decide, con los casos que la captura planta', () => {
   it('un instante en UTC se dice con la fecha y la hora de Lima: las 02:04 del 16 son las 21:04 del 15', () => {
     expect(instanteEnLima('2026-03-16T02:04:00Z')).toBe('15/03/2026 21:04');
-    expect(repartoDe('duplicado-recibo').filas.get(0)?.[0]?.[1]).toBe('15/03/2026 21:04');
+    expect(repartoDe('duplicado-recibo').tablas.get(TABLA_DE_RECIBOS)?.filas[0]?.celdas[1]).toBe('15/03/2026 21:04');
   });
 
   it('una pagina que no llega entera dice de cuantas es; una entera no dice nada', () => {
-    expect(repartoDe('duplicado-recibo').conteos.get(0)).toBe('2 / 356');
+    expect(repartoDe('duplicado-recibo').tablas.get(TABLA_DE_RECIBOS)?.conteo).toBe('2 / 356');
     expect(repartoDe('caja-tributaria').conteos.size).toBe(0);
   });
 
@@ -123,5 +171,112 @@ describe('lo que el reparto decide, con los casos que la captura planta', () => 
     expect(cierre.sinDato.get(coordenada(0, 0))).toBe('sin turno');
     expect(cierre.sinDato.get(coordenada(2, 1))).toBe('sin fecha');
     expect(cierre.filas.get(1)).toHaveLength(1);
+  });
+});
+
+/**
+ * **El recibo elegido** (#99).
+ *
+ * Los tres estados de la segunda lectura, medidos sobre el reparto: sin elegir, con el duplicado
+ * que contesta el backend, y con un numero que no existe.
+ */
+describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () => {
+  const deLoElegido = CONECTORES['duplicado-recibo']?.deLoElegido;
+
+  it('EL CENTINELA: la hoja declara su segunda lectura, en la ruta y con el sujeto', () => {
+    expect(deLoElegido?.enLaRuta).toBe('sujeto');
+    expect(deLoElegido?.ruta).toBe('/recibos/{nro}/duplicado');
+    // Sin `?formato=`: esa exige IMPRESION y registra la reimpresion (ADR-0040).
+    expect(rutaDelDuplicado('001-000123')).toBe('/recibos/001-000123/duplicado');
+    // La clave de TanStack lleva el numero dentro: dos recibos no comparten cache.
+    expect(deLoElegido?.clave('001-000123')).not.toEqual(deLoElegido?.clave('001-000124'));
+  });
+
+  it('sin elegir nada, los ocho campos del bloque dicen «sin elegir» y no hay lineas', () => {
+    const reparto = repartoDe('duplicado-recibo');
+    for (let campo = 0; campo < 8; campo += 1) {
+      expect(reparto.sinDato.get(coordenada(1, campo)), `el campo ${String(campo)}`).toBe('sin elegir');
+    }
+    expect(reparto.valores.size).toBe(0);
+    expect(reparto.tablas.has(TABLA_DE_LINEAS)).toBe(false);
+  });
+
+  it('elegida una fila, es la unica realzada y la lista NO cambia de ninguna otra forma', () => {
+    const sinElegir = repartoDe('duplicado-recibo');
+    const conElegido = repartoDe('duplicado-recibo', '001-000124');
+    const realzadas = conElegido.tablas.get(TABLA_DE_RECIBOS)?.filas.filter((f) => f.realzada === true);
+    expect(realzadas?.map((f) => f.clave)).toEqual(['001-000124']);
+    expect(sinElegir.tablas.get(TABLA_DE_RECIBOS)?.filas.some((f) => f.realzada === true)).toBe(false);
+    // Y las celdas son las mismas: realzar no reescribe ni una.
+    expect(conElegido.tablas.get(TABLA_DE_RECIBOS)?.filas.map((f) => f.celdas)).toEqual(
+      sinElegir.tablas.get(TABLA_DE_RECIBOS)?.filas.map((f) => f.celdas),
+    );
+  });
+
+  it('cada fila lleva el numero con que su boton pide el duplicado', () => {
+    const filas = repartoDe('duplicado-recibo').tablas.get(TABLA_DE_RECIBOS)?.filas ?? [];
+    expect(filas.map((f) => f.datos?.get(NUMERO_DE_LA_FILA))).toEqual(['001-000123', '001-000124']);
+  });
+
+  it('con el duplicado contestado, los ocho campos se llenan y ninguno se queda con la palabra', () => {
+    const aporte = deLoElegido?.repartir({ paso: 'dato', respuesta: DUPLICADO_MEDIDO as never });
+    const valores = aporte?.reparto.valores;
+
+    expect(valores?.get(coordenada(1, 0))).toBe('001-000123');
+    expect(valores?.get(coordenada(1, 1))).toBe('EMITIDO');
+    expect(valores?.get(coordenada(1, 2))).toBe('Cajero de la prueba');
+    expect(valores?.get(coordenada(1, 3))).toBe('EFECTIVO');
+    expect(valores?.get(coordenada(1, 4))).toBe('15/03/2026 21:04');
+    expect(valores?.get(coordenada(1, 5))).toBe('1');
+    expect(valores?.get(coordenada(1, 6))).toBe(formatearImporte('1842.60'));
+    expect(valores?.get(coordenada(1, 7))).toBe(formatearFecha('2026-03-15'));
+    expect(aporte?.reparto.sinDato.size).toBe(0);
+    expect(aporte?.ausencia.explicacion).toBe('');
+  });
+
+  it('el total es el que llego, y no la suma de las lineas', () => {
+    // Un total que NO cuadra con sus lineas, a proposito: el backend garantiza que cuadre, y lo que
+    // se mide aqui es que la pantalla dice el que llego. Un reparto que sumara saldria rojo.
+    const distinto = {
+      ...DUPLICADO_MEDIDO,
+      recibo: { ...DUPLICADO_MEDIDO.recibo, total: { importe: '999.99', actualizadoA: '2026-03-15' } },
+    };
+    const valores = deLoElegido?.repartir({ paso: 'dato', respuesta: distinto as never }).reparto.valores;
+    expect(valores?.get(coordenada(1, 6))).toBe(formatearImporte('999.99'));
+  });
+
+  it('las lineas se pintan, y los nulos de una que no es tasa se marcan en vez de valer cero', () => {
+    const lineas = deLoElegido?.repartir({ paso: 'dato', respuesta: DUPLICADO_MEDIDO as never }).reparto.tablas.get(
+      TABLA_DE_LINEAS,
+    );
+    expect(lineas?.filas).toHaveLength(2);
+    expect(lineas?.filas[0]?.celdas).toEqual([
+      'TASA-MER-01 · TASA',
+      '3',
+      formatearImporte('40.00'),
+      formatearImporte('120.00'),
+    ]);
+    expect(lineas?.filas[1]?.celdas).toEqual([
+      'TRIB-01 · PAGO',
+      '—',
+      '—',
+      formatearImporte('1722.60'),
+    ]);
+  });
+
+  it('un numero que no existe lo dice, y no es el mismo mensaje que un fallo cualquiera', () => {
+    const cuatroCeroCuatro = deLoElegido?.repartir({
+      paso: 'fallo',
+      error: new ErrorDeLaApi(404, 'GET /recibos/001-999999/duplicado'),
+    });
+    const otro = deLoElegido?.repartir({ paso: 'fallo', error: new Error('red') });
+
+    expect(cuatroCeroCuatro?.ausencia.enElCampo).toBe('no está');
+    expect(cuatroCeroCuatro?.ausencia.tono).toBe('atencion');
+    expect(otro?.ausencia.enElCampo).toBe('fallo');
+    expect(cuatroCeroCuatro?.ausencia.explicacion).not.toBe(otro?.ausencia.explicacion);
+    // Y ninguno de los dos toca la lista: lo unico que traen son los ocho huecos del bloque.
+    expect(cuatroCeroCuatro?.reparto.tablas.size).toBe(0);
+    expect(cuatroCeroCuatro?.reparto.sinDato.size).toBe(8);
   });
 });

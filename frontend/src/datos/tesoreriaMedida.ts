@@ -2,13 +2,14 @@ import type {
   AvanceDeRecaudacion,
   CajaEnLista,
   DistribucionDeRecaudacion,
+  DuplicadoDeUnRecibo,
   PagoDelBuzon,
   Paginado,
   ReciboEnLista,
 } from './lecturas.ts';
 
 /**
- * **Lo que contestan las cinco lecturas de Tesoreria, para las pruebas** (#84).
+ * **Lo que contestan las seis lecturas de Tesoreria, para las pruebas** (#84, #99).
  *
  * **No esta medido con `curl`, y la marca lo dice.** Tiene la forma exacta de los `Resource` —la
  * compara `camino-a-la-api.test.ts` campo a campo contra los `.java`— y los valores estan elegidos
@@ -18,7 +19,10 @@ import type {
  *   · un recibo **ANULADO** y una caja **INACTIVA**, que pintan su insignia en rojo;
  *   · una caja **sin area** y una fila de la distribucion **sin area ni partida**, que son nulos
  *     deliberados del backend;
- *   · una pagina de recibos **que no llega entera** (`hayMas`), que tiene que decir de cuantos.
+ *   · una pagina de recibos **que no llega entera** (`hayMas`), que tiene que decir de cuantos;
+ *   · y, desde #99, un duplicado con **dos lineas de distinta clase**: una tasa, con su cantidad y
+ *     su precio unitario, y una de tributo, donde los dos llegan **nulos a proposito** —lo dice el
+ *     javadoc de `LineaResource`— y hay que marcarlos en vez de pintar un cero.
  *
  * **No se siembra** —la siembra de `yarn dev` es solo del catalogo y la cuenta, la regla de `rentas`
  * #114— y no la importa ningun modulo de produccion: lo comprueba `camino-a-la-api.test.ts`.
@@ -67,6 +71,66 @@ export const RECIBOS_MEDIDOS: Paginado<ReciboEnLista> = {
   totalElementos: 356,
   totalPaginas: 18,
   hayMas: true,
+};
+
+/**
+ * `GET /recibos/{nro}/duplicado` del primer recibo de la lista (#99).
+ *
+ * **Derivada, y por eso lo dice `ORIGEN_DE_ESTA_CAPTURA`**: tiene la forma exacta de
+ * `DuplicadoResource` y `ReciboResource` —la compara `camino-a-la-api.test.ts` campo a campo— y sus
+ * cifras cuadran con las de `RECIBOS_MEDIDOS`: el total es el mismo `1842.60` de la fila, a la
+ * misma fecha. Medirla con `curl` contra la instalacion es lo que queda pendiente en #89.
+ *
+ * `anulacion` va nula porque este recibo esta `EMITIDO`. El estado lo deriva el backend del
+ * movimiento de anulacion, no de ninguna columna.
+ */
+export const DUPLICADO_MEDIDO: DuplicadoDeUnRecibo = {
+  estado: 'EMITIDO',
+  duplicados: 1,
+  anulacion: null,
+  recibo: {
+    numero: '001-000123',
+    serie: '001',
+    correlativo: 123,
+    cajero: 'Cajero de la prueba',
+    formaDePago: 'EFECTIVO',
+    tipoDePago: 'TRIBUTARIO',
+    beneficioDeclarado: null,
+    emitidoEn: '2026-03-16T02:04:00Z',
+    total: { importe: '1842.60', actualizadoA: '2026-03-15' },
+    lineas: [
+      {
+        // Una tasa: tiene cantidad y precio unitario.
+        tributo: 'TASA-MER-01',
+        concepto: 'TASA',
+        ejercicio: null,
+        predioId: null,
+        vehiculoId: null,
+        cantidad: 3,
+        precioUnitario: { importe: '40.00', actualizadoA: '2026-03-15' },
+        insoluto: { importe: '120.00', actualizadoA: '2026-03-15' },
+        reajuste: { importe: '0.00', actualizadoA: '2026-03-15' },
+        interes: { importe: '0.00', actualizadoA: '2026-03-15' },
+        gasto: { importe: '0.00', actualizadoA: '2026-03-15' },
+        monto: { importe: '120.00', actualizadoA: '2026-03-15' },
+      },
+      {
+        // Un tributo: `cantidad` y `precioUnitario` NULOS, que es lo que el backend manda.
+        tributo: 'TRIB-01',
+        concepto: 'PAGO',
+        ejercicio: 2026,
+        predioId: 4210,
+        vehiculoId: null,
+        cantidad: null,
+        precioUnitario: null,
+        insoluto: { importe: '1600.00', actualizadoA: '2026-03-15' },
+        reajuste: { importe: '42.60', actualizadoA: '2026-03-15' },
+        interes: { importe: '80.00', actualizadoA: '2026-03-15' },
+        gasto: { importe: '0.00', actualizadoA: '2026-03-15' },
+        monto: { importe: '1722.60', actualizadoA: '2026-03-15' },
+      },
+    ],
+  },
 };
 
 export const PAGOS_MEDIDOS: readonly PagoDelBuzon[] = [

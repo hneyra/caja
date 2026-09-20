@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PROHIBICIONES } from '../eslint.prohibiciones.mjs';
 import { PREFIJO as RAIZ } from '../src/api/cliente.ts';
-import { RUTAS } from '../src/datos/lecturas.ts';
+import { RUTAS, rutaDelDuplicado } from '../src/datos/lecturas.ts';
 import configuracion from '../vite.config.ts';
 import { mapeosDelDirectorio } from './controladores.ts';
 
@@ -172,9 +172,16 @@ function componentesDelRecord(archivo: string, nombre: string): readonly string[
 describe('lo que las pantallas leen existe en el backend, con la forma que se lee (#84)', () => {
   const NUCLEO = 'backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web';
   const { mapeos } = mapeosDelDirectorio(join(REPOSITORIO, NUCLEO));
-  const LECTURAS_DE_DATOS = ['cajas', 'recibos', 'pagosSinEntregar', 'avanceDeRecaudacion', 'recaudacionPorArea'] as const;
+  const LECTURAS_DE_DATOS = [
+    'cajas',
+    'recibos',
+    'duplicadoDeUnRecibo',
+    'pagosSinEntregar',
+    'avanceDeRecaudacion',
+    'recaudacionPorArea',
+  ] as const;
 
-  it('EL CENTINELA: se leyeron los mapeos del nucleo, y las cinco rutas de datos estan en RUTAS', () => {
+  it('EL CENTINELA: se leyeron los mapeos del nucleo, y las seis rutas de datos estan en RUTAS', () => {
     expect(mapeos.length).toBeGreaterThan(15);
     expect(Object.keys(RUTAS).filter((k) => !(k in { sesion: 1, municipalidadDeLaSesion: 1, modulos: 1, accesos: 1, permisosDeLaSesion: 1 })).sort()).toEqual(
       [...LECTURAS_DE_DATOS].sort(),
@@ -187,10 +194,30 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     expect(publicados, `«${ruta}» no la publica ningun controlador del nucleo`).toContain(ruta);
   });
 
+  /**
+   * **La que se pide es la que NO escribe** (#99).
+   *
+   * `/recibos/{nro}/duplicado` esta publicada dos veces: con `params = "formato"` exige `IMPRESION`
+   * y **registra la reimpresion**; sin el, `LECTURA` y nada mas. Las dos se llaman igual en la ruta,
+   * asi que una guarda que solo mirara la ruta no notaria que la ventanilla se paso a la que
+   * escribe. Aqui se mira el privilegio, que es lo que las separa.
+   */
+  it('el duplicado que la ventanilla pide es el de `LECTURA`, y el de `IMPRESION` existe y se deja fuera', () => {
+    const suyas = mapeos.filter((m) => m.ruta === RUTAS.duplicadoDeUnRecibo && m.verbo === 'GET');
+    expect(suyas.map((m) => [m.parametros, m.privilegio]).sort()).toEqual([
+      [null, 'LECTURA'],
+      ['formato', 'IMPRESION'],
+    ]);
+    // Y lo que la interfaz compone no lleva ninguna busqueda: ni ese parametro ni ningun otro.
+    expect(rutaDelDuplicado('001-000123')).toBe('/recibos/001-000123/duplicado');
+  });
+
   it('y las capturas tienen los campos de sus `Resource`, ni uno mas', async () => {
     const m = await import('../src/datos/tesoreriaMedida.ts');
     const PAGO = `${NUCLEO}/PagoController.java`;
     const RECAUDACION = `${NUCLEO}/RecaudacionResource.java`;
+    const DUPLICADO = `${NUCLEO}/DuplicadoResource.java`;
+    const RECIBO = `${NUCLEO}/ReciboResource.java`;
     const IMPORTE = 'backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java';
     const pares: [string, readonly string[], object | undefined][] = [
       ['CajaEnListaResource', componentesDelRecord(`${NUCLEO}/CajaEnListaResource.java`, 'CajaEnListaResource'), m.CAJAS_MEDIDAS.contenido[0]],
@@ -201,10 +228,30 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
       ['Distribucion', componentesDelRecord(RECAUDACION, 'Distribucion'), m.DISTRIBUCION_MEDIDA],
       ['FilaDePartida', componentesDelRecord(RECAUDACION, 'FilaDePartida'), m.DISTRIBUCION_MEDIDA.filas[0]],
       ['ImporteActualizado', componentesDelRecord(IMPORTE, 'ImporteActualizado'), m.AVANCE_MEDIDO.neto],
+      // #99: el duplicado, su recibo y sus lineas.
+      ['DuplicadoResource', componentesDelRecord(DUPLICADO, 'DuplicadoResource'), m.DUPLICADO_MEDIDO],
+      ['ReciboResource', componentesDelRecord(RECIBO, 'ReciboResource'), m.DUPLICADO_MEDIDO.recibo],
+      ['LineaResource', componentesDelRecord(RECIBO, 'LineaResource'), m.DUPLICADO_MEDIDO.recibo.lineas[0]],
     ];
     for (const [nombre, delBackend, captura] of pares) {
       expect(Object.keys(captura ?? {}), `«${nombre}»`).toEqual(delBackend);
     }
+  });
+
+  /**
+   * **La linea que NO es una tasa llega con dos nulos, y son del backend** (#99).
+   *
+   * Si la captura los rellenara, `conectores.test.ts` mediria el reparto sobre un caso que el
+   * backend no manda nunca, y la marca de nulo de la tabla no la ejerceria nadie.
+   */
+  it('la captura del duplicado planta la linea sin cantidad ni precio unitario', async () => {
+    const { DUPLICADO_MEDIDO } = await import('../src/datos/tesoreriaMedida.ts');
+    const deTributo = DUPLICADO_MEDIDO.recibo.lineas.find((l) => l.concepto === 'PAGO');
+    expect(deTributo?.cantidad).toBeNull();
+    expect(deTributo?.precioUnitario).toBeNull();
+    // Y el javadoc del backend es quien lo dice: si dejara de decirlo, esta captura estaria sola.
+    const java = readFileSync(join(REPOSITORIO, `${NUCLEO}/ReciboResource.java`), 'utf8');
+    expect(java).toContain('nulo si no es una tasa');
   });
 });
 

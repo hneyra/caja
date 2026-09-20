@@ -62,6 +62,15 @@ function deLasPantallas(): readonly string[] {
       if (tabla.nota !== undefined) salida.push(tabla.nota);
       if (tabla.accion !== undefined) salida.push(tabla.accion);
       if (tabla.vacio !== undefined) salida.push(tabla.vacio);
+      // Los botones de cada fila (#99): el rotulo de su columna, el de cada boton y lo que se lee
+      // en la fila que no ofrece ninguno. Son frases de la definicion como cualquier otra, y sin
+      // esto la primera tabla que gane acciones las ensena en castellano en los demas idiomas.
+      const porFila = tabla.accionesPorFila;
+      if (porFila === undefined) continue;
+      salida.push(porFila.columna, porFila.sinAcciones);
+      for (const accion of porFila.acciones) {
+        if (typeof accion.rotulo === 'string') salida.push(accion.rotulo);
+      }
     }
   }
   return salida;

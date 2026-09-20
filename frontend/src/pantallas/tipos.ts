@@ -61,6 +61,17 @@ export interface Hoja {
   /** El codigo de acceso de `CatalogoDelSistema` que esta hoja representa. */
   readonly acceso: string;
   readonly operaciones: readonly Operacion[];
+  /**
+   * **Lo que la ruta de esta hoja guarda** (`kamayuk-lib`#67), y que `catalogo.ts` copia al destino.
+   *
+   * `#/<slug>/<sujeto>?<parametro>=<valor>`, y **solo lo declarado**: lo que no se nombre aqui, el
+   * marco lo ignora con aviso aunque llegue escrito en la barra. Sin esto, una hoja que eligiera
+   * algo lo perderia al recargar y el enlace compartido abriria otra cosa.
+   */
+  readonly enLaRuta?: {
+    readonly sujeto?: boolean;
+    readonly parametros?: readonly string[];
+  };
 }
 
 /** Un modulo del arbol. */
