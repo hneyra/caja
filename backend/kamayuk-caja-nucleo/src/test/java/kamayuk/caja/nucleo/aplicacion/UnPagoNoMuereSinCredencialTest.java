@@ -1,5 +1,6 @@
 package kamayuk.caja.nucleo.aplicacion;
 
+import static kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen.LARGO_DE_ULTIMO_ERROR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -67,8 +68,16 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Sin el, «un 4xx se reintenta» se cumpliria reintentandolos todos, y entonces un 422 de negocio
  * gastaria los ocho intentos para acabar MUERTO por el mismo sitio y ocho veces mas tarde. Lo que
  * este issue cambia es <b>donde esta la raya</b>, asi que hay que medir los dos lados de la raya.
+ *
+ * <h2>Y desde #96, QUE se lee a cada lado</h2>
+ *
+ * <p>#21 dejo los dos codigos de credencial del lado correcto de la raya y con <b>un solo</b>
+ * mensaje, que afirmaba la causa del 401: «la que esta caja manda no vale». Con un 403 eso es falso
+ * —la credencial vale y lo que falta es un permiso— y manda a regenerar un secreto que esta bien.
+ * Lo que #96 cambia no es la clasificacion, que sigue igual y se sigue midiendo aqui, sino el
+ * texto: tres ramas, cada una a su sitio, con lo que el otro lado contesto dentro.
  */
-@DisplayName("#21 AC-3 — un 401 se reintenta; un rechazo de negocio, no")
+@DisplayName("#21 AC-3 y #96 — un 401 se reintenta, un rechazo de negocio no, y los dos lo dicen")
 class UnPagoNoMuereSinCredencialTest {
 
     private static final Instant AHORA = Instant.parse("2026-09-07T12:00:00Z");
@@ -213,8 +222,8 @@ class UnPagoNoMuereSinCredencialTest {
     class ElCliente {
 
         @Test
-        @DisplayName("un 401 es `NoContesta`, y el mensaje dice que falta la credencial")
-        void unCuatrocientosUnoSeReintenta() {
+        @DisplayName("un 401 SIN credencial: falta la configuracion, y lo dice")
+        void unCuatrocientosUnoSinCredencial() {
             estado = 401;
             cuerpoDeRespuesta = "{\"codigo\":\"NO_AUTENTICADO\"}";
 
@@ -225,30 +234,101 @@ class UnPagoNoMuereSinCredencialTest {
                     .hasMessageContaining("401")
                     .hasMessageContaining("kamayuk.caja.credencial")
                     .hasMessageContaining("NO es un rechazo del pago")
-                    .hasMessageContaining("se REINTENTA");
+                    .hasMessageContaining("se REINTENTA")
+                    .hasMessageContaining("NO_AUTENTICADO");
+        }
+
+        /**
+         * <b>El defecto de #96</b>: el 401 y el 403 compartian un mensaje que afirmaba la causa del
+         * 401 —«la que esta caja manda no vale»—, y con un 403 eso dice lo contrario de lo que
+         * pasa. Los dos van en la misma prueba porque lo que hay que demostrar no es que cada uno
+         * diga algo, sino que dicen cosas <b>distintas</b> y que mandan a sitios distintos: el 401
+         * a Keycloak, el 403 a la concesion en `identidad`.
+         *
+         * <p>Y lo va a morder de verdad: {@code identidad}#25 mide que la cuenta de servicio de
+         * esta caja esta dada de alta en `rentas` <b>sin ningun permiso</b> sobre {@code
+         * caja_tributaria}, que es lo que su {@code PagoController} exige para {@code POST /pagos}.
+         * Cuando pase, cada pago pendiente dejara escrito este texto.
+         */
+        @Test
+        @DisplayName("un 401 CON credencial y un 403 dicen cosas DISTINTAS, y mandan a otro sitio")
+        void elCuatrocientosUnoYElCuatrocientosTresNoSonLoMismo() {
+            estado = 401;
+            cuerpoDeRespuesta = "{\"codigo\":\"NO_AUTENTICADO\"}";
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .as("[con credencial puesta, un 401 SI es «la que mandas no vale»]")
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("401")
+                    .hasMessageContaining("NO vale o caduco")
+                    .hasMessageContaining("Keycloak")
+                    .hasMessageNotContaining("PERMISO");
+
+            estado = 403;
+            cuerpoDeRespuesta =
+                    "{\"codigo\":\"SIN_PRIVILEGIO\",\"detail\":\"No tiene el privilegio REGISTRO"
+                            + " sobre caja_tributaria\"}";
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .as(
+                            "[un 403 dice que la credencial VALE: mandar a regenerar un secreto"
+                                    + " que esta bien es el defecto de #96, y lo lee un cajero]")
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("403")
+                    .hasMessageContaining("la credencial SI vale")
+                    .hasMessageContaining("PERMISO")
+                    .hasMessageContaining("`identidad`")
+                    // Y el cuerpo entero cabe: el acceso que falta se llama, y esa palabra es lo
+                    // que hay que buscar en `identidad` — no vale que se la coma el recorte.
+                    .hasMessageContaining("caja_tributaria")
+                    .hasMessageNotContaining("NO vale o caduco");
         }
 
         @Test
-        @DisplayName("un 403 tambien: se le concede el acceso y los pagos encolados salen solos")
-        void unCuatrocientosTresSeReintenta() {
+        @DisplayName("el mensaje cabe en `pago_evento.ultimo_error`, y lo que se corta es la cola")
+        void elMensajeCabeEnLaColumna() {
             estado = 403;
+            // Una pagina de error de un proxy: ni problem+json ni corta.
+            cuerpoDeRespuesta = "<html><body>" + "x".repeat(4000) + "</body></html>";
 
             assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .as(
+                            "[la columna es varchar(400) y no hay log detras: si el cuerpo se"
+                                    + " come el presupuesto, el cajero se queda sin el remedio]")
                     .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
-                    // Con credencial puesta el diagnostico es el OTRO, y por eso se distinguen: no
-                    // es «pon la linea» sino «la que mandas no vale».
-                    .hasMessageContaining("la que esta caja manda no vale");
+                    .hasMessageContaining("la credencial SI vale")
+                    .hasMessageContaining("`identidad`")
+                    .extracting(fallo -> fallo.getMessage().length())
+                    .isEqualTo(LARGO_DE_ULTIMO_ERROR);
         }
 
         @Test
-        @DisplayName("EL CONTRASTE: un 422 de negocio sigue siendo `Rechazado`")
+        @DisplayName(
+                "el cuerpo viaja SIN el token: un eco de la peticion no se lleva la credencial")
+        void elCuerpoNoSeLlevaElToken() {
+            estado = 403;
+            cuerpoDeRespuesta =
+                    "{\"error\":\"forbidden\",\"peticion\":{\"Authorization\":\"Bearer"
+                            + " el-token-de-servicio\"}}";
+
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .as(
+                            "[este texto se GUARDA en una columna y se pinta en la hoja de cierre:"
+                                    + " un token ahi es un incidente, no una molestia]")
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("forbidden")
+                    .hasMessageNotContaining("el-token-de-servicio");
+        }
+
+        @Test
+        @DisplayName("EL CONTRASTE: un 422 de negocio sigue siendo `Rechazado`, y tambien dice")
         void unRechazoDeNegocioNoSeReintenta() {
             estado = 422;
-            cuerpoDeRespuesta = "{\"codigo\":\"VALIDACION\",\"mensaje\":\"la orden no existe\"}";
+            cuerpoDeRespuesta = "{\"codigo\":\"VALIDACION\",\"detail\":\"la orden no existe\"}";
 
             assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
                     .isInstanceOf(BuzonDelSistemaDeOrigen.Rechazado.class)
-                    .hasMessageContaining("NO se reintenta");
+                    .hasMessageContaining("NO se reintenta")
+                    .hasMessageContaining("VALIDACION")
+                    .hasMessageContaining("la orden no existe");
         }
     }
 
