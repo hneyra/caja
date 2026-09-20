@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import kamayuk.caja.nucleo.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
+import kamayuk.caja.plataforma.RespuestaAjena;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
@@ -61,12 +62,49 @@ import tools.jackson.databind.json.JsonMapper;
  * el acceso—, y se arregla del lado del despliegue, que es literalmente la definicion de {@link
  * BuzonDelSistemaDeOrigen.NoContesta}. Un 422 no cambia solo: ese sigue siendo un rechazo, y
  * seguirlo reintentando gastaria los ocho intentos para acabar en el mismo sitio.
+ *
+ * <h2>El 401 y el 403 se CLASIFICAN igual y se DICEN distinto (#96)</h2>
+ *
+ * <p><b>Hasta #96 los dos compartian un mensaje que afirmaba la causa del 401</b> —«la que esta
+ * caja manda no vale»—, y el cuerpo de la respuesta se tiraba. Con un 403 eso es falso: la
+ * credencial <b>si</b> vale —el emisor la firmo y el destino la valido—, lo que falta es un permiso
+ * sobre el recurso. Y se arreglan en sitios distintos: el 401 en Keycloak (el cliente confidencial
+ * y su secreto), el 403 en {@code identidad} (la concesion sobre el acceso). Es la misma familia
+ * que #95 y que <a href="https://github.com/hneyra/rentas/issues/66">`rentas`#66</a>: un mensaje
+ * confiado que descarta la informacion que ya tiene en la mano.
+ *
+ * <p><b>Lo que cambia es el texto y nada mas</b>: 401 y 403 siguen siendo {@link
+ * BuzonDelSistemaDeOrigen.NoContesta} —transitorios, se reintentan, el pago no se mata— y un 4xx de
+ * negocio sigue siendo {@link BuzonDelSistemaDeOrigen.Rechazado}. Quien clasifica es {@link
+ * #esDeCredencial}, que mira el codigo de estado y no el cuerpo, a proposito: el cuerpo lo escribe
+ * el otro sistema y cambiar de redaccion no puede cambiar si un pago se reintenta.
+ *
+ * <h2>Y el mensaje cabe en la columna, porque no hay ningun otro sitio donde acabe</h2>
+ *
+ * <p>Estos mensajes no se registran en ningun log: {@code EntregarEventos} los guarda en {@code
+ * pago_evento.ultimo_error} —{@code varchar(400)}, y alli los recorta a 400— y {@code
+ * PublicadorDelBuzon} solo cuenta leidos, entregados y muertos. O sea que <b>los 400 caracteres de
+ * esa columna son todo el presupuesto</b>, y de ahi sale el orden de este mensaje, que es el
+ * contrario del de {@link ClienteHttpDelBuzonDeIdentidad}: alli el remedio va detras del cuerpo
+ * literal porque el destino es un registro sin tope; aqui va <b>delante</b>, porque lo que se corta
+ * es la cola y quien lee esto es un cajero que no puede cerrar su turno. El cuerpo viaja detras,
+ * con lo que quepa, y el corte se ve ({@code …}) en vez de hacerse en silencio.
  */
 @Component
 public class ClienteHttpDelSistemaDeOrigen {
 
     private static final Duration ESPERA_DE_CONEXION = Duration.ofSeconds(5);
     private static final Duration ESPERA_DE_LECTURA = Duration.ofSeconds(30);
+
+    /**
+     * El ancho de {@code pago_evento.ultimo_error} ({@code V2__ordenes_de_cobro_y_outbox.sql}).
+     *
+     * <p>Es el mismo numero que {@code EntregarEventos.recortar} ya usaba para no desbordar la
+     * columna, y sigue escrito dos veces a proposito: {@code EntregarEventos} esta en la capa
+     * {@code aplicacion} y no puede importar de {@code infraestructura}. Aqui se declara porque
+     * este es el sitio donde se decide QUE se pierde al recortar.
+     */
+    public static final int LARGO_DE_ULTIMO_ERROR = 400;
 
     private final HttpClient cliente;
     private final JsonMapper json;
@@ -118,17 +156,19 @@ public class ClienteHttpDelSistemaDeOrigen {
         }
         if (esDeCredencial(estado)) {
             throw new BuzonDelSistemaDeOrigen.NoContesta(
-                    faltaLaCredencial(sistema, estado, mandada));
+                    laIdentidadDeServicio(
+                            sistema, estado, mandada, respuesta.body(), "publicar el pago"));
         }
         if (estado >= 400 && estado < 500) {
             throw new BuzonDelSistemaDeOrigen.Rechazado(
-                    "«"
-                            + sistema
-                            + "» rechazo el pago con "
-                            + estado
-                            + ": "
-                            + recorte(respuesta.body())
-                            + ". Esto NO se reintenta: el motivo no va a cambiar solo");
+                    cabe(
+                            "«"
+                                    + sistema
+                                    + "» rechazo el pago con "
+                                    + estado
+                                    + ". Esto NO se reintenta: el motivo no va a cambiar solo."
+                                    + " Contesto "
+                                    + RespuestaAjena.de(json, respuesta.body()).comoTexto()));
         }
         throw new BuzonDelSistemaDeOrigen.NoContesta(
                 "«" + sistema + "» contesto " + estado + " al publicar el pago");
@@ -147,11 +187,12 @@ public class ClienteHttpDelSistemaDeOrigen {
             // Aqui el 401 ya se reintentaba —TODO lo que no es 200 es `NoContesta`—, asi que lo
             // que #21 anade no es el reintento sino el diagnostico: «contesto 401 al traer el
             // buzon» manda a mirar el buzon, y lo que falta es una credencial.
+            //
+            // Desde #96 el «al <que>» va DENTRO del mensaje y no pegado detras: pegado detras
+            // quedaba al otro lado del recorte, o sea que era justo lo que se perdia.
             throw new BuzonDelSistemaDeOrigen.NoContesta(
-                    faltaLaCredencial(sistema, respuesta.statusCode(), mandada)
-                            + " (al "
-                            + que
-                            + ")");
+                    laIdentidadDeServicio(
+                            sistema, respuesta.statusCode(), mandada, respuesta.body(), que));
         }
         if (respuesta.statusCode() != 200) {
             throw new BuzonDelSistemaDeOrigen.NoContesta(
@@ -202,33 +243,65 @@ public class ClienteHttpDelSistemaDeOrigen {
     /**
      * Un 401 o un 403 no hablan de este pago: hablan de quien llama.
      *
-     * <p>Se distinguen por el codigo y no por el cuerpo a proposito: el cuerpo lo escribe el otro
-     * sistema y cambiar de redaccion no puede cambiar si un pago se reintenta.
+     * <p>Se distinguen del resto por el codigo y no por el cuerpo a proposito: el cuerpo lo escribe
+     * el otro sistema y cambiar de redaccion no puede cambiar si un pago se reintenta. <b>Esto
+     * decide la CLASIFICACION y no el mensaje</b>: desde #96 los dos codigos entran aqui juntos y
+     * salen con textos distintos, porque se arreglan en sitios distintos.
      */
     private static boolean esDeCredencial(int estado) {
         return estado == 401 || estado == 403;
     }
 
-    /** Lo que hay que mirar, dicho en el mensaje que acaba en {@code pago_evento.ultimo_error}. */
-    private String faltaLaCredencial(SistemaDeOrigen sistema, int estado, String mandada) {
-        String queFalta =
-                mandada.isBlank()
-                        ? "y esta caja no manda ninguna: no hay identidad de servicio configurada"
-                                + " (`kamayuk.caja.identidad.cliente` y `kamayuk.caja.credencial`)"
-                        : "y la que esta caja manda no vale";
-        return "«"
-                + sistema
-                + "» contesto "
-                + estado
-                + " "
-                + queFalta
-                + ". NO es un rechazo del pago: es la identidad de servicio, asi que se REINTENTA"
-                + " — se arregla del lado del despliegue (la cuenta «kamayuk-caja-servicio-<ubigeo>»"
-                + " de Keycloak y su secreto), y los pagos encolados salen solos (ADR-0028 §2, #21)";
+    /**
+     * Lo que hay que mirar, dicho en el mensaje que acaba en {@code pago_evento.ultimo_error}.
+     *
+     * <p><b>Tres ramas y no una (#96)</b>, porque se arreglan en tres sitios: no hay credencial
+     * (falta la configuracion), la credencial no vale (Keycloak), y la credencial vale pero falta
+     * el permiso (la concesion en {@code identidad}). Las tres siguen siendo {@code NoContesta}.
+     */
+    private String laIdentidadDeServicio(
+            SistemaDeOrigen sistema, int estado, String mandada, String cuerpo, String que) {
+        String porque;
+        if (estado == 403) {
+            // Un 403 NO habla de la credencial: el destino la valido y luego dijo que no.
+            porque =
+                    "la credencial SI vale —lo dice el haberla validado— y lo que falta es un"
+                            + " PERMISO sobre el acceso que exige. Se concede en `identidad`, NO"
+                            + " en Keycloak";
+        } else if (mandada.isBlank()) {
+            porque =
+                    "esta caja no manda ninguna credencial: falta la identidad de servicio"
+                            + " (`kamayuk.caja.identidad.cliente`, `kamayuk.caja.credencial`)";
+        } else {
+            porque =
+                    "la credencial que manda esta caja NO vale o caduco: se arregla en Keycloak"
+                            + " (la cuenta «kamayuk-caja-servicio-<ubigeo>» y su secreto)";
+        }
+        return cabe(
+                "«"
+                        + sistema
+                        + "» contesto "
+                        + estado
+                        + " al "
+                        + que
+                        + ": "
+                        + porque
+                        + ". NO es un rechazo del pago: se REINTENTA solo. Contesto "
+                        + RespuestaAjena.de(json, cuerpo).comoTexto());
     }
 
-    private static String recorte(String cuerpo) {
-        Objects.requireNonNull(cuerpo, "El cuerpo es la cadena vacia, no nulo");
-        return cuerpo.length() <= 200 ? cuerpo : cuerpo.substring(0, 200);
+    /**
+     * Lo que cabe en {@code pago_evento.ultimo_error}, y por que se corta aqui y no alli.
+     *
+     * <p>La columna es {@code varchar(400)} y {@code EntregarEventos} ya recorta a 400 antes de
+     * guardar — <b>sin decirlo</b>. Cortar aqui deja la marca del corte, y sobre todo garantiza que
+     * lo que se pierda sea la <b>cola</b>: el diagnostico y su remedio van delante y no se los
+     * lleva ningun cuerpo largo. Ver la cabecera de la clase.
+     */
+    private static String cabe(String mensaje) {
+        Objects.requireNonNull(mensaje, "El mensaje es la cadena vacia, no nulo");
+        return mensaje.length() <= LARGO_DE_ULTIMO_ERROR
+                ? mensaje
+                : mensaje.substring(0, LARGO_DE_ULTIMO_ERROR - 1) + "…";
     }
 }
