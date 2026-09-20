@@ -106,10 +106,17 @@ describe('con el catalogo sembrado, la ventanilla se recorre sin backend', () =>
     sembrarElCatalogo();
     await abrir('cierre-caja');
     await waitFor(() => {
-      expect(pedidas.length).toBeGreaterThan(0);
+      expect(pedidas.length).toBeGreaterThan(1);
     });
     // Los datos de una hoja no se siembran nunca: sembrados, `yarn dev` ensenaria una cifra que nadie
     // contesto. Asi que la hoja pide, nadie contesta, y la pantalla dice que fallo.
-    expect(pedidas).toEqual(['/caja/api/v1/pagos/sin-entregar']);
+    //
+    // Son las DOS que no dependen de nada (#97): el arqueo va DESPUES del turno, y como el turno
+    // no llega, no se pide. Que `/turnos/{turnoId}/cierre` no aparezca aqui es lo que demuestra
+    // que la interfaz no se inventa un identificador cuando su lectura falla.
+    expect([...pedidas].sort()).toEqual([
+      '/caja/api/v1/pagos/sin-entregar',
+      '/caja/api/v1/turnos/del-dia',
+    ]);
   });
 });

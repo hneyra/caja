@@ -2,11 +2,14 @@ package kamayuk.caja.nucleo.dobles;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.nucleo.dominio.EstadoDeTurno;
+import kamayuk.caja.nucleo.dominio.TurnoConSuCaja;
 import kamayuk.caja.nucleo.dominio.TurnoDeCaja;
 import kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository;
 
@@ -25,7 +28,22 @@ import kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository;
 public final class TurnosEnMemoria implements TurnoDeCajaRepository {
 
     private final Map<String, TurnoDeCaja> turnos = new LinkedHashMap<>();
+
+    /** Como se rotula cada ventanilla, para {@link #delCajeroEn}. Ver {@link #conVentanilla}. */
+    private final Map<Long, String[]> ventanillas = new LinkedHashMap<>();
+
     private long siguienteId = 1;
+
+    /**
+     * Da nombre a una ventanilla, para que {@link #delCajeroEn} pueda rotularla.
+     *
+     * <p>Sin registrarla, ese metodo devuelve el codigo entre interrogantes en vez de inventarse
+     * uno: una prueba que lea «C-01» donde nadie sembro una caja estaria midiendo el doble.
+     */
+    public TurnosEnMemoria conVentanilla(long cajaId, String codigo, String nombre) {
+        ventanillas.put(cajaId, new String[] {codigo, nombre});
+        return this;
+    }
 
     /** Deja sembrado un turno ya cerrado, para probar que la cobranza lo rechaza. */
     public TurnosEnMemoria conTurnoCerrado(long cajaId, String cajero, LocalDate fecha) {
@@ -86,6 +104,22 @@ public final class TurnosEnMemoria implements TurnoDeCajaRepository {
     @Override
     public Optional<TurnoDeCaja> abierto(long cajaId, String cajero, LocalDate fecha) {
         return Optional.ofNullable(turnos.get(clave(cajaId, cajero, fecha)));
+    }
+
+    @Override
+    public List<TurnoConSuCaja> delCajeroEn(String cajero, LocalDate fecha) {
+        List<TurnoConSuCaja> suyos = new ArrayList<>();
+        for (TurnoDeCaja turno : turnos.values()) {
+            if (turno.cajero().equals(cajero) && turno.fecha().equals(fecha)) {
+                String[] rotulo =
+                        ventanillas.getOrDefault(
+                                turno.cajaId(),
+                                new String[] {"?" + turno.cajaId(), "?" + turno.cajaId()});
+                suyos.add(new TurnoConSuCaja(turno, rotulo[0], rotulo[1]));
+            }
+        }
+        suyos.sort(java.util.Comparator.comparing(TurnoConSuCaja::cajaCodigo));
+        return List.copyOf(suyos);
     }
 
     @Override

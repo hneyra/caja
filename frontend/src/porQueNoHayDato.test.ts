@@ -29,8 +29,10 @@ describe('los dos casos, y a que hojas les toca cada uno', () => {
     }
   });
 
-  it('una escritura no cuenta como lectura: el cierre declara dos POST y sigue leyendo sus tres GET', () => {
+  it('una escritura no cuenta como lectura: el cierre declara dos POST y sigue leyendo sus GET', () => {
     expect(lecturasDe(hojaDe('cierre-caja')).map((o) => o.ruta)).toEqual([
+      // `/turnos/del-dia` es la que #97 anadio: de ella sale el `turnoId` de la siguiente.
+      '/turnos/del-dia',
       '/turnos/{turnoId}/cierre',
       '/pagos/sin-entregar',
       '/conciliacion',

@@ -176,12 +176,14 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     'cajas',
     'recibos',
     'duplicadoDeUnRecibo',
+    'turnoDelDia',
+    'cierreDelTurno',
     'pagosSinEntregar',
     'avanceDeRecaudacion',
     'recaudacionPorArea',
   ] as const;
 
-  it('EL CENTINELA: se leyeron los mapeos del nucleo, y las seis rutas de datos estan en RUTAS', () => {
+  it('EL CENTINELA: se leyeron los mapeos del nucleo, y las rutas de datos estan en RUTAS', () => {
     expect(mapeos.length).toBeGreaterThan(15);
     expect(Object.keys(RUTAS).filter((k) => !(k in { sesion: 1, municipalidadDeLaSesion: 1, modulos: 1, accesos: 1, permisosDeLaSesion: 1 })).sort()).toEqual(
       [...LECTURAS_DE_DATOS].sort(),
@@ -218,6 +220,9 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     const RECAUDACION = `${NUCLEO}/RecaudacionResource.java`;
     const DUPLICADO = `${NUCLEO}/DuplicadoResource.java`;
     const RECIBO = `${NUCLEO}/ReciboResource.java`;
+    const TURNO = `${NUCLEO}/TurnoDelDiaResource.java`;
+    const ARQUEO = `${NUCLEO}/ArqueoResource.java`;
+    const ESTADO = `${NUCLEO}/EstadoDelCierreController.java`;
     const IMPORTE = 'backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java';
     const pares: [string, readonly string[], object | undefined][] = [
       ['CajaEnListaResource', componentesDelRecord(`${NUCLEO}/CajaEnListaResource.java`, 'CajaEnListaResource'), m.CAJAS_MEDIDAS.contenido[0]],
@@ -232,6 +237,14 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
       ['DuplicadoResource', componentesDelRecord(DUPLICADO, 'DuplicadoResource'), m.DUPLICADO_MEDIDO],
       ['ReciboResource', componentesDelRecord(RECIBO, 'ReciboResource'), m.DUPLICADO_MEDIDO.recibo],
       ['LineaResource', componentesDelRecord(RECIBO, 'LineaResource'), m.DUPLICADO_MEDIDO.recibo.lineas[0]],
+      // #97: el turno del dia y el arqueo de ese turno. Sin esto, un campo renombrado en el
+      // backend deja la pantalla de cierre con `undefined` donde iba una cifra, y `undefined`
+      // no se ve como un error: se ve como un hueco.
+      ['TurnoDelDiaResource', componentesDelRecord(TURNO, 'TurnoDelDiaResource'), m.TURNO_MEDIDO],
+      ['TurnoResource', componentesDelRecord(TURNO, 'TurnoResource'), m.TURNO_MEDIDO.turnos[0]],
+      ['EstadoDelCierreResource', componentesDelRecord(ESTADO, 'EstadoDelCierreResource'), m.CIERRE_MEDIDO],
+      ['ArqueoResource', componentesDelRecord(ARQUEO, 'ArqueoResource'), m.CIERRE_MEDIDO.arqueo],
+      ['ArqueoResource.LineaResource', componentesDelRecord(ARQUEO, 'LineaResource'), m.CIERRE_MEDIDO.arqueo.lineas[0]],
     ];
     for (const [nombre, delBackend, captura] of pares) {
       expect(Object.keys(captura ?? {}), `«${nombre}»`).toEqual(delBackend);

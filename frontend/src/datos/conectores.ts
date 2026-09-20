@@ -9,11 +9,14 @@ import type {
   CajaEnLista,
   DistribucionDeRecaudacion,
   DuplicadoDeUnRecibo,
+  EstadoDelCierre,
+  ImporteActualizado,
   PagoDelBuzon,
   Paginado,
   ReciboEnLista,
+  TurnoDelDia,
 } from './lecturas.ts';
-import { RUTAS, pedirPagina, pedirUno, rutaDelDuplicado } from './lecturas.ts';
+import { RUTAS, pedirPagina, pedirUno, rutaDelCierre, rutaDelDuplicado } from './lecturas.ts';
 
 /**
  * **Que pantalla de la ventanilla pide que, y que de lo que llega dibuja cada campo** (#84).
@@ -21,18 +24,27 @@ import { RUTAS, pedirPagina, pedirUno, rutaDelDuplicado } from './lecturas.ts';
  * Es la forma de `rentas` (`rentas`#97): un conector por hoja, con UNA lectura y un reparto puro de
  * lo que contesta a las coordenadas de su definicion.
  *
- * <h2>Por que son estas cinco lecturas y no las nueve que el arbol declara</h2>
+ * <h2>Que se conecta y que no, y por que</h2>
  *
- * Una lectura se conecta si la pantalla puede pedirla **con lo que ya tiene**. Tres no pueden, y
- * cada una lo dice en su hueco en vez de inventarse lo que le falta:
+ * Una lectura se conecta si la pantalla puede pedirla **con lo que ya tiene**. De los tres huecos
+ * que #84 declaro queda **uno**, y lo dice en su hueco en vez de inventarse lo que le falta:
  *
- *   · **El arqueo del turno** (`GET /turnos/{turnoId}/cierre`): ninguna lectura publica el
- *     `turnoId` de la ventanilla. Sin el, pedirlo seria adivinar un numero.
  *   · **La conciliacion** (`GET /conciliacion?fecha=`): exige la fecha, y la pantalla no deja
  *     elegirla. Ponerle «hoy» del reloj del navegador seria decidir por quien concilia que dia mira.
  *
- * **El tercero se cerro en #99**: `GET /recibos/{nro}/duplicado` ya se pide, porque la lista deja
+ * **El segundo se cerro en #99**: `GET /recibos/{nro}/duplicado` ya se pide, porque la lista deja
  * elegir una fila y **lo elegido vive en la ruta**. Ver `LecturaDeLoElegido`, mas abajo.
+ *
+ * **Y el tercero en #97**: el arqueo del turno lo era porque ninguna lectura publicaba el
+ * `turnoId`, y pedirlo habria sido adivinar un numero; ahora lo publica `GET /turnos/del-dia`, y
+ * `cierre-caja` **encadena** —pide su turno, y si tiene uno abierto pide el arqueo de ESE turno—.
+ *
+ * <h2>Dos maneras distintas de pedir una segunda lectura, y no se confunden</h2>
+ *
+ * `duplicado-recibo` usa `deLoElegido`: lo que se pide sale de la **ruta**, porque lo elige una
+ * persona y tiene que sobrevivir a una recarga. `cierre-caja` no puede: su `turnoId` no lo elige
+ * nadie, **sale de la respuesta anterior**, asi que su cadena vive dentro de un solo `pedir` y por
+ * eso `Conector.rutas` es una lista.
  *
  * <h2>Lo que NO se hace, y es la regla que gobierna este archivo</h2>
  *
@@ -67,13 +79,28 @@ export interface Reparto {
   readonly conteos: ReadonlyMap<number, string>;
   /** Los campos que esta lectura NO trae, con la palabra que va en su hueco. */
   readonly sinDato: ReadonlyMap<Coordenada, string>;
+  /**
+   * Lo que se dice arriba de la pantalla **para esta respuesta**, cuando el porque de los huecos
+   * depende de lo que llego. Ausente cuando no depende, y entonces manda `Conector.ausencia`.
+   *
+   * Lo pide `cierre-caja` (#97): «no abrio turno hoy», «ya cerro» y «tiene dos ventanillas
+   * abiertas» dejan los mismos diez campos vacios por tres motivos distintos, y cada uno se
+   * resuelve en otro sitio. Una sola frase fija mandaria a los tres al mismo.
+   */
+  readonly ausencia?: Ausencia;
 }
 
 export interface Conector {
   /** La clave de consulta de TanStack. Lleva la hoja dentro: dos pantallas no comparten cache. */
   readonly clave: readonly string[];
-  /** La ruta que pide, tal cual esta en `RUTAS`. La guarda la compara con las lecturas de su hoja. */
-  readonly ruta: string;
+  /**
+   * Las rutas que pide su PRIMERA lectura, tal cual estan en `RUTAS`. La guarda las compara con
+   * las lecturas de su hoja, una a una.
+   *
+   * Son varias solo en `cierre-caja`, que encadena tres dentro del mismo `pedir`. La de
+   * `deLoElegido`, cuando la hay, se declara aparte: esa no se pide hasta que alguien elige.
+   */
+  readonly rutas: readonly string[];
   readonly pedir: (senal: AbortSignal) => Promise<unknown>;
   /**
    * Lo que llego, repartido a las coordenadas de la definicion.
@@ -140,8 +167,15 @@ export interface Aporte {
 /** Las palabras de los huecos que una lectura que SI contesto deja. Todas pasan por el locale. */
 export const SIN_ELEGIR = 'sin elegir';
 export const SIN_TURNO = 'sin turno';
+export const TURNO_CERRADO = 'turno cerrado';
+export const VARIAS_CAJAS = 'varias cajas';
+export const SIN_DECLARAR = 'sin declarar';
 export const SIN_FECHA = 'sin fecha';
 export const SIN_PEDIR_AQUI = 'sin pedir';
+
+/** Lo que dicen «Puede cerrarse» y «Cuadra». Son palabras, no datos del backend: se traducen. */
+const SI = 'sí';
+const NO = 'no';
 
 /** Un reparto que no aporta nada: el de una lectura que todavia no tiene nada que repartir. */
 const NADA: Reparto = {
@@ -182,19 +216,68 @@ const RECIBO_QUE_NO_LLEGO: Ausencia = {
   tono: 'atencion',
 };
 
-const EXPLICACION_DEL_CIERRE =
-  'Esta pantalla lee los pagos sin entregar. El arqueo necesita el turno, y ninguna lectura publica todavía cuál es; la conciliación necesita la fecha, y elegirla todavía no está disponible.';
+/** Lo que le falta a `cierre-caja` pase lo que pase con el turno. Se pega a las cuatro de abajo. */
+const Y_LA_CONCILIACION = ' La conciliación necesita la fecha, y elegirla todavía no está disponible.';
+
+/**
+ * Las cuatro situaciones de `cierre-caja` (#97), y no una frase fija.
+ *
+ * «No abrió turno hoy», «ya cerró» y «tiene dos ventanillas abiertas» dejan los **mismos** diez
+ * campos vacíos, y cada una se resuelve en otro sitio: cobrar, reversar el cierre, o elegir cuál
+ * ventanilla. Una sola frase mandaría a las tres al mismo, y a dos de ellas al equivocado.
+ */
+const CIERRE_CON_TURNO: Ausencia = {
+  enElCampo: SIN_PEDIR_AQUI,
+  explicacion:
+    'Esta pantalla lee su turno abierto, su arqueo y los pagos que impiden cerrarlo. Lo que usted cuente en el cajón no se registra desde aquí, así que el arqueo no dice lo declarado ni si cuadra: dice lo cobrado.' +
+    Y_LA_CONCILIACION,
+  tono: 'info',
+};
+
+const CIERRE_SIN_TURNO: Ausencia = {
+  enElCampo: SIN_TURNO,
+  explicacion:
+    'Usted no tiene turno abierto hoy, así que no hay arqueo que mostrar: la ventanilla se abre con su primer cobro del día.' +
+    Y_LA_CONCILIACION,
+  tono: 'info',
+};
+
+const CIERRE_YA_CERRADO: Ausencia = {
+  enElCampo: TURNO_CERRADO,
+  explicacion:
+    'Su turno de hoy ya está cerrado y su arqueo, firmado. Un cajero tiene un solo turno al día por ventanilla, así que volver a cobrar hoy exige reversar ese cierre, y reversar no se hace desde aquí.' +
+    Y_LA_CONCILIACION,
+  tono: 'info',
+};
+
+const CIERRE_CON_VARIOS: Ausencia = {
+  enElCampo: VARIAS_CAJAS,
+  explicacion:
+    'Tiene turno abierto en más de una ventanilla, y esta pantalla no elige por usted cuál arquear: arquear una por otra no daría error, daría una cifra.' +
+    Y_LA_CONCILIACION,
+  tono: 'info',
+};
 
 /** Todas las frases que este archivo pone en pantalla, para el catalogo del locale. */
 export const FRASES_DE_LOS_CONECTORES: readonly string[] = [
   SIN_TURNO,
+  TURNO_CERRADO,
+  VARIAS_CAJAS,
+  SIN_DECLARAR,
   SIN_FECHA,
   SIN_PEDIR_AQUI,
-  EXPLICACION_DEL_CIERRE,
-  ...[ELIJA_UN_RECIBO, PIDIENDO_EL_RECIBO, RECIBO_QUE_NO_ESTA, RECIBO_QUE_NO_LLEGO].flatMap((a) => [
-    a.enElCampo,
-    a.explicacion,
-  ]),
+  SI,
+  NO,
+  ...[
+    ELIJA_UN_RECIBO,
+    PIDIENDO_EL_RECIBO,
+    RECIBO_QUE_NO_ESTA,
+    RECIBO_QUE_NO_LLEGO,
+    CIERRE_CON_TURNO,
+    CIERRE_SIN_TURNO,
+    CIERRE_YA_CERRADO,
+    CIERRE_CON_VARIOS,
+  ].flatMap((a) => [a.enElCampo, a.explicacion]),
 ];
 
 /** La marca de un nulo en una celda. No es una palabra, asi que no pasa por el locale. */
@@ -243,7 +326,7 @@ function bloqueSinDato(bloque: number, campos: number, palabra: string): [Coorde
 function cajasDe(hoja: ClaveDeHoja): Conector {
   return {
     clave: [hoja, 'cajas'],
-    ruta: RUTAS.cajas,
+    rutas: [RUTAS.cajas],
     pedir: (senal) => pedirPagina<CajaEnLista>(RUTAS.cajas, senal),
     repartir: (pagina: Paginado<CajaEnLista>): Reparto => ({
       valores: new Map(),
@@ -355,7 +438,7 @@ const EL_RECIBO_ELEGIDO: LecturaDeLoElegido = {
  */
 const DUPLICADO_RECIBO: Conector = {
   clave: ['duplicado-recibo', 'recibos'],
-  ruta: RUTAS.recibos,
+  rutas: [RUTAS.recibos],
   pedir: (senal) => pedirPagina<ReciboEnLista>(RUTAS.recibos, senal),
   repartir: (pagina: Paginado<ReciboEnLista>, elegido?: string | null): Reparto => ({
     valores: new Map(),
@@ -394,38 +477,132 @@ const DUPLICADO_RECIBO: Conector = {
   deLoElegido: EL_RECIBO_ELEGIDO,
 };
 
-/** `cierre-caja`: los pagos en transito, que son lo que impide cerrar. */
+/** Lo que `cierre-caja` junta de sus lecturas. `cierre` es nulo si no hay UN turno abierto. */
+export interface DatosDelCierre {
+  readonly turno: TurnoDelDia;
+  readonly cierre: EstadoDelCierre | null;
+  readonly pagos: readonly PagoDelBuzon[];
+}
+
+/** Que se dice arriba, y con ella la palabra de los diez campos del arqueo, segun la situacion. */
+function ausenciaDelCierre(situacion: string): Ausencia {
+  if (situacion === 'ABIERTO') return CIERRE_CON_TURNO;
+  if (situacion === 'CERRADO') return CIERRE_YA_CERRADO;
+  if (situacion === 'VARIOS_ABIERTOS') return CIERRE_CON_VARIOS;
+  return CIERRE_SIN_TURNO;
+}
+
+/** Una celda con su cifra, o la palabra si el backend la mando nula: nunca un cero inventado. */
+function importeO(importe: ImporteActualizado | null, palabra: string): string {
+  return importe === null ? palabra : formatearImporte(importe.importe);
+}
+
+/** Las filas del bloque 1: los pagos en transito, que son lo que impide cerrar. */
+function filasDeLosPagos(pagos: readonly PagoDelBuzon[]): readonly (readonly string[])[] {
+  return pagos.map((p) => [
+    p.pagoId,
+    p.destino,
+    String(p.reciboId),
+    String(p.intentos),
+    p.ultimoError ?? NULO,
+    instanteEnLima(p.creadoEn),
+    p.estado,
+  ]);
+}
+
+/**
+ * `cierre-caja`: su turno, el arqueo de ese turno y los pagos que impiden cerrarlo (#97).
+ *
+ * El turno y los pagos se piden a la vez —no dependen uno del otro—; el arqueo va despues, porque
+ * **necesita el `turnoId` que la primera acaba de dar**. Si no hay exactamente un turno abierto no
+ * se pide: los diez campos dicen por que en su hueco, y la frase de arriba donde se arregla.
+ */
 const CIERRE_CAJA: Conector = {
-  clave: ['cierre-caja', 'pagos-sin-entregar'],
-  ruta: RUTAS.pagosSinEntregar,
-  pedir: (senal) => pedirUno<readonly PagoDelBuzon[]>(RUTAS.pagosSinEntregar, senal),
-  repartir: (pagos: readonly PagoDelBuzon[]): Reparto => ({
-    valores: new Map(),
-    filas: new Map([
-      [
-        1,
-        pagos.map((p) => [
-          p.pagoId,
-          p.destino,
-          String(p.reciboId),
-          String(p.intentos),
-          p.ultimoError ?? NULO,
-          instanteEnLima(p.creadoEn),
-          p.estado,
+  clave: ['cierre-caja', 'turno-y-arqueo'],
+  rutas: [RUTAS.turnoDelDia, RUTAS.cierreDelTurno, RUTAS.pagosSinEntregar],
+  pedir: async (senal): Promise<DatosDelCierre> => {
+    const [turno, pagos] = await Promise.all([
+      pedirUno<TurnoDelDia>(RUTAS.turnoDelDia, senal),
+      pedirUno<readonly PagoDelBuzon[]>(RUTAS.pagosSinEntregar, senal),
+    ]);
+    const abierto = turno.turnos.find((t) => t.estadoDelTurno === 'ABIERTO');
+    const cierre =
+      turno.situacion === 'ABIERTO' && abierto !== undefined
+        ? await pedirUno<EstadoDelCierre>(rutaDelCierre(abierto.turnoId), senal)
+        : null;
+    return { turno, cierre, pagos };
+  },
+  repartir: (datos: DatosDelCierre): Reparto => {
+    const pagos = filasDeLosPagos(datos.pagos);
+    const ausencia = ausenciaDelCierre(datos.turno.situacion);
+    if (datos.cierre === null) {
+      return {
+        ...NADA,
+        filas: new Map([[1, pagos]]),
+        sinDato: new Map([
+          ...bloqueSinDato(0, 10, ausencia.enElCampo),
+          ...bloqueSinDato(2, 2, SIN_FECHA),
         ]),
-      ],
-    ]),
-    conteos: new Map(),
-    tablas: new Map(),
-    sinDato: new Map([...bloqueSinDato(0, 10, SIN_TURNO), ...bloqueSinDato(2, 2, SIN_FECHA)]),
-  }),
-  ausencia: { enElCampo: SIN_PEDIR_AQUI, explicacion: EXPLICACION_DEL_CIERRE, tono: 'info' },
+        ausencia,
+      };
+    }
+
+    const arqueo = datos.cierre.arqueo;
+    const valores: [Coordenada, string][] = [
+      [coordenada(0, 0), formatearFecha(arqueo.fecha)],
+      [coordenada(0, 1), datos.cierre.puedeCerrar ? SI : NO],
+      [coordenada(0, 2), String(arqueo.recibosEmitidos)],
+      [coordenada(0, 3), String(arqueo.recibosAnulados)],
+      [coordenada(0, 4), formatearImporte(arqueo.cobrado.importe)],
+      [coordenada(0, 5), formatearImporte(arqueo.anulado.importe)],
+      [coordenada(0, 6), formatearImporte(arqueo.neto.importe)],
+    ];
+    const sinDato: [Coordenada, string][] = [...bloqueSinDato(2, 2, SIN_FECHA)];
+
+    // Los tres que el arqueo EN VIVO no puede saber: nadie ha contado el cajon todavia. El
+    // backend los manda nulos desde #97 —antes mandaba 0,00 y `cuadra: false`—, y aqui cada
+    // uno cae en `valores` o en `sinDato`, nunca en los dos.
+    for (const [columna, cifra] of [
+      [7, arqueo.declarado],
+      [8, arqueo.diferencia],
+    ] as const) {
+      const k = coordenada(0, columna);
+      if (cifra === null) sinDato.push([k, SIN_DECLARAR]);
+      else valores.push([k, formatearImporte(cifra.importe)]);
+    }
+    const cuadra = coordenada(0, 9);
+    if (arqueo.cuadra === null) sinDato.push([cuadra, SIN_DECLARAR]);
+    else valores.push([cuadra, arqueo.cuadra ? SI : NO]);
+
+    return {
+      valores: new Map(valores),
+      filas: new Map([
+        [
+          0,
+          arqueo.lineas.map((l) => [
+            l.formaDePago,
+            formatearImporte(l.cobrado.importe),
+            formatearImporte(l.anulado.importe),
+            formatearImporte(l.neto.importe),
+            importeO(l.declarado, SIN_DECLARAR),
+            importeO(l.diferencia, SIN_DECLARAR),
+          ]),
+        ],
+        [1, pagos],
+      ]),
+      tablas: new Map(),
+      conteos: new Map(),
+      sinDato: new Map(sinDato),
+      ausencia,
+    };
+  },
+  ausencia: CIERRE_CON_TURNO,
 };
 
 /** `avance-recaudacion`: el periodo, sus tres totales y una fila por concepto. */
 const AVANCE_RECAUDACION: Conector = {
   clave: ['avance-recaudacion', 'avance'],
-  ruta: RUTAS.avanceDeRecaudacion,
+  rutas: [RUTAS.avanceDeRecaudacion],
   pedir: (senal) => pedirUno<AvanceDeRecaudacion>(RUTAS.avanceDeRecaudacion, senal),
   repartir: (avance: AvanceDeRecaudacion): Reparto => ({
     valores: new Map([
@@ -457,7 +634,7 @@ const AVANCE_RECAUDACION: Conector = {
 /** `recaudacion-area`: el periodo, el neto, lo que no tiene partida y una fila por grupo. */
 const RECAUDACION_AREA: Conector = {
   clave: ['recaudacion-area', 'por-area'],
-  ruta: RUTAS.recaudacionPorArea,
+  rutas: [RUTAS.recaudacionPorArea],
   pedir: (senal) => pedirUno<DistribucionDeRecaudacion>(RUTAS.recaudacionPorArea, senal),
   repartir: (distribucion: DistribucionDeRecaudacion): Reparto => ({
     valores: new Map([

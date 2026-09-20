@@ -5,7 +5,14 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TABLA_DE_LINEAS, TABLA_DE_RECIBOS } from '../pantallas/definiciones/tesoreria.ts';
-import { DUPLICADO_MEDIDO, PAGOS_MEDIDOS, RECIBOS_MEDIDOS } from './tesoreriaMedida.ts';
+import {
+  CIERRE_MEDIDO,
+  DUPLICADO_MEDIDO,
+  PAGOS_MEDIDOS,
+  RECIBOS_MEDIDOS,
+  TURNO_MEDIDO,
+  TURNO_SIN_ABRIR_MEDIDO,
+} from './tesoreriaMedida.ts';
 import { useDatosDeLaHoja } from './useDatosDeLaHoja.ts';
 
 /**
@@ -23,16 +30,41 @@ function arnes() {
   );
 }
 
+const JSON_ = { 'content-type': 'application/json' };
+
 /** Sustituye `fetch` por una respuesta fija, y devuelve el doble para mirar que se pidio. */
 function contesta(cuerpo: unknown, estado = 200) {
   const doble = vi.fn<typeof fetch>(() =>
-    Promise.resolve(
-      new Response(JSON.stringify(cuerpo), { status: estado, headers: { 'content-type': 'application/json' } }),
-    ),
+    Promise.resolve(new Response(JSON.stringify(cuerpo), { status: estado, headers: JSON_ })),
   );
   vi.stubGlobal('fetch', doble);
   return doble;
 }
+
+/**
+ * Lo mismo, pero contestando distinto por ruta.
+ *
+ * Lo pide `cierre-caja` desde #97: es la unica hoja que **encadena dentro de su primera lectura**
+ * —su turno, y despues el arqueo del turno que ese acaba de nombrar—, y una respuesta unica para
+ * las tres la dejaria midiendo cualquier cosa menos el encadenado.
+ */
+function contestaPorRuta(porFinal: Readonly<Record<string, unknown>>) {
+  const doble = vi.fn<typeof fetch>((url) => {
+    const camino = String(url);
+    const clave = Object.keys(porFinal).find((final) => camino.endsWith(final));
+    if (clave === undefined) return Promise.resolve(new Response('{}', { status: 404, headers: JSON_ }));
+    return Promise.resolve(new Response(JSON.stringify(porFinal[clave]), { status: 200, headers: JSON_ }));
+  });
+  vi.stubGlobal('fetch', doble);
+  return doble;
+}
+
+/** Lo que contesta la ventanilla de un cajero con un turno abierto y su arqueo. */
+const EL_CIERRE_ENTERO = {
+  '/turnos/del-dia': TURNO_MEDIDO,
+  '/turnos/7/cierre': CIERRE_MEDIDO,
+  '/pagos/sin-entregar': PAGOS_MEDIDOS,
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -52,34 +84,54 @@ describe('una hoja SIN conector no toca la red', () => {
 
 describe('una hoja CON conector recorre sus estados', () => {
   it('primero dice que esta pidiendo', () => {
-    contesta(PAGOS_MEDIDOS);
+    contestaPorRuta(EL_CIERRE_ENTERO);
     const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja'), { wrapper: arnes() });
     expect(result.current.ausencia.enElCampo).toBe('pidiendo…');
   });
 
-  it('pide su ruta y solo esa, bajo `/caja/api/v1`', async () => {
-    const doble = contesta(PAGOS_MEDIDOS);
+  it('pide sus rutas y solo esas, bajo `/caja/api/v1`, con el arqueo DESPUES del turno', async () => {
+    const doble = contestaPorRuta(EL_CIERRE_ENTERO);
     const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja'), { wrapper: arnes() });
     await waitFor(() => {
       expect(result.current.filas?.get(1)).toHaveLength(1);
     });
-    expect(doble.mock.calls.map(([url]) => String(url))).toEqual(['/caja/api/v1/pagos/sin-entregar']);
+    const pedidas = doble.mock.calls.map(([url]) => String(url));
+    expect(pedidas.slice(0, 2).sort()).toEqual(['/caja/api/v1/pagos/sin-entregar', '/caja/api/v1/turnos/del-dia']);
+    // El `7` no esta escrito en ningun sitio de `src/`: sale del turno que acaba de llegar.
+    expect(pedidas[2]).toBe('/caja/api/v1/turnos/7/cierre');
+    expect(pedidas).toHaveLength(3);
   });
 
   it('cuando llega, reparte lo que trae y dice con su palabra lo que falta', async () => {
-    contesta(PAGOS_MEDIDOS);
+    contestaPorRuta(EL_CIERRE_ENTERO);
     const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja'), { wrapper: arnes() });
 
     await waitFor(() => {
       expect(result.current.filas?.get(1)).toHaveLength(1);
     });
-    expect(result.current.ausenciaPorCampo?.get(coordenada(0, 0))).toBe('sin turno');
+    expect(result.current.valores?.get(coordenada(0, 2)), 'recibos emitidos').toBe('12');
+    expect(result.current.ausenciaPorCampo?.get(coordenada(0, 9)), 'cuadra').toBe('sin declarar');
     expect(result.current.ausencia.tono).toBe('info');
-    expect(result.current.ausencia.explicacion).toMatch(/pagos sin entregar/);
+    expect(result.current.ausencia.explicacion).toMatch(/turno abierto/);
+  });
+
+  it('sin turno abierto no se pide el arqueo, y la frase dice por que no lo hay', async () => {
+    const doble = contestaPorRuta({
+      '/turnos/del-dia': TURNO_SIN_ABRIR_MEDIDO,
+      '/pagos/sin-entregar': PAGOS_MEDIDOS,
+    });
+    const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja'), { wrapper: arnes() });
+
+    await waitFor(() => {
+      expect(result.current.filas?.get(1)).toHaveLength(1);
+    });
+    expect(doble.mock.calls.map(([url]) => String(url))).not.toContain('/caja/api/v1/turnos/7/cierre');
+    expect(result.current.ausenciaPorCampo?.get(coordenada(0, 0))).toBe('sin turno');
+    expect(result.current.ausencia.explicacion).toMatch(/no tiene turno abierto hoy/);
   });
 
   it('una lista vacia es una respuesta: filas vacias, no una ausencia', async () => {
-    contesta([]);
+    contestaPorRuta({ ...EL_CIERRE_ENTERO, '/pagos/sin-entregar': [] });
     const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja'), { wrapper: arnes() });
     await waitFor(() => {
       expect(result.current.filas?.get(1)).toEqual([]);
