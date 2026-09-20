@@ -1,6 +1,6 @@
 import { ARBOL } from '../pantallas/arbol.ts';
-import { PANTALLAS } from '../pantallas/definiciones/index.ts';
-import type { Modulo, Pantalla } from '../pantallas/tipos.ts';
+import { PANTALLAS, actosDe, bloquesDe } from '../pantallas/definiciones/index.ts';
+import type { Accion, Modulo, Pantalla, Texto } from '../pantallas/tipos.ts';
 import { FRASES_DE_LOS_CONECTORES } from '../datos/conectores.ts';
 import { AUSENCIAS_DE_UNA_LECTURA } from '../datos/useDatosDeLaHoja.ts';
 import { SIN_PEDIR, SOLO_ESCRIBE } from '../porQueNoHayDato.ts';
@@ -40,6 +40,56 @@ import { clavesDelMarco } from './textosDelMarco.ts';
  * (#97), y no se traducirian aunque existieran: un importe no tiene traduccion.
  */
 
+/**
+ * Lo traducible de un `Texto`: la cadena entera, o **la plantilla** de una con huecos.
+ *
+ * Un `{ desde }` y un `{ segun }` no entran: el primero es el dato tal cual —que no se traduce— y
+ * del segundo lo que se traduce son sus casos, que hoy ninguna definicion de esta ventanilla usa.
+ * El dia que use uno, esta funcion crece y su prueba lo pide.
+ */
+function deUnTexto(texto: Texto | undefined): readonly string[] {
+  if (texto === undefined) return [];
+  if (typeof texto === 'string') return [texto];
+  if ('plantilla' in texto) return [texto.plantilla];
+  if ('casos' in texto) return [...Object.values(texto.casos), ...(texto.otro === undefined ? [] : [texto.otro])];
+  return [];
+}
+
+/** Lo que dicen las acciones de un bloque o de un acto: su rotulo y el motivo de cada impedimento. */
+function deLasAcciones(acciones: readonly Accion[] | undefined): readonly string[] {
+  return (acciones ?? []).flatMap((accion) => [
+    ...deUnTexto(accion.rotulo),
+    ...(accion.impedida ?? []).flatMap((impedimento) => deUnTexto(impedimento.motivo)),
+  ]);
+}
+
+/**
+ * Todo lo que los ACTOS dicen (#100).
+ *
+ * Es la mitad que un recorrido de bloques no ve: un acto no es un bloque, y sus cadenas —el titulo
+ * que es tambien el rotulo de su primario, la etiqueta y la ayuda de la observacion obligatoria, la
+ * advertencia de lo que no se deshace, y lo que se lee cuando el sistema lo acepta— no las dice
+ * nadie mas. Sin esto, la ventanilla anularia en castellano en cualquier idioma.
+ */
+function deLosActos(pantalla: Pantalla): readonly string[] {
+  return actosDe(pantalla).flatMap((acto) => [
+    ...deUnTexto(acto.titulo),
+    ...deUnTexto(acto.nota),
+    ...acto.campos.flatMap((campo) => [
+      campo.etiqueta,
+      ...('opciones' in campo ? campo.opciones : []),
+      ...('casilla' in campo ? [campo.casilla] : []),
+      ...('ayuda' in campo && campo.ayuda !== undefined ? [campo.ayuda] : []),
+    ]),
+    ...deUnTexto(acto.observacion.etiqueta),
+    ...deUnTexto(acto.observacion.ayuda),
+    ...deUnTexto(acto.advertencia),
+    ...deUnTexto(acto.hecho?.titulo),
+    ...deUnTexto(acto.hecho?.texto),
+    ...deLasAcciones(acto.hecho?.acciones),
+  ]);
+}
+
 /** Todo lo que las pantallas dicen. */
 function deLasPantallas(): readonly string[] {
   const salida: string[] = [];
@@ -47,7 +97,9 @@ function deLasPantallas(): readonly string[] {
   // intenta unificarlas. La forma comun la da el `satisfies`, que garantiza que no miente.
   for (const pantalla of Object.values(PANTALLAS) as readonly Pantalla[]) {
     salida.push(pantalla.instruccion);
-    for (const bloque of pantalla.bloques) {
+    salida.push(...deLosActos(pantalla));
+    for (const bloque of bloquesDe(pantalla)) {
+      salida.push(...deLasAcciones(bloque.acciones));
       salida.push(bloque.titulo);
       if (bloque.nota !== '') salida.push(bloque.nota);
       // Lo que un bloque dice mientras su lectura no se puede pedir (#98): es una frase de la hoja,

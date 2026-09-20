@@ -4,7 +4,14 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TABLA_DE_LINEAS, TABLA_DE_RECIBOS } from '../pantallas/definiciones/tesoreria.ts';
+import { CLAVES_DE_HOJA } from '../pantallas/arbol.ts';
+import {
+  ESTADO_DEL_RECIBO,
+  NUMERO_DEL_RECIBO,
+  TABLA_DE_LINEAS,
+  TABLA_DE_RECIBOS,
+} from '../pantallas/definiciones/tesoreria.ts';
+import { CONECTORES } from './conectores.ts';
 import {
   CIERRE_MEDIDO,
   CONCILIACION_MEDIDA,
@@ -71,15 +78,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('una hoja SIN conector no toca la red', () => {
-  it('`anulacion-recibo` solo escribe: no pide nada y dice que no tiene nada que leer', () => {
-    const pedir = vi.fn<typeof fetch>();
-    vi.stubGlobal('fetch', pedir);
-
-    const { result } = renderHook(() => useDatosDeLaHoja('anulacion-recibo'), { wrapper: arnes() });
-
-    expect(pedir).not.toHaveBeenCalled();
-    expect(result.current.ausencia.enElCampo).toBe('sin lectura');
+/**
+ * **Ya no hay ninguna hoja sin conector, y esa es la medicion** (#100).
+ *
+ * Aqui habia una prueba de `anulacion-recibo`: no pedia nada y decia «sin lectura». Era cierto, y
+ * lo que decia de la ventanilla es que una de sus siete entradas de menu no llevaba a ninguna
+ * parte. ADR-0044 la retiro. Lo que queda por comprobar es lo contrario —que ninguna de las seis
+ * se quede sin quien pida lo suyo—, y la rama de «solo escribe» la sigue ejerciendo
+ * `porQueNoHayDato.test.ts` con una hoja de mentira.
+ */
+describe('ninguna hoja se queda sin conector', () => {
+  it('las seis piden lo suyo: no hay ninguna entrada de menu muda', () => {
+    expect(CLAVES_DE_HOJA.filter((clave) => CONECTORES[clave] === undefined)).toEqual([]);
+    expect(CLAVES_DE_HOJA).toHaveLength(6);
   });
 });
 
@@ -205,6 +216,10 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
     expect(pedidas).toEqual(['/caja/api/v1/recibos']);
     expect(result.current.ausenciaPorCampo?.get(coordenada(1, 0))).toBe('sin elegir');
     expect(result.current.ausenciaPorCampo?.get(coordenada(1, 7))).toBe('sin elegir');
+    // Y sin nada elegido no hay recibo sobre el que anular: es lo que deja impedida la accion
+    // (#100). Un numero aqui seria un cobro elegido por la pantalla y no por quien la mira.
+    expect(result.current.nombrados?.get(NUMERO_DEL_RECIBO)).toBeUndefined();
+    expect(result.current.nombrados?.get(ESTADO_DEL_RECIBO)).toBeUndefined();
     expect(result.current.valores?.size).toBe(0);
     expect(result.current.tablas?.has(TABLA_DE_LINEAS)).toBe(false);
   });
@@ -224,6 +239,10 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
     ]);
     expect(result.current.valores?.get(coordenada(1, 2))).toBe('Cajero de la prueba');
     expect(result.current.valores?.get(coordenada(1, 4))).toBe('15/03/2026 21:04');
+    // Lo que la accion de anular lee (#100): sobre que recibo actuaria, y si ya esta anulado. El
+    // numero sale de la RUTA y el estado de la respuesta; ninguno de los dos se pinta dos veces.
+    expect(result.current.nombrados?.get(NUMERO_DEL_RECIBO)).toBe('001-000123');
+    expect(result.current.nombrados?.get(ESTADO_DEL_RECIBO)).toBe(DUPLICADO_MEDIDO.estado);
     expect(result.current.tablas?.get(TABLA_DE_LINEAS)?.filas).toHaveLength(2);
     // Ni un hueco: los ocho campos tienen dato.
     expect(result.current.ausenciaPorCampo?.size).toBe(0);

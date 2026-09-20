@@ -86,6 +86,20 @@ const LITERALES = [
   'Claro',
   'Oscuro',
   'El del sistema',
+  // Las diez del rechazo de la anulacion (#100). Son `t('…')` de verdad —`i18next-cli` las ve—, y
+  // estan aqui por lo mismo que las cuatro del catalogo: se dicen desde la costura y no desde una
+  // definicion, asi que `catalogoDeClaves()` no las puede derivar. El DETALLE no esta y no puede
+  // estar: es lo que dijo el backend, palabra por palabra (ADR-0044).
+  'Su cuenta no puede anular este cobro',
+  'Ese recibo no existe en esta municipalidad',
+  'El estado de ese recibo ya no admite la anulación',
+  'La anulación no se pudo registrar tal como llegó',
+  'No se pudo anular el cobro',
+  'Ese recibo lo cobró otro cajero, y anularlo toca el arqueo de su turno: lo autoriza quien responde por la caja.',
+  'Vuelva a abrir el recibo: lo que se ve puede ser anterior a lo que pasó.',
+  'Corrija lo escrito y vuelva a enviarlo.',
+  'Compruebe la conexión con el sistema de caja y vuelva a intentarlo.',
+  'El sistema de caja no contestó a la anulación.',
 ] as const;
 
 /** Lo que el plural tiene que decir, que es lo unico que no puede ser su clave. */

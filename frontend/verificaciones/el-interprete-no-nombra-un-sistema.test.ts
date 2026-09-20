@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ARBOL } from '../src/pantallas/arbol.ts';
+import { ARBOL, accionesDe } from '../src/pantallas/arbol.ts';
+import type { Modulo } from '../src/pantallas/tipos.ts';
 
 /**
  * **El interprete de `@kamayuk/ui` no nombra la ventanilla** (#74; en `rentas` desde #88).
@@ -51,6 +52,16 @@ const PROHIBIDO: readonly { readonly que: string; readonly patron: RegExp }[] = 
   ...ARBOL.flatMap((m) =>
     m.hojas.map((h) => ({ que: `la clave de hoja «${h.clave}»`, patron: new RegExp(`['"\`]${escapar(h.clave)}['"\`]`) })),
   ),
+  // Y las claves de acto (#100): `abre`, la `clave` del acto y lo que `<Pantalla actos>` atiende
+  // son la misma cadena, y es de este sistema. El interprete la recibe; no la conoce.
+  ...(ARBOL as readonly Modulo[]).flatMap((m) =>
+    m.hojas.flatMap((h) =>
+      accionesDe(h).map((a) => ({
+        que: `la clave de acto «${a.clave}»`,
+        patron: new RegExp(`['"\`]${escapar(a.clave)}['"\`]`),
+      })),
+    ),
+  ),
   { que: 'el prefijo de la API de un sistema', patron: /\/(rentas|catastro|caja|normativa|identidad)\/api/i },
   { que: 'el global de configuracion de un sistema', patron: /__KAMAYUK_[A-Z]+__/ },
   {
@@ -71,7 +82,7 @@ describe('el interprete no nombra un sistema', () => {
     // vacia y pasando en verde — que es como una guarda se queda sin sujeto sin que nadie la
     // borre. Ya paso en este repositorio con el artboard (#78).
     expect(ARCHIVOS.length, 'no se leyo ni un archivo del interprete').toBeGreaterThanOrEqual(6);
-    // Un modulo + un codigo + siete hojas + las tres estructurales.
+    // Un modulo + un codigo + seis hojas + una clave de acto + las tres estructurales (#100).
     expect(PROHIBIDO.length, 'la lista prohibida vino vacia').toBeGreaterThanOrEqual(12);
   });
 

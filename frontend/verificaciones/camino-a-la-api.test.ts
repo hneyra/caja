@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PROHIBICIONES } from '../eslint.prohibiciones.mjs';
 import { PREFIJO as RAIZ } from '../src/api/cliente.ts';
+import { RUTA_DE_LA_ANULACION, rutaDeLaAnulacion } from '../src/datos/laAnulacion.ts';
 import { RUTAS, rutaDelDuplicado } from '../src/datos/lecturas.ts';
 import configuracion from '../vite.config.ts';
 import { mapeosDelDirectorio } from './controladores.ts';
@@ -191,6 +192,37 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     expect(Object.keys(RUTAS).filter((k) => !(k in { sesion: 1, municipalidadDeLaSesion: 1, modulos: 1, accesos: 1, permisosDeLaSesion: 1 })).sort()).toEqual(
       [...LECTURAS_DE_DATOS].sort(),
     );
+  });
+
+  /**
+   * **`RUTAS` es lo que se LEE, y por eso la escritura no vive ahi** (#100, ADR-0044).
+   *
+   * Metida ahi, la lista dejaria de poder afirmar «todas son `GET`» y la prueba de abajo —que las
+   * recorre una a una— tendria que ganar una excepcion. Una excepcion en una lista es donde acaba
+   * escondiendose la segunda.
+   */
+  it('y NINGUNA entrada de `RUTAS` escribe: la unica escritura vive aparte', () => {
+    const publicados = new Set(mapeos.filter((m) => m.verbo === 'GET').map((m) => m.ruta));
+    const queEscriben = LECTURAS_DE_DATOS.filter((clave) => !publicados.has(RUTAS[clave].split('?')[0] ?? ''));
+    expect(queEscriben).toEqual([]);
+    expect(Object.values(RUTAS)).not.toContain(RUTA_DE_LA_ANULACION);
+  });
+
+  /**
+   * **La unica escritura existe, es un `POST`, y la compone quien dice componerla** (#100).
+   *
+   * Es el mismo criterio que la lectura del duplicado: se mira el mapeo de verdad —su verbo, su
+   * controlador y su privilegio— y no solo la cadena. Una ruta que el backend renombrara dejaria a
+   * la ventanilla mandando la anulacion a un 404 **despues** de confirmar un acto irreversible.
+   */
+  it('la anulacion es un `POST` que el nucleo publica, y la ruta se compone sin ninguna busqueda', () => {
+    const suyas = mapeos.filter((m) => m.ruta === RUTA_DE_LA_ANULACION);
+    expect(suyas.map((m) => [m.verbo, m.controlador, m.privilegio])).toEqual([
+      ['POST', 'ReciboController', 'ELIMINACION'],
+    ]);
+    expect(rutaDeLaAnulacion('001-000123')).toBe('/cobros/001-000123/anulacion');
+    // Y una serie con una barra dentro no parte la ruta en dos.
+    expect(rutaDeLaAnulacion('001/A-9')).toBe('/cobros/001%2FA-9/anulacion');
   });
 
   it.each(LECTURAS_DE_DATOS)('RUTAS.%s es un `GET` sin `params` que el nucleo publica', (clave) => {

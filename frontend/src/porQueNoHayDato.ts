@@ -20,9 +20,18 @@ import type { Hoja, Operacion } from './pantallas/tipos.ts';
  *   · **La hoja lee de operaciones servidas y todavia no las pide.** Es cuestion de conectarla.
  *     Desde #84 las seis que leen tienen conector (`datos/conectores.ts`), asi que este caso solo
  *     lo alcanzaria una hoja nueva que llegara sin el: se queda para que esa hoja lo diga.
- *   · **La hoja solo escribe.** Ninguna lectura que pedir, y esta interfaz no escribe todavia
- *     (ADR-0040). Decir aqui «sin conectar» haria creer que falta un conector, y no falta: falta
- *     una decision.
+ *   · **La hoja solo escribe.** Ninguna lectura que pedir. Decir aqui «sin conectar» haria creer
+ *     que falta un conector, y no falta: no hay nada que pedir.
+ *
+ * <h2>Hoy NINGUNA hoja cae en el segundo, y se queda escrito (#100)</h2>
+ *
+ * Lo cumplia `anulacion-recibo`, y **dejo de ser una hoja**: ADR-0044 movio anular a una accion de
+ * `duplicado-recibo`, donde el recibo ya esta elegido. Las seis que quedan leen.
+ *
+ * El caso no se retira por eso. Retirarlo dejaria a la hoja siguiente que solo escriba diciendo
+ * «esta pantalla todavia no pide», que manda a buscar un conector que no falta — y ese es
+ * exactamente el error que esta funcion existe para no cometer. Lo ejerce su prueba, con una hoja
+ * de mentira: lo que aqui se decide es una regla sobre hojas, no sobre las seis de hoy.
  */
 
 /** Las operaciones de una hoja con las que se puede dibujar algo. */
@@ -42,8 +51,8 @@ const SIN_PEDIR: Ausencia = {
 const SOLO_ESCRIBE: Ausencia = {
   enElCampo: 'sin lectura',
   explicacion:
-    'Esta pantalla no tiene nada que leer: lo único que hace es registrar, y la ventanilla se conectó ' +
-    'para leer. Registrar desde aquí llega con su propia decisión (ADR-0040).',
+    'Esta pantalla no tiene nada que leer: lo único que hace es registrar. No le falta ningún ' +
+    'conector, así que no hay nada que esperar aquí.',
   tono: 'info',
 };
 

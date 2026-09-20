@@ -3,6 +3,7 @@ import {
   coordenada,
   type Ausencia,
   type Coordenada,
+  type DatoConNombre,
   type DatosDeUnaTabla,
   type EnLaRuta,
   type EstadoDeUnaLectura,
@@ -12,8 +13,10 @@ import { peldanoDe } from '@kamayuk/sesion';
 import { ErrorDeLaApi } from '../api/cliente.ts';
 import type { ClaveDeHoja } from '../pantallas/arbol.ts';
 import {
+  ESTADO_DEL_RECIBO,
   LECTURA_DE_LA_CONCILIACION,
   NUMERO_DE_LA_FILA,
+  NUMERO_DEL_RECIBO,
   TABLA_DE_LINEAS,
   TABLA_DE_RECIBOS,
 } from '../pantallas/definiciones/tesoreria.ts';
@@ -99,6 +102,17 @@ export interface Reparto {
   readonly conteos: ReadonlyMap<number, string>;
   /** Los campos que esta lectura NO trae, con la palabra que va en su hueco. */
   readonly sinDato: ReadonlyMap<Coordenada, string>;
+  /**
+   * **Lo que la respuesta dice y las piezas leen por su nombre** (#100).
+   *
+   * Lo miran `impedida` y las plantillas de un `Texto`, que es como la accion de anular sabe sobre
+   * que recibo actuaria y si ese recibo ya esta anulado. Va aparte de `valores` a proposito: un
+   * valor es lo que se PINTA en un campo, y esto es lo que se LEE para decidir —el estado del
+   * recibo se pinta ademas en su campo, y el numero viaja sin pintarse dos veces—.
+   *
+   * Los nombres viven en `definiciones/tesoreria.ts`, con la definicion que los nombra.
+   */
+  readonly nombrados?: ReadonlyMap<string, DatoConNombre>;
   /**
    * Lo que se dice arriba de la pantalla **para esta respuesta**, cuando el porque de los huecos
    * depende de lo que llego. Ausente cuando no depende, y entonces manda `Conector.ausencia`.
@@ -440,6 +454,10 @@ function conElDuplicado(duplicado: DuplicadoDeUnRecibo): Aporte {
       ]),
       conteos: new Map(),
       sinDato: new Map(),
+      // Lo que el backend deriva del movimiento de anulacion. Lo lee el ultimo impedimento de la
+      // accion: un recibo ya anulado no se anula dos veces, y decirlo antes de abrir el acto
+      // ahorra rellenarlo para recibir un 409.
+      nombrados: new Map([[ESTADO_DEL_RECIBO, duplicado.estado]]),
     },
     ausencia: SIN_HUECOS,
   };
@@ -508,6 +526,9 @@ const DUPLICADO_RECIBO: Conector = {
     ]),
     conteos: new Map(),
     sinDato: new Map(),
+    // Sobre que recibo se esta mirando el detalle, para la accion de anular (#100). Sale de la
+    // RUTA y no de la lista: es lo que sobrevive a una recarga, y lo que el acto recibe en `con`.
+    nombrados: elegido === undefined || elegido === null ? new Map() : new Map([[NUMERO_DEL_RECIBO, elegido]]),
   }),
   ausencia: ELIJA_UN_RECIBO,
   deLoElegido: EL_RECIBO_ELEGIDO,

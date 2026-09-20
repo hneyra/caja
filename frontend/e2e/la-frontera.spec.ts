@@ -9,7 +9,7 @@ import { abrir, conLaSeguridadContestada } from './instalacion.ts';
  *
  * ADR-0042 decide que la interfaz de `caja` habla con `/caja/api/v1` y con el emisor, y con ningun
  * otro sistema. Lo vigilan tambien el codigo (`verificaciones/la-frontera-de-caja.test.ts`) y el
- * paquete (el `Dockerfile`); esto mira **lo que el navegador pide de verdad** al recorrer las siete
+ * paquete (el `Dockerfile`); esto mira **lo que el navegador pide de verdad** al recorrer las seis
  * hojas, que es donde una llamada fuera de la frontera hace su dano: con `rentas` apagado.
  *
  * Es la heredera de `cero-red.mjs` de la maqueta V6, que media cero peticiones de conexion. Ya no
@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
   await conLaSeguridadContestada(page);
 });
 
-test('recorriendo las siete hojas, ninguna peticion sale del propio origen ni de `/caja/`', async ({ page }) => {
+test('recorriendo las seis hojas, ninguna peticion sale del propio origen ni de `/caja/`', async ({ page }) => {
   const origen = new URL(URL_DEL_ARNES).origin;
   const fuera: string[] = [];
   const deOtroSistema: string[] = [];
@@ -31,7 +31,7 @@ test('recorriendo las siete hojas, ninguna peticion sale del propio origen ni de
   });
 
   const hojas = ARBOL.flatMap((modulo) => modulo.hojas);
-  expect(hojas).toHaveLength(7);
+  expect(hojas).toHaveLength(6);
   for (const hoja of hojas) {
     await abrir(page, hoja.clave);
     await expect(page.getByRole('heading', { level: 1, name: hoja.rotulo })).toBeVisible();

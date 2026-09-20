@@ -24,11 +24,17 @@ import type { AccesoDelSistema, ModuloDelSistema, PermisosDeLaSesion } from './d
  *
  * <h2>Cuando se ofrece una hoja</h2>
  *
- * Cuando su acceso esta publicado y activo bajo un modulo activo, **y la cuenta tiene al menos un
- * privilegio sobre el**. No se exige `lectura`: «Anulación de recibo» solo escribe y pide
- * `eliminacion`, y exigir `lectura` la esconderia a quien si puede anular. Una hoja ofrecida a quien
- * no puede leer sus datos no miente: su pantalla dice «sin acceso» donde iria el dato, que es lo que
- * el guardia del backend contesta.
+ * Cuando **alguno** de sus accesos esta publicado y activo bajo un modulo activo, **y la cuenta
+ * tiene al menos un privilegio sobre el**. Dos cosas, y las dos son decisiones:
+ *
+ *   · **Alguno, y no el suyo.** Desde #100 una hoja puede servir mas de un acceso —`duplicado-recibo`
+ *     sirve tambien `anulacion_recibo`, con su accion de anular—, y exigir el propio dejaria a quien
+ *     solo puede anular sin la unica pantalla donde se anula. Que es exactamente el defecto que #100
+ *     cerro: una cuenta con `anulacion_recibo` y nada mas entraba a un arbol de una sola hoja muda.
+ *   · **Basta UN privilegio, no `lectura`.** Anular pide `eliminacion`, y exigir `lectura` esconderia
+ *     la hoja a quien si puede anular. Una hoja ofrecida a quien no puede leer sus datos no miente:
+ *     su pantalla dice «sin acceso» donde iria el dato —que es lo que el guardia del backend
+ *     contesta— y la accion de anular lo dice tambien, en el motivo de su boton.
  *
  * <h2>El rotulo del modulo es el del BACKEND</h2>
  *
@@ -43,7 +49,7 @@ export interface CatalogoCompuesto {
   readonly catalogo: Catalogo;
   /** Los modulos que el backend publica y el arbol de esta ventanilla no tiene. */
   readonly sinCatalogo: readonly string[];
-  /** Los accesos del arbol que la cuenta no puede abrir. */
+  /** Los accesos del arbol que la cuenta no puede abrir. Uno por acceso, no uno por hoja (#100). */
   readonly sinPermiso: readonly string[];
 }
 
@@ -61,7 +67,7 @@ function loQuePuedeHacer(permisos: PermisosDeLaSesion): ReadonlySet<string> {
  *
  * @param nuestro el catalogo entero de la ventanilla, ya en la forma de `@kamayuk/shell`
  * @param codigoDe el codigo de modulo de cada entrada del catalogo
- * @param accesoDe el codigo de acceso de cada destino, por su clave
+ * @param accesosDe los codigos de acceso que cada destino sirve, por su clave (#100)
  */
 export function componer(
   nuestro: Catalogo,
@@ -69,7 +75,7 @@ export function componer(
   accesos: readonly AccesoDelSistema[],
   permisos: PermisosDeLaSesion,
   codigoDe: (modulo: ModuloDelCatalogo) => string,
-  accesoDe: (claveDelDestino: string) => string,
+  accesosDe: (claveDelDestino: string) => readonly string[],
 ): CatalogoCompuesto {
   const posibles = loQuePuedeHacer(permisos);
   const porCodigo = new Map(nuestro.map((m) => [codigoDe(m), m]));
@@ -91,10 +97,13 @@ export function componer(
       accesos.filter((a) => a.moduloId === modulo.id && a.activo).map((a) => a.codigo),
     );
     const destinos = nuestroModulo.destinos.filter((destino) => {
-      const acceso = accesoDe(destino.clave);
-      const ofrecido = publicados.has(acceso) && posibles.has(acceso);
-      if (!ofrecido) sinPermiso.push(acceso);
-      return ofrecido;
+      const suyos = accesosDe(destino.clave);
+      const abiertos = suyos.filter((acceso) => publicados.has(acceso) && posibles.has(acceso));
+      // Se cuenta acceso a acceso y no hoja a hoja: una hoja que se ofrece por uno de los dos deja
+      // el otro sin abrir igualmente, y esconderlo en el recuento haria que «lo que esta cuenta no
+      // puede» dejara de cuadrar con la matriz que el backend contesto.
+      sinPermiso.push(...suyos.filter((acceso) => !abiertos.includes(acceso)));
+      return abiertos.length > 0;
     });
 
     // Un modulo sin ninguna hoja que abrir no se dibuja: una rama vacia en el arbol invita a

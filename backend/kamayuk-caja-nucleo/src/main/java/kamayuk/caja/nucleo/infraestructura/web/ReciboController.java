@@ -119,6 +119,21 @@ public class ReciboController {
      * <p>El acceso es {@code duplicado_recibo} con {@code LECTURA} —la opcion del catalogo desde la
      * que se busca—, no {@code IMPRESION}: mirar la lista no emite ningun papel.
      *
+     * <p><b>Y desde #100 la abre tambien {@code anulacion_recibo}</b> (ADR-0044). Es el mismo caso
+     * que {@link CatalogoDeCajasController}: una lectura que dos opciones del catalogo necesitan
+     * por igual. Para anular un cobro hay que <b>encontrar el recibo y verlo</b> —ADR-0026 §4 y la
+     * regla 10 lo exigen: anular un numero tecleado a ciegas, sin haber visto su importe ni su
+     * pagador, es justo lo que no puede poder hacerse—, y sin esto la unica salida era otorgar
+     * {@code duplicado_recibo} entero, <b>en cada implantacion</b>, a quien solo tiene que anular.
+     *
+     * <p><b>Lo que esto NO arregla, dicho aqui para que nadie lo descubra tarde</b>: {@code
+     * oTambien} conserva el privilegio —{@code LECTURA} sobre la propia <b>o</b> {@code LECTURA}
+     * sobre la alternativa, ver {@code GuardiaDeAcceso}—, asi que una cuenta con {@code
+     * anulacion_recibo} y <b>solo</b> {@code ELIMINACION} sigue recibiendo 403 aqui. No es un
+     * olvido: relajarlo a «cualquier privilegio sobre la alternativa» convertiria {@code oTambien}
+     * en el modo permisivo que su propio javadoc dice que no es. Lo que corresponde con esa cuenta
+     * es otorgarle ademas {@code LECTURA} sobre su propia opcion, y la ventanilla se lo dice.
+     *
      * <p>Un pagador sin recibos devuelve una <b>pagina vacia</b> con {@code totalElementos: 0},
      * nunca un 404: buscar y no encontrar no es un error.
      *
@@ -130,7 +145,10 @@ public class ReciboController {
      * ventanilla lo hace de todas formas —viene una persona con un DNI, no con un codigo—.
      */
     @GetMapping("/recibos")
-    @RequiereAcceso(acceso = ACCESO_DUPLICADO, privilegio = Privilegio.LECTURA)
+    @RequiereAcceso(
+            acceso = ACCESO_DUPLICADO,
+            oTambien = {ACCESO_ANULACION},
+            privilegio = Privilegio.LECTURA)
     public RespuestaPaginada<ReciboEnListaResource> listar(
             @RequestParam(required = false) @Nullable String documento,
             @RequestParam(required = false) @Nullable String caja,
@@ -205,9 +223,17 @@ public class ReciboController {
      *
      * <p>Sin {@code formato}, la ruta devuelve el <b>contenido</b> del documento, que es lo que la
      * interfaz pinta —mismo criterio que {@code ReporteController} en catastro—. No escribe.
+     *
+     * <p><b>La abre tambien {@code anulacion_recibo}</b> (#100), por lo mismo que el listado y con
+     * el mismo limite: ver la ficha del recibo es parte de anularlo, y quien solo tiene la lista no
+     * ve ni el importe ni el desglose de lo que va a reversar. La del {@code ?formato=} de arriba
+     * <b>no</b>: reimprimir un papel no es parte de anular, y exige {@code IMPRESION}.
      */
     @GetMapping("/recibos/{nro}/duplicado")
-    @RequiereAcceso(acceso = ACCESO_DUPLICADO, privilegio = Privilegio.LECTURA)
+    @RequiereAcceso(
+            acceso = ACCESO_DUPLICADO,
+            oTambien = {ACCESO_ANULACION},
+            privilegio = Privilegio.LECTURA)
     public DuplicadoResource vistaPrevia(@PathVariable String nro) {
         return duplicados
                 .consultar(numeroDe(nro))

@@ -250,22 +250,82 @@ class ReciboControllerTest {
         // un listado que la perdiera heredaria la que hubiera y nadie lo diria hasta
         // integrar (#431, #489). Y el privilegio importa: mirar la lista no emite ningun
         // papel, imprimir el duplicado si.
-        kamayuk.caja.autorizacion.RequiereAcceso requisito =
-                ReciboController.class
-                        .getMethod(
-                                "listar",
-                                String.class,
-                                String.class,
-                                String.class,
-                                String.class,
-                                String.class,
-                                String.class,
-                                kamayuk.caja.web.ParametrosDePaginacion.class)
-                        .getAnnotation(kamayuk.caja.autorizacion.RequiereAcceso.class);
+        kamayuk.caja.autorizacion.RequiereAcceso requisito = requisitoDelListado();
 
         assertThat(requisito).isNotNull();
         assertThat(requisito.acceso()).isEqualTo("duplicado_recibo");
         assertThat(requisito.privilegio()).isEqualTo(Privilegio.LECTURA);
+    }
+
+    @Test
+    @DisplayName(
+            "#100 — el listado lo abre tambien anulacion_recibo: sin ver el recibo no se anula")
+    void elListadoLoAbreTambienLaAnulacion() throws Exception {
+        // La regla de ArchUnit ve la anotacion y no CUAL es, y de `oTambien` no sabe nada
+        // —el mismo hueco que `CatalogoDeCajasFronteraTest` cubre para las cajas—. Aqui es
+        // lo que decide si quien solo puede anular encuentra el recibo que va a anular, o
+        // si hay que otorgarle `duplicado_recibo` entero en cada implantacion.
+        assertThat(requisitoDelListado().oTambien())
+                .as(
+                        "para anular hay que encontrar el recibo y verlo (ADR-0026 §4, regla 10):"
+                                + " anular un numero tecleado a ciegas es lo que no puede poder"
+                                + " hacerse")
+                .containsExactly("anulacion_recibo");
+    }
+
+    @Test
+    @DisplayName("#100 — y la ficha del recibo tambien; la del ?formato= NO, que es IMPRESION")
+    void laFichaLaAbreTambienLaAnulacionYLaImpresaNo() throws Exception {
+        kamayuk.caja.autorizacion.RequiereAcceso ficha =
+                ReciboController.class
+                        .getMethod("vistaPrevia", String.class)
+                        .getAnnotation(kamayuk.caja.autorizacion.RequiereAcceso.class);
+        kamayuk.caja.autorizacion.RequiereAcceso impresa =
+                ReciboController.class
+                        .getMethod("duplicado", String.class, String.class, String.class)
+                        .getAnnotation(kamayuk.caja.autorizacion.RequiereAcceso.class);
+
+        assertThat(ficha).isNotNull();
+        assertThat(ficha.privilegio()).isEqualTo(Privilegio.LECTURA);
+        assertThat(ficha.oTambien()).containsExactly("anulacion_recibo");
+
+        assertThat(impresa).isNotNull();
+        assertThat(impresa.privilegio())
+                .as("reimprimir un papel es un acto, y no es parte de anular")
+                .isEqualTo(Privilegio.IMPRESION);
+        assertThat(impresa.oTambien())
+                .as(
+                        "compartirla dejaria a quien solo puede anular emitiendo papel, que es otra"
+                                + " opcion del catalogo y otro privilegio")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("#100 — y `oTambien` NO relaja el privilegio: sigue siendo LECTURA en las dos")
+    void laAlternativaNoRelajaElPrivilegio() throws Exception {
+        // Lo que esto mide es el LIMITE de la decision de #100, y esta escrito aqui para que
+        // nadie lo descubra tarde: una cuenta con `anulacion_recibo` y solo ELIMINACION sigue
+        // recibiendo 403 en esta lista. `GuardiaDeAcceso` pregunta por el MISMO privilegio en la
+        // opcion propia y en la alternativa —lo mide `GuardiaDeAccesoTest`, «la alternativa NO
+        // relaja el privilegio»—, asi que abrir la lista a esa cuenta exigiria un mecanismo nuevo
+        // y no este. Lo que corresponde es otorgarle tambien LECTURA sobre su propia opcion.
+        assertThat(requisitoDelListado().privilegio()).isEqualTo(Privilegio.LECTURA);
+    }
+
+    /** La anotacion del listado, que tres pruebas leen. Su firma es larga: se escribe una vez. */
+    private static kamayuk.caja.autorizacion.RequiereAcceso requisitoDelListado()
+            throws NoSuchMethodException {
+        return ReciboController.class
+                .getMethod(
+                        "listar",
+                        String.class,
+                        String.class,
+                        String.class,
+                        String.class,
+                        String.class,
+                        String.class,
+                        kamayuk.caja.web.ParametrosDePaginacion.class)
+                .getAnnotation(kamayuk.caja.autorizacion.RequiereAcceso.class);
     }
 
     @Test

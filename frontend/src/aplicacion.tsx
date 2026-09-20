@@ -13,6 +13,7 @@ import { PantallaDelSistema } from './pantallas/PantallaDelSistema.tsx';
 import type { ClaveDeHoja } from './pantallas/arbol.ts';
 import { pantallaDe } from './pantallas/definiciones/index.ts';
 import { useDatosDeLaHoja } from './datos/useDatosDeLaHoja.ts';
+import { useLaAnulacion } from './datos/useLaAnulacion.ts';
 import type { FallaDeLaPuerta } from './api/identidad.ts';
 import { abrirLaCuenta, salir } from './api/identidad.ts';
 import { fallaDeLaPuerta } from './arranque.ts';
@@ -37,9 +38,10 @@ import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
  *   `GET /seguridad/sesion` y `GET /seguridad/sesion/municipalidad` de su propio backend
  *   (ADR-0042). Ver `datos/useCuentaDeLaSesion.ts`.
  * · **El catalogo se filtra hoja por hoja**, no por modulo: ver `permisos.ts`.
- * · **Seis pantallas leen** desde #84 (`datos/conectores.ts`) y la que solo escribe dice por que no
- *   tiene nada que leer (`porQueNoHayDato.ts`). Y **ninguna escribe**, por ADR-0040: el pie solo
- *   ofrece exportar e imprimir, e imprimir imprime.
+ * · **Las seis pantallas leen** desde #84 (`datos/conectores.ts`), y desde #100 **una escribe**: la
+ *   anulacion de un cobro, como accion del recibo elegido (ADR-0044). No pasa por el pie —que sigue
+ *   ofreciendo exportar e imprimir, e imprimir imprime—: la escribe un acto, con su observacion
+ *   obligatoria, y quien la atiende es `datos/useLaAnulacion.ts`.
  *
  * <h2>El menu de sesion: las cuatro opciones hacen algo, y dos de ellas se van de aqui</h2>
  *
@@ -136,12 +138,17 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
   // pantalla** cuando llega su respuesta, y no el armazon entero.
   const hoja = useHoja();
   const navegacion = useNavegacion();
+  const datos = useDatosDeLaHoja(clave, hoja.ruta);
+  // Lo que la hoja escribe (#100): quien atiende el acto, lo que la sesion puede —que es lo que
+  // decide si la accion se puede pulsar y con que motivo si no— y el rechazo del backend si lo hubo.
+  const anulacion = useLaAnulacion(clave);
   return (
     <PantallaDelSistema
       definicion={pantallaDe(clave)}
-      datos={useDatosDeLaHoja(clave, hoja.ruta)}
+      datos={anulacion.conLaSesion(datos)}
       hoja={hoja}
       navegacion={navegacion}
+      actos={anulacion.actos}
     />
   );
 }

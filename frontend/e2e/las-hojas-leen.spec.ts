@@ -151,6 +151,7 @@ test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja sus
 });
 
 /**
+/**
  * **La conciliacion del dia: elegirlo, pedirlo y leerlo, en un navegador de verdad** (#98).
  *
  * <h2>Por que este camino tiene que estar aqui y no puede quedarse en jsdom</h2>
@@ -202,4 +203,68 @@ test('«cierre-caja» no concilia hasta que se elige un dia, y entonces lo pide 
   await expect(page.getByRole('row').filter({ hasText: 'rentas' }).filter({ hasText: 'NO CUADRA' })).toContainText(
     'S/ 1,842.60',
   );
+});
+
+/**
+ * **Anular es una accion del recibo elegido, y escribe de verdad** (#100, ADR-0044), en el navegador.
+ *
+ * `verificaciones/la-anulacion-es-una-accion.test.tsx` ya mide la costura en jsdom. Esto mide la
+ * cadena entera sobre el `dist/`: el boton se ve donde esta el recibo, la confirmacion se abre, y
+ * lo que sale al cable es **un** `POST` a su ruta con el cuerpo que el backend espera.
+ *
+ * Y mide una cosa que jsdom no puede: que el formulario **se vea** —con caja— dentro de la misma
+ * hoja, sin abandonar el recibo que se esta mirando.
+ */
+test('«duplicado-recibo»: el recibo elegido se anula desde aqui, con su confirmacion', async ({ page }) => {
+  await contestaLosDatos(page);
+  const escritas: { url: string; cuerpo: unknown }[] = [];
+  await page.route('**/caja/api/v1/cobros/**/anulacion', async (ruta) => {
+    escritas.push({ url: new URL(ruta.request().url()).pathname, cuerpo: ruta.request().postDataJSON() });
+    await ruta.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ numero: '001-000123', estado: 'ANULADO' }),
+    });
+  });
+  await abrir(page, 'duplicado-recibo/001-000123');
+
+  const anular = page.locator('[data-accion="abre:anular-el-recibo"]');
+  await expect(anular).toBeVisible();
+  // Se ve de verdad: con caja. Un boton de altura cero tiene su DOM perfecto y no se pulsa.
+  expect((await anular.boundingBox())?.height ?? 0).toBeGreaterThan(10);
+  await expect(anular, 'con el recibo elegido y el privilegio, se puede pulsar').not.toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+
+  await anular.click();
+  const acto = page.locator('[data-acto="anular-el-recibo"]');
+  await expect(acto).toBeVisible();
+  // El formulario dice sobre QUE recibo se actua, y la lista de arriba sigue donde estaba.
+  await expect(acto).toContainText('001-000123');
+  await expect(page.getByRole('row').filter({ hasText: '001-000123' }).first()).toBeVisible();
+
+  const primario = acto.locator('button[type="submit"]');
+  await expect(primario, 'nace impedido: faltan el motivo y la observacion (regla 10)').toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+
+  await page.getByLabel(/Motivo/).fill('Cobro duplicado del mismo recibo');
+  await page.getByLabel(/Observación/).fill('Se anula a pedido de tesorería');
+  await expect(primario).not.toHaveAttribute('aria-disabled', 'true');
+  expect(escritas, 'nada se ha escrito: no se ha confirmado').toEqual([]);
+
+  await primario.click();
+  await expect(page.getByText(/Esto no se deshace/)).toBeVisible();
+  expect(escritas, 'abrir la confirmacion no escribe nada').toEqual([]);
+  await page.getByRole('button', { name: /confirmar/i }).click();
+
+  await expect(page.getByText('El cobro quedó anulado')).toBeVisible();
+  expect(escritas).toHaveLength(1);
+  expect(escritas[0]?.url).toBe('/caja/api/v1/cobros/001-000123/anulacion');
+  expect(escritas[0]?.cuerpo).toEqual({
+    motivo: 'Cobro duplicado del mismo recibo',
+    observacion: 'Se anula a pedido de tesorería',
+  });
 });

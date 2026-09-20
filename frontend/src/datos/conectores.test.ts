@@ -3,8 +3,8 @@ import { coordenada, type Coordenada } from '@kamayuk/ui';
 import { describe, expect, it } from 'vitest';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
-import { ARBOL, hojaDe, type ClaveDeHoja } from '../pantallas/arbol.ts';
-import { pantallaDe } from '../pantallas/definiciones/index.ts';
+import { ARBOL, CLAVES_DE_HOJA, hojaDe, type ClaveDeHoja } from '../pantallas/arbol.ts';
+import { bloquesDe, pantallaDe } from '../pantallas/definiciones/index.ts';
 import {
   NUMERO_DE_LA_FILA,
   TABLA_DE_LINEAS,
@@ -78,13 +78,16 @@ describe('que hoja pide', () => {
     expect(Object.keys(RESPUESTAS).sort()).toEqual(CONECTADAS.map(([c]) => c).sort());
   });
 
-  it('se conecta toda hoja que tiene algo que leer, y ninguna que solo escribe', () => {
+  it('se conecta toda hoja que tiene algo que leer, y desde #100 las seis lo tienen', () => {
     const conLecturas = ARBOL.flatMap((m) => m.hojas)
       .filter((h) => lecturasDe(h).length > 0)
       .map((h) => h.clave)
       .sort();
     expect(CONECTADAS.map(([c]) => c).sort()).toEqual(conLecturas);
-    expect(CONECTORES['anulacion-recibo']).toBeUndefined();
+    // Hasta #100 sobraba una: `anulacion-recibo` no tenia ni una lectura que pedir, y por eso
+    // dejo de ser una hoja. Lo que se comprueba ahora es lo contrario —que no quede ninguna sin
+    // conector—, que es lo que dice que el arbol y los conectores no se han desincronizado.
+    expect(CLAVES_DE_HOJA.filter((clave) => CONECTORES[clave] === undefined)).toEqual([]);
   });
 });
 
@@ -95,7 +98,8 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
   it('cada campo de solo lectura tiene dato O su palabra, nunca las dos ni ninguna', () => {
     const decididos = new Set<Coordenada>();
     const problemas: string[] = [];
-    definicion.bloques.forEach((bloque, b) => {
+    // Los BLOQUES, no las piezas: los campos de un acto los llena quien lo abre, no un reparto (#100).
+    bloquesDe(definicion).forEach((bloque, b) => {
       // Un bloque que depende de una LECTURA no dibuja sus campos hasta que ella contesta: sus
       // cuatro estados sustituyen al cuerpo (#98). Sus campos no son huecos que decidir, y lo que
       // los llena cuando la lectura contesta se mide aparte, mas abajo.
@@ -123,7 +127,7 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
 
   it('cada fila tiene tantas celdas como columnas su tabla, y solo hay filas donde hay tabla', () => {
     for (const [b, filas] of reparto.filas) {
-      const tabla = definicion.bloques[b]?.tabla;
+      const tabla = bloquesDe(definicion)[b]?.tabla;
       expect(tabla, `el bloque ${String(b)} no tiene tabla`).toBeDefined();
       for (const fila of filas) expect(fila).toHaveLength(tabla?.columnas.length ?? -1);
     }
@@ -131,7 +135,7 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
 
   it('y lo mismo las tablas con nombre: el nombre es el de una tabla de esta pantalla', () => {
     const porClave = new Map(
-      definicion.bloques.flatMap((bloque) =>
+      bloquesDe(definicion).flatMap((bloque) =>
         bloque.tabla?.clave === undefined ? [] : [[bloque.tabla.clave, bloque.tabla] as const],
       ),
     );
