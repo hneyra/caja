@@ -2,6 +2,7 @@ import type { Catalogo, ModuloDelCatalogo } from '@kamayuk/shell';
 import { seEscribe, tipoDe } from '@kamayuk/ui';
 
 import { ARBOL, type ClaveDeHoja } from './pantallas/arbol.ts';
+import type { Modulo } from './pantallas/tipos.ts';
 import { pantallaDe } from './pantallas/definiciones/index.ts';
 
 /**
@@ -42,7 +43,7 @@ export const ACCESO_POR_DESTINO: ReadonlyMap<string, string> = new Map(
   ARBOL.flatMap((modulo) => modulo.hojas.map((hoja) => [hoja.clave, hoja.acceso] as const)),
 );
 
-export const CATALOGO: Catalogo = ARBOL.map(
+export const CATALOGO: Catalogo = (ARBOL as readonly Modulo[]).map(
   (modulo): ModuloDelCatalogo => ({
     clave: modulo.slug,
     rotulo: modulo.rotulo,
@@ -51,10 +52,14 @@ export const CATALOGO: Catalogo = ARBOL.map(
     destinos: modulo.hojas.map((hoja) => ({
       clave: hoja.clave,
       rotulo: hoja.rotulo,
-      seEscribe: laHojaSeEscribe(hoja.clave),
+      seEscribe: laHojaSeEscribe(hoja.clave as ClaveDeHoja),
       // Que hay que HACER aqui. Vive en la definicion de la pantalla y llega al marco por aqui,
       // porque el marco no puede saberla.
-      instruccion: pantallaDe(hoja.clave).instruccion,
+      instruccion: pantallaDe(hoja.clave as ClaveDeHoja).instruccion,
+      // Lo que la ruta de la hoja guarda (#99). Lo declara el arbol y aqui se copia: el marco
+      // ignora —con aviso— lo que el destino no declare, asi que una hoja que elige algo y no lo
+      // declara aqui lo pierde al recargar sin que nada lo diga.
+      ...(hoja.enLaRuta === undefined ? {} : { enLaRuta: hoja.enLaRuta }),
     })),
   }),
 );

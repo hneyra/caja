@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Armazon, type AccionesDelSistema } from '@kamayuk/shell';
+import { Armazon, useHoja, useNavegacion, type AccionesDelSistema } from '@kamayuk/shell';
 import { ProveedorDeTema, type ConfiguracionDeTema } from '@kamayuk/ui';
 
 import escudo from '../recursos/escudo-catacaos.png';
@@ -118,12 +118,27 @@ const ACCIONES: AccionesDelSistema = {
   },
 };
 
-/** El cuerpo de una pantalla: su definicion, y lo que se sepa de sus datos. */
+/**
+ * El cuerpo de una pantalla: su definicion, y lo que se sepa de sus datos.
+ *
+ * **La ruta de la hoja y la navegacion entran aqui** (#99), y no dentro del interprete: `useHoja()`
+ * y `useNavegacion()` revientan fuera de una pantalla del armazon, y aqui ya se esta dentro. La
+ * ruta es ademas lo que decide **que** pide la segunda lectura de una hoja que elige.
+ */
 function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
   // Un componente y no una funcion suelta: `useDatosDeLaHoja` es un gancho, y un gancho solo puede
   // llamarse desde un componente. Ademas esto es lo que hace que **solo se vuelva a pintar la
   // pantalla** cuando llega su respuesta, y no el armazon entero.
-  return <PantallaDelSistema definicion={pantallaDe(clave)} datos={useDatosDeLaHoja(clave)} />;
+  const hoja = useHoja();
+  const navegacion = useNavegacion();
+  return (
+    <PantallaDelSistema
+      definicion={pantallaDe(clave)}
+      datos={useDatosDeLaHoja(clave, hoja.ruta)}
+      hoja={hoja}
+      navegacion={navegacion}
+    />
+  );
 }
 
 /**

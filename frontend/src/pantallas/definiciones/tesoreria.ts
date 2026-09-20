@@ -27,6 +27,19 @@ import type { Pantalla } from '../tipos.ts';
  *
  * Toda cifra lleva su fecha al lado (regla 9): cada bloque con importes tiene su «A la fecha».
  */
+
+/**
+ * **El nombre de las dos tablas de `duplicado-recibo` y del dato con que se elige** (#99).
+ *
+ * Son nombres y no indices porque sus filas llevan mas que celdas —el numero con que el boton
+ * pide, la marca de estar elegida— y eso solo cabe en `DatosDeLaPantalla.tablas`. Viven aqui, con
+ * la definicion que los declara, y los lee `datos/conectores.ts` al llenarlas: escritos dos veces,
+ * una tabla se quedaria sin filas en silencio.
+ */
+export const TABLA_DE_RECIBOS = 'recibos';
+export const TABLA_DE_LINEAS = 'lineas';
+export const NUMERO_DE_LA_FILA = 'numero';
+
 export const TESORERIA = {
   'caja-tributaria': {
     instruccion:
@@ -92,6 +105,7 @@ export const TESORERIA = {
         campos: [],
         tabla: {
           titulo: 'Recibos',
+          clave: TABLA_DE_RECIBOS,
           columnas: [
             { rotulo: 'Número', alineadoDerecha: false },
             { rotulo: 'Emitido', alineadoDerecha: false },
@@ -105,6 +119,21 @@ export const TESORERIA = {
           columnaDeInsignia: 7,
           vacio: 'Ningún recibo coincide.',
           nota: 'El importe es el del recibo a la fecha de su emisión: un recibo no se recalcula.',
+          // **La fila se elige aquí** (#99). La acción no abre ningún formulario y no escribe: lleva
+          // a esta misma hoja con el número del recibo en el sujeto de la ruta, y es leyendo esa
+          // ruta como el bloque de abajo pide `GET /recibos/{nro}/duplicado`. Al ser un botón, se
+          // pulsa con el ratón y se llega a él con el tabulador, sin teclas propias que aprender.
+          accionesPorFila: {
+            columna: 'Duplicado',
+            acciones: [
+              {
+                clave: 'ver-el-duplicado',
+                rotulo: 'Ver el duplicado',
+                va: { hoja: 'duplicado-recibo', sujeto: { desde: NUMERO_DE_LA_FILA } },
+              },
+            ],
+            sinAcciones: 'Sin acciones',
+          },
         },
       },
       {
@@ -122,12 +151,15 @@ export const TESORERIA = {
         ],
         tabla: {
           titulo: 'Líneas del recibo',
+          clave: TABLA_DE_LINEAS,
           columnas: [
             { rotulo: 'Concepto', alineadoDerecha: false },
             { rotulo: 'Cantidad', alineadoDerecha: true },
             { rotulo: 'Precio unitario S/', alineadoDerecha: true },
             { rotulo: 'Monto S/', alineadoDerecha: true },
           ],
+          vacio: 'Este recibo no tiene ninguna línea.',
+          nota: 'La cantidad y el precio unitario sólo los tiene una tasa: en una línea de tributo llegan vacíos, y se marcan.',
         },
       },
     ],

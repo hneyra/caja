@@ -90,6 +90,68 @@ export interface ReciboEnLista {
   readonly estado: string;
 }
 
+/**
+ * `ReciboResource.LineaResource`: una linea del desglose congelado del recibo.
+ *
+ * **`cantidad` y `precioUnitario` llegan nulos cuando la linea no es una tasa**, y el backend lo
+ * dice en su javadoc. Se marcan, no se sustituyen por un cero: en una linea de tributo no hay
+ * ninguna cantidad que cobrar, y un `0` ahi seria una cifra que nadie calculo.
+ *
+ * Los cinco importes van cada uno con su fecha (regla 9). La ventanilla ensena `monto` —«el total
+ * de la linea: la suma de las cuatro partes»— y no vuelve a sumarlas aqui.
+ */
+export interface LineaDelRecibo {
+  readonly tributo: string;
+  readonly concepto: string;
+  readonly ejercicio: number | null;
+  readonly predioId: number | null;
+  readonly vehiculoId: number | null;
+  readonly cantidad: number | null;
+  readonly precioUnitario: ImporteActualizado | null;
+  readonly insoluto: ImporteActualizado;
+  readonly reajuste: ImporteActualizado;
+  readonly interes: ImporteActualizado;
+  readonly gasto: ImporteActualizado;
+  readonly monto: ImporteActualizado;
+}
+
+/** `ReciboResource`: el recibo emitido, con su desglose. `emitidoEn` es un instante en UTC. */
+export interface ReciboEmitido {
+  readonly numero: string;
+  readonly serie: string;
+  readonly correlativo: number;
+  readonly cajero: string;
+  readonly formaDePago: string;
+  readonly tipoDePago: string;
+  readonly beneficioDeclarado: string | null;
+  readonly emitidoEn: string;
+  readonly total: ImporteActualizado;
+  readonly lineas: readonly LineaDelRecibo[];
+}
+
+/** `DuplicadoResource.AnulacionBreve`: el acta, si la hubo. */
+export interface AnulacionDelRecibo {
+  readonly fecha: string;
+  readonly motivo: string;
+  readonly usuario: string | null;
+}
+
+/**
+ * `DuplicadoResource`: la vista previa de un recibo antes de reimprimirlo.
+ *
+ * **Es la lectura pura**, `GET /recibos/{nro}/duplicado` **sin `?formato=`**: exige `LECTURA` sobre
+ * `duplicado_recibo` —el mismo acceso que la hoja— y no escribe nada. La otra, la que lleva
+ * `?formato=`, exige `IMPRESION` y **registra la reimpresion**: no esta en el arbol y no se pide.
+ *
+ * `estado` se deriva del movimiento de anulacion y no de ninguna columna: lo dice `DuplicadoResource`.
+ */
+export interface DuplicadoDeUnRecibo {
+  readonly estado: string;
+  readonly duplicados: number;
+  readonly anulacion: AnulacionDelRecibo | null;
+  readonly recibo: ReciboEmitido;
+}
+
 /** `PagoController.PagoResource`: un pago del buzon de salida. */
 export interface PagoDelBuzon {
   readonly pagoId: string;
@@ -169,10 +231,26 @@ export const RUTAS = {
   // y con el tamano por omision la tabla perderia las que pasan de veinte sin decirlo.
   cajas: '/cajas?tamano=200',
   recibos: '/recibos',
+  // Con la variable entre llaves, igual que la escribe su `@GetMapping` y que la declara el arbol:
+  // asi la guarda puede compararla sin conocer ningun numero. La compone `rutaDelDuplicado`.
+  duplicadoDeUnRecibo: '/recibos/{nro}/duplicado',
   pagosSinEntregar: '/pagos/sin-entregar',
   avanceDeRecaudacion: '/recaudacion/avance',
   recaudacionPorArea: '/recaudacion/por-area',
 } as const;
+
+/**
+ * La ruta del duplicado de un recibo, **sin `?formato=`** (#99).
+ *
+ * Ese parametro cambia de operacion: exige `IMPRESION` y registra la reimpresion (ADR-0040). Aqui
+ * no se anade nunca, y por eso esta funcion no admite ninguno.
+ *
+ * El numero se codifica: un `001-000123` no lo necesita, pero la serie la pone cada instalacion y
+ * un numero con una barra dentro partiria la ruta en dos.
+ */
+export function rutaDelDuplicado(numero: string): string {
+  return RUTAS.duplicadoDeUnRecibo.replace('{nro}', encodeURIComponent(numero));
+}
 
 /** El contenido de una pagina. Para los catalogos, que caben enteros en una. */
 export async function pedirLista<T>(ruta: string, senal?: AbortSignal): Promise<readonly T[]> {
