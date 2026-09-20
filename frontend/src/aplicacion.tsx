@@ -124,6 +124,11 @@ const ACCIONES: AccionesDelSistema = {
  * **La ruta de la hoja y la navegacion entran aqui** (#99), y no dentro del interprete: `useHoja()`
  * y `useNavegacion()` revientan fuera de una pantalla del armazon, y aqui ya se esta dentro. La
  * ruta es ademas lo que decide **que** pide la segunda lectura de una hoja que elige.
+ *
+ * Y va **a los dos lados** desde #98: al gancho, que lee de ella con que pedir, y al interprete,
+ * que es quien escribe en ella lo que se elige en un campo (`eleccion.enLaRuta`, `kamayuk-lib`#94).
+ * Que las dos cosas pasen por el mismo sitio es lo que hace que elegir un dia pida ese dia, sin
+ * ningun estado intermedio que mantener.
  */
 function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
   // Un componente y no una funcion suelta: `useDatosDeLaHoja` es un gancho, y un gancho solo puede

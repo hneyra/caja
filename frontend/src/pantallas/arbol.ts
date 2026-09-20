@@ -87,6 +87,10 @@ export const ARBOL = [
         clave: 'cierre-caja',
         rotulo: 'Cierre y arqueo de caja',
         acceso: 'cierre_caja',
+        // El dia que se concilia vive en la direccion (#98). Lo que no se declara aqui, el marco lo
+        // ignora con aviso al abrir la hoja: sin esta linea, elegir un dia no llegaria a la ruta y
+        // el bloque del cuadre se quedaria esperando para siempre.
+        enLaRuta: { parametros: ['fecha'] },
         operaciones: [
           { verbo: 'GET', ruta: '/turnos/del-dia', controlador: 'TurnoController' },
           { verbo: 'GET', ruta: '/turnos/{turnoId}/cierre', controlador: 'EstadoDelCierreController' },

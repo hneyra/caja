@@ -20,6 +20,7 @@ import i18n, { ABRE, CIERRA, IDIOMA_MARCADO, IDIOMA_POR_OMISION } from '../src/i
 import { MUNICIPALIDAD_MEDIDA, SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import {
   FRASES_DEL_INTERPRETE,
+  FRASES_DE_LAS_LECTURAS,
   FRASES_DEL_MARCO,
   useTextosDelInterprete,
   useTextosDelMarco,
@@ -380,12 +381,24 @@ describe('y el marco tampoco: las treinta y dos palabras del armazon (#133)', ()
     ).toEqual([]);
   });
 
-  it('y las tres del interprete de `@kamayuk/ui` tambien pasan por `t()`, incluida la del plural (#74)', () => {
+  it('y las del interprete de `@kamayuk/ui` tambien pasan por `t()`, incluida la del plural (#74) y las de una lectura (#98)', () => {
     const { result } = renderHook(() => useTextosDelInterprete());
-    expect(result.current.opcional.startsWith(ABRE)).toBe(true);
-    expect(result.current.marcadorDeFecha.startsWith(ABRE)).toBe(true);
-    expect(result.current.registros(2).startsWith(ABRE)).toBe(true);
-    expect(Object.keys(result.current).sort()).toEqual(Object.keys(FRASES_DEL_INTERPRETE).sort());
+    const marcada = (valor: string | undefined) => valor !== undefined && valor.startsWith(ABRE);
+    expect(marcada(result.current.opcional)).toBe(true);
+    expect(marcada(result.current.marcadorDeFecha)).toBe(true);
+    expect(marcada(result.current.registros?.(2))).toBe(true);
+    // Las cinco de una lectura (#98): sin ellas, la espera y el fallo de la conciliacion saldrian
+    // en castellano dentro de una pantalla traducida.
+    expect(marcada(result.current.pidiendo)).toBe(true);
+    expect(marcada(result.current.enEspera)).toBe(true);
+    expect(marcada(result.current.reintentar)).toBe(true);
+    expect(marcada(result.current.incidencia?.('K-1'))).toBe(true);
+    expect(marcada(result.current.lecturaSinEstado?.('conciliacion'))).toBe(true);
+    // El saco que se pasa es EXACTAMENTE el inventario: ni una clave que no este en el locale, ni
+    // una del locale que no se pase.
+    expect(Object.keys(result.current).sort()).toEqual(
+      [...Object.keys(FRASES_DEL_INTERPRETE), ...Object.keys(FRASES_DE_LAS_LECTURAS)].sort(),
+    );
   });
 
   it('LA APLICACION ENTERA no ensena una sola cadena sin traducir, marco incluido', async () => {

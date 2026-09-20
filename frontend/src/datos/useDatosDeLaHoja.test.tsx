@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TABLA_DE_LINEAS, TABLA_DE_RECIBOS } from '../pantallas/definiciones/tesoreria.ts';
 import {
   CIERRE_MEDIDO,
+  CONCILIACION_MEDIDA,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
@@ -246,5 +247,122 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
     expect(result.current.ausencia.tono).toBe('atencion');
     expect(result.current.tablas?.get(TABLA_DE_RECIBOS)?.filas).toHaveLength(2);
     expect(result.current.ausenciaPorCampo?.get(coordenada(1, 0))).toBe('no está');
+  });
+});
+
+/**
+ * **«cierre-caja»: el dia de la conciliacion sale de la ruta** (#98).
+ *
+ * La misma forma que el recibo de #99 —`deLoElegido`—, sobre la hoja que ademas **encadena** dentro
+ * de su primera lectura (#97). Lo que se mide es que las dos cosas conviven: el turno y su arqueo
+ * por un lado, la conciliacion del dia elegido por otro, **y que ninguna pisa a la otra**.
+ */
+describe('«cierre-caja»: la conciliacion se pide con el dia elegido, y no antes (#98)', () => {
+  const conLaConciliacion = (conciliacion: unknown = CONCILIACION_MEDIDA, estado = 200) => {
+    const pedidas: string[] = [];
+    const doble = vi.fn<typeof fetch>((entrada) => {
+      const url = String(entrada);
+      pedidas.push(url.replace('/caja/api/v1', ''));
+      if (url.includes('/conciliacion')) {
+        return Promise.resolve(new Response(JSON.stringify(conciliacion), { status: estado, headers: JSON_ }));
+      }
+      const clave = Object.keys(EL_CIERRE_ENTERO).find((final) => url.endsWith(final));
+      return Promise.resolve(
+        clave === undefined
+          ? new Response('{}', { status: 404, headers: JSON_ })
+          : new Response(JSON.stringify(EL_CIERRE_ENTERO[clave as keyof typeof EL_CIERRE_ENTERO]), {
+              status: 200,
+              headers: JSON_,
+            }),
+      );
+    });
+    vi.stubGlobal('fetch', doble);
+    return pedidas;
+  };
+
+  const sinFecha = { sujeto: null, parametros: {} };
+  const conFecha = { sujeto: null, parametros: { fecha: '2026-03-15' } };
+
+  it('SIN dia elegido no sale ninguna peticion de conciliacion, y su bloque dice que espera', async () => {
+    const pedidas = conLaConciliacion();
+    const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja', sinFecha), { wrapper: arnes() });
+
+    await waitFor(() => {
+      expect(result.current.filas?.get(1)).toHaveLength(1);
+    });
+    // Las tres de la primera tanda, y ni una mas: la conciliacion no se pide, porque no hay con que.
+    expect(pedidas.filter((p) => p.startsWith('/conciliacion'))).toEqual([]);
+    expect(result.current.lecturas?.get('conciliacion')).toEqual({ estado: 'en-espera' });
+    // Y no se pinta ningun cero: el cuadre del dia no tiene valor ninguno.
+    expect(result.current.valores?.get(coordenada(3, 0))).toBeUndefined();
+    expect(result.current.filas?.get(3)).toBeUndefined();
+  });
+
+  it('CON el dia elegido se pide con el, y la tabla se llena sin tocar el arqueo', async () => {
+    const pedidas = conLaConciliacion();
+    const { result } = renderHook(() => useDatosDeLaHoja('cierre-caja', conFecha), { wrapper: arnes() });
+
+    await waitFor(() => {
+      expect(result.current.lecturas?.get('conciliacion')).toEqual({ estado: 'con-datos' });
+    });
+    expect(pedidas).toContain('/conciliacion?fecha=2026-03-15');
+    expect(result.current.valores?.get(coordenada(3, 0))).toBe('NO CUADRA');
+    expect(result.current.filas?.get(3)).toHaveLength(2);
+    // Lo que trajo la primera lectura sigue donde estaba: las dos se unen, no se pisan.
+    expect(result.current.valores?.get(coordenada(0, 2)), 'recibos emitidos').toBe('12');
+    expect(result.current.filas?.get(1), 'los pagos que impiden cerrar').toHaveLength(1);
+  });
+
+  it('y la frase de arriba sigue siendo la del TURNO, que es de la otra lectura', async () => {
+    conLaConciliacion();
+    const { result } = renderHook(
+      () => useDatosDeLaHoja('cierre-caja', conFecha),
+      { wrapper: arnes() },
+    );
+    await waitFor(() => {
+      expect(result.current.lecturas?.get('conciliacion')).toEqual({ estado: 'con-datos' });
+    });
+    // Elegir un dia **no** borra el motivo por el que faltan los diez campos del arqueo (#97).
+    expect(result.current.ausencia.explicacion).toMatch(/turno abierto/);
+  });
+
+  it('una fecha mal escrita da 422, y lo dice sin tumbar el resto de la hoja', async () => {
+    conLaConciliacion(
+      { status: 422, codigo: 'VALIDACION', mensaje: "El parametro 'fecha' no es una fecha ISO: 15-03-2026" },
+      422,
+    );
+    const { result } = renderHook(
+      () => useDatosDeLaHoja('cierre-caja', { sujeto: null, parametros: { fecha: '15-03-2026' } }),
+      { wrapper: arnes() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.lecturas?.get('conciliacion')?.estado).toBe('fallo');
+    });
+    expect(result.current.lecturas?.get('conciliacion')).toMatchObject({
+      estado: 'fallo',
+      peldano: { detalle: "El parametro 'fecha' no es una fecha ISO: 15-03-2026" },
+      tono: 'atencion',
+    });
+    // El arqueo y los pagos siguen en pie: son otra lectura.
+    expect(result.current.filas?.get(1)).toHaveLength(1);
+    expect(result.current.valores?.get(coordenada(0, 2))).toBe('12');
+  });
+
+  it('cada dia es una consulta: cambiar de dia pide el nuevo', async () => {
+    const pedidas = conLaConciliacion();
+    const { result, rerender } = renderHook(
+      ({ ruta }: { ruta: typeof conFecha }) => useDatosDeLaHoja('cierre-caja', ruta),
+      { wrapper: arnes(), initialProps: { ruta: conFecha } },
+    );
+    await waitFor(() => {
+      expect(result.current.lecturas?.get('conciliacion')).toEqual({ estado: 'con-datos' });
+    });
+
+    rerender({ ruta: { sujeto: null, parametros: { fecha: '2026-03-16' } } });
+
+    await waitFor(() => {
+      expect(pedidas).toContain('/conciliacion?fecha=2026-03-16');
+    });
   });
 });

@@ -265,6 +265,40 @@ export interface FilaDePartida {
   readonly neto: ImporteActualizado;
 }
 
+/**
+ * `ConciliacionController.LineaResource`: un sistema de destino, en la conciliacion de un dia.
+ *
+ * **Los cinco nulos son deliberados del backend** y no un hueco de la forma: cuando el sistema de
+ * origen no contesto no hay cifra, y `porQueNoSeSabe` dice por que. Poner cero ahi se leeria como
+ * «no aplicaron nada», que es indistinguible de un dia sin cobros, y la conciliacion diria que
+ * cuadra. Lo escribe el javadoc del `Resource`, y aqui se conserva escribiendolos `| null`.
+ */
+export interface LineaDeConciliacion {
+  readonly sistema: string;
+  readonly registrados: number;
+  readonly anulados: number;
+  readonly enTransito: number;
+  readonly muertos: number;
+  readonly explicados: number;
+  readonly cobrado: ImporteActualizado;
+  readonly anulado: ImporteActualizado;
+  readonly neto: ImporteActualizado;
+  readonly recibidosEnElOrigen: number | null;
+  readonly aplicadosEnElOrigen: number | null;
+  readonly rechazadosEnElOrigen: number | null;
+  readonly importeAplicadoEnElOrigen: string | null;
+  readonly diferencia: string | null;
+  readonly porQueNoSeSabe: string | null;
+  readonly cuadra: boolean;
+}
+
+/** `ConciliacionController.ConciliacionResource`. `fecha` es el dia que se pidio, en ISO. */
+export interface ConciliacionDelDia {
+  readonly fecha: string;
+  readonly cuadra: boolean;
+  readonly lineas: readonly LineaDeConciliacion[];
+}
+
 /** `RecaudacionResource.Distribucion`. */
 export interface DistribucionDeRecaudacion {
   readonly desde: string;
@@ -306,6 +340,11 @@ export const RUTAS = {
   pagosSinEntregar: '/pagos/sin-entregar',
   avanceDeRecaudacion: '/recaudacion/avance',
   recaudacionPorArea: '/recaudacion/por-area',
+  // Sin `?fecha=`: la fecha la pone `rutaDeLaConciliacion()`, porque la elige quien mira. El
+  // parametro es **obligatorio** en el backend a proposito —una conciliacion que se responde sola
+  // con la fecha del reloj no es reproducible al dia siguiente, regla 6—, asi que aqui no hay valor
+  // por omision que poner. Ver `ConciliacionController`.
+  conciliacion: '/conciliacion',
 } as const;
 
 /**
@@ -324,6 +363,16 @@ export function rutaDelDuplicado(numero: string): string {
 /** `GET /turnos/{turnoId}/cierre` con su turno puesto. El identificador sale de `turnoDelDia`. */
 export function rutaDelCierre(turnoId: number): string {
   return RUTAS.cierreDelTurno.replace('{turnoId}', String(turnoId));
+}
+
+/**
+ * `GET /conciliacion?fecha=` con el dia puesto (#98).
+ *
+ * **La fecha va codificada**, aunque una fecha ISO no lleve nada que escapar: sale de la barra de
+ * direcciones, donde la puede escribir cualquiera, y lo que no se codifica aqui viaja crudo.
+ */
+export function rutaDeLaConciliacion(fecha: string): string {
+  return `${RUTAS.conciliacion}?fecha=${encodeURIComponent(fecha)}`;
 }
 
 /** El contenido de una pagina. Para los catalogos, que caben enteros en una. */
