@@ -5,10 +5,13 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.nucleo.dominio.EstadoDeTurno;
 import kamayuk.caja.nucleo.dominio.TipoDeMovimientoDeTurno;
+import kamayuk.caja.nucleo.dominio.TurnoConSuCaja;
 import kamayuk.caja.nucleo.dominio.TurnoDeCaja;
 import kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository;
 import kamayuk.caja.persistencia.RepositorioJdbc;
@@ -93,6 +96,42 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
                 .map(this::conSuEstado);
     }
 
+    /**
+     * Los turnos del cajero ese dia, con el rotulo de su ventanilla (#97).
+     *
+     * <p>El {@code JOIN} es <b>interno</b> y no izquierdo, al reves que el del catalogo de cajas:
+     * {@code cierre_caja.caja_id} es {@code NOT NULL} y apunta a una caja que existe, asi que aqui
+     * una fila sin ventanilla no seria un nulo legitimo que conservar sino una fila rota.
+     *
+     * <p>Se ordena por el codigo de la caja: {@code caja_codigo_uq} lo hace un orden total dentro
+     * de la municipalidad, de modo que dos lecturas seguidas dibujan las mismas ventanillas en el
+     * mismo sitio. Sin orden explicito, el cajero con turno en dos ventanillas las veria bailar.
+     *
+     * <p>Ningun {@code WHERE municipalidad_id}: filtra RLS en las dos tablas (regla 2).
+     */
+    @Override
+    public List<TurnoConSuCaja> delCajeroEn(String cajero, LocalDate fecha) {
+        List<TurnoConSuCaja> crudos =
+                jdbc().sql(
+                                "SELECT t.id, t.caja_id, t.cajero, t.fecha,"
+                                        + " c.codigo AS caja_codigo, c.nombre AS caja_nombre"
+                                        + " FROM cierre_caja t JOIN caja c ON c.id = t.caja_id"
+                                        + " WHERE t.cajero = :cajero AND t.fecha = :fecha"
+                                        + " ORDER BY c.codigo")
+                        .param("cajero", cajero)
+                        .param("fecha", fecha)
+                        .query(TurnoDeCajaRepositoryJdbc::mapearConSuCaja)
+                        .list();
+
+        List<TurnoConSuCaja> resueltos = new ArrayList<>(crudos.size());
+        for (TurnoConSuCaja uno : crudos) {
+            resueltos.add(
+                    new TurnoConSuCaja(
+                            conSuEstado(uno.turno()), uno.cajaCodigo(), uno.cajaNombre()));
+        }
+        return List.copyOf(resueltos);
+    }
+
     @Override
     public Optional<TurnoDeCaja> porId(long id) {
         return jdbc().sql("SELECT " + COLUMNAS + " FROM cierre_caja WHERE id = :id")
@@ -130,6 +169,20 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
                 .optional()
                 .map(tipo -> TipoDeMovimientoDeTurno.valueOf(tipo.strip()))
                 .orElse(null);
+    }
+
+    /**
+     * La fila del {@code JOIN} con {@code caja}, tambien con el estado provisional.
+     *
+     * <p>Mismo motivo que {@link #mapearAbierto}: el estado lo dice {@code cierre_turno} y nadie lo
+     * ha consultado todavia. {@link #delCajeroEn} lo sustituye antes de devolver nada.
+     */
+    private static TurnoConSuCaja mapearConSuCaja(ResultSet fila, int numeroDeFila)
+            throws SQLException {
+        return new TurnoConSuCaja(
+                mapearAbierto(fila, numeroDeFila),
+                fila.getString("caja_codigo"),
+                fila.getString("caja_nombre"));
     }
 
     /**

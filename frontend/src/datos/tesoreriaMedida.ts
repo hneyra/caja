@@ -3,13 +3,15 @@ import type {
   CajaEnLista,
   DistribucionDeRecaudacion,
   DuplicadoDeUnRecibo,
+  EstadoDelCierre,
   PagoDelBuzon,
   Paginado,
   ReciboEnLista,
+  TurnoDelDia,
 } from './lecturas.ts';
 
 /**
- * **Lo que contestan las seis lecturas de Tesoreria, para las pruebas** (#84, #99).
+ * **Lo que contestan las lecturas de Tesoreria, para las pruebas** (#84, #99, #97).
  *
  * **No esta medido con `curl`, y la marca lo dice.** Tiene la forma exacta de los `Resource` —la
  * compara `camino-a-la-api.test.ts` campo a campo contra los `.java`— y los valores estan elegidos
@@ -22,7 +24,9 @@ import type {
  *   · una pagina de recibos **que no llega entera** (`hayMas`), que tiene que decir de cuantos;
  *   · y, desde #99, un duplicado con **dos lineas de distinta clase**: una tasa, con su cantidad y
  *     su precio unitario, y una de tributo, donde los dos llegan **nulos a proposito** —lo dice el
- *     javadoc de `LineaResource`— y hay que marcarlos en vez de pintar un cero.
+ *     javadoc de `LineaResource`— y hay que marcarlos en vez de pintar un cero;
+ *   · y, desde #97, un **arqueo en vivo** con `declarado`, `diferencia` y `cuadra` en nulo —que es
+ *     lo que el backend manda por esa ruta— y un turno del dia con y sin ventanilla abierta.
  *
  * **No se siembra** —la siembra de `yarn dev` es solo del catalogo y la cuenta, la regla de `rentas`
  * #114— y no la importa ningun modulo de produccion: lo comprueba `camino-a-la-api.test.ts`.
@@ -148,6 +152,76 @@ export const PAGOS_MEDIDOS: readonly PagoDelBuzon[] = [
     explicacion: null,
   },
 ];
+
+/** `GET /turnos/del-dia` con un turno abierto: lo normal de una ventanilla a media mañana. */
+export const TURNO_MEDIDO: TurnoDelDia = {
+  cajero: 'jperez',
+  fecha: '2026-03-15',
+  situacion: 'ABIERTO',
+  turnos: [
+    {
+      turnoId: 7,
+      caja: 'C-01',
+      cajaNombre: 'Caja principal',
+      cajero: 'jperez',
+      fecha: '2026-03-15',
+      estadoDelTurno: 'ABIERTO',
+    },
+  ],
+};
+
+/** El mismo cajero sin haber cobrado todavia. No es un 404: es la respuesta de las ocho. */
+export const TURNO_SIN_ABRIR_MEDIDO: TurnoDelDia = {
+  cajero: 'jperez',
+  fecha: '2026-03-15',
+  situacion: 'SIN_ABRIR',
+  turnos: [],
+};
+
+/**
+ * `GET /turnos/{turnoId}/cierre` del turno de arriba: el **arqueo en vivo**.
+ *
+ * Los tres campos que nadie ha contado —`declarado`, `diferencia`, `cuadra`— llegan **nulos**, en
+ * el recurso y en cada linea. Hasta #97 llegaban en `0,00`, `-neto` y `false`, y la pantalla los
+ * pintaba como tres cifras reales de un turno que nadie habia arqueado.
+ */
+export const CIERRE_MEDIDO: EstadoDelCierre = {
+  turnoId: 7,
+  puedeCerrar: false,
+  arqueo: {
+    turnoId: 7,
+    fecha: '2026-03-15',
+    recibosEmitidos: 12,
+    recibosAnulados: 1,
+    cobrado: { importe: '1867.60', actualizadoA: '2026-03-15' },
+    anulado: { importe: '25.00', actualizadoA: '2026-03-15' },
+    neto: { importe: '1842.60', actualizadoA: '2026-03-15' },
+    declarado: null,
+    diferencia: null,
+    cuadra: null,
+    lineas: [
+      {
+        formaDePago: 'EFECTIVO',
+        cobrado: { importe: '1742.60', actualizadoA: '2026-03-15' },
+        anulado: { importe: '0.00', actualizadoA: '2026-03-15' },
+        neto: { importe: '1742.60', actualizadoA: '2026-03-15' },
+        declarado: null,
+        diferencia: null,
+      },
+      {
+        formaDePago: 'TARJETA',
+        cobrado: { importe: '125.00', actualizadoA: '2026-03-15' },
+        anulado: { importe: '25.00', actualizadoA: '2026-03-15' },
+        neto: { importe: '100.00', actualizadoA: '2026-03-15' },
+        declarado: null,
+        diferencia: null,
+      },
+    ],
+  },
+  cobradoConEvento: null,
+  cobradoSinEvento: null,
+  loQueImpideCerrar: PAGOS_MEDIDOS,
+};
 
 export const AVANCE_MEDIDO: AvanceDeRecaudacion = {
   desde: '2026-03-01',

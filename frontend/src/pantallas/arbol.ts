@@ -27,11 +27,13 @@ import type { Hoja, Modulo } from './tipos.ts';
  *     reimpresion y exige `IMPRESION`—.
  *   · **Las cuatro rutas de `ReciboDeTramiteController`**: las pide `rentas`, servidor a servidor.
  *
- * <h2>Y un hueco, dicho</h2>
+ * <h2>El hueco que #74 declaro aqui, cerrado en #97</h2>
  *
- * Ninguna lectura de `cierre_caja` devuelve el `turnoId` de una caja, un cajero y una fecha, y
- * `GET /turnos/{turnoId}/cierre` lo necesita. Hoy solo sale de `/recaudacion/avance`, que es otro
- * acceso, o del `turnoId` de un pago sin entregar. No se inventa aqui: se declara.
+ * Decia que ninguna lectura de `cierre_caja` devolvia el `turnoId` de una caja, un cajero y una
+ * fecha —y `GET /turnos/{turnoId}/cierre` lo necesita—, de modo que solo salia de
+ * `/recaudacion/avance`, que es otro acceso, o del `turnoId` de un pago sin entregar. Se declaro en
+ * vez de inventarlo, y #97 lo resolvio donde tocaba: **`GET /turnos/del-dia`**, del mismo acceso
+ * `cierre_caja`, publica el turno abierto de quien pregunta —y dice tambien cuando no lo hay—.
  */
 export const ARBOL = [
   {
@@ -86,6 +88,7 @@ export const ARBOL = [
         rotulo: 'Cierre y arqueo de caja',
         acceso: 'cierre_caja',
         operaciones: [
+          { verbo: 'GET', ruta: '/turnos/del-dia', controlador: 'TurnoController' },
           { verbo: 'GET', ruta: '/turnos/{turnoId}/cierre', controlador: 'EstadoDelCierreController' },
           { verbo: 'GET', ruta: '/pagos/sin-entregar', controlador: 'PagoController' },
           { verbo: 'GET', ruta: '/conciliacion', controlador: 'ConciliacionController' },

@@ -167,6 +167,70 @@ export interface PagoDelBuzon {
   readonly explicacion: string | null;
 }
 
+/** `TurnoDelDiaResource.TurnoResource`: un turno del cajero en una ventanilla. */
+export interface TurnoDeLaVentanilla {
+  readonly turnoId: number;
+  readonly caja: string;
+  readonly cajaNombre: string;
+  readonly cajero: string;
+  readonly fecha: string;
+  readonly estadoDelTurno: string;
+}
+
+/**
+ * `TurnoDelDiaResource`: cuál es la ventanilla de quien mira, hoy (#97).
+ *
+ * `situacion` es `SIN_ABRIR`, `ABIERTO`, `CERRADO` o `VARIOS_ABIERTOS`, y **no es un booleano a
+ * propósito**: «no abrió» y «ya cerró» se arreglan en sitios distintos. Es de aquí de donde sale el
+ * `turnoId` con el que se pide el arqueo, que hasta #97 ninguna lectura publicaba.
+ */
+export interface TurnoDelDia {
+  readonly cajero: string;
+  readonly fecha: string;
+  readonly situacion: string;
+  readonly turnos: readonly TurnoDeLaVentanilla[];
+}
+
+/** `ArqueoResource.LineaResource`. `declarado` y `diferencia` son nulos en el arqueo en vivo. */
+export interface LineaDelArqueo {
+  readonly formaDePago: string;
+  readonly cobrado: ImporteActualizado;
+  readonly anulado: ImporteActualizado;
+  readonly neto: ImporteActualizado;
+  readonly declarado: ImporteActualizado | null;
+  readonly diferencia: ImporteActualizado | null;
+}
+
+/**
+ * `ArqueoResource`.
+ *
+ * `declarado`, `diferencia` y `cuadra` llegan **nulos** mientras nadie haya contado el cajón, que
+ * es siempre por esta ruta: un `GET` no lleva el recuento. No son cero (#97).
+ */
+export interface ArqueoDelTurno {
+  readonly turnoId: number;
+  readonly fecha: string;
+  readonly recibosEmitidos: number;
+  readonly recibosAnulados: number;
+  readonly cobrado: ImporteActualizado;
+  readonly anulado: ImporteActualizado;
+  readonly neto: ImporteActualizado;
+  readonly declarado: ImporteActualizado | null;
+  readonly diferencia: ImporteActualizado | null;
+  readonly cuadra: boolean | null;
+  readonly lineas: readonly LineaDelArqueo[];
+}
+
+/** `EstadoDelCierreController.EstadoDelCierreResource`: si el turno puede cerrar, y su arqueo. */
+export interface EstadoDelCierre {
+  readonly turnoId: number;
+  readonly puedeCerrar: boolean;
+  readonly arqueo: ArqueoDelTurno;
+  readonly cobradoConEvento: ImporteActualizado | null;
+  readonly cobradoSinEvento: ImporteActualizado | null;
+  readonly loQueImpideCerrar: readonly PagoDelBuzon[];
+}
+
 /** `RecaudacionResource.FilaDeTributo`. */
 export interface FilaDeTributo {
   readonly tributo: string;
@@ -234,6 +298,11 @@ export const RUTAS = {
   // Con la variable entre llaves, igual que la escribe su `@GetMapping` y que la declara el arbol:
   // asi la guarda puede compararla sin conocer ningun numero. La compone `rutaDelDuplicado`.
   duplicadoDeUnRecibo: '/recibos/{nro}/duplicado',
+  turnoDelDia: '/turnos/del-dia',
+  // Lo mismo, con el turno entre llaves. La ruta de verdad la compone `rutaDelCierre`, con el
+  // `turnoId` que `turnoDelDia` acaba de dar: dejar la plantilla escrita aqui es lo que hace que
+  // `camino-a-la-api.test.ts` pueda buscarla en los `.java` sin conocer ningun numero.
+  cierreDelTurno: '/turnos/{turnoId}/cierre',
   pagosSinEntregar: '/pagos/sin-entregar',
   avanceDeRecaudacion: '/recaudacion/avance',
   recaudacionPorArea: '/recaudacion/por-area',
@@ -250,6 +319,11 @@ export const RUTAS = {
  */
 export function rutaDelDuplicado(numero: string): string {
   return RUTAS.duplicadoDeUnRecibo.replace('{nro}', encodeURIComponent(numero));
+}
+
+/** `GET /turnos/{turnoId}/cierre` con su turno puesto. El identificador sale de `turnoDelDia`. */
+export function rutaDelCierre(turnoId: number): string {
+  return RUTAS.cierreDelTurno.replace('{turnoId}', String(turnoId));
 }
 
 /** El contenido de una pagina. Para los catalogos, que caben enteros en una. */

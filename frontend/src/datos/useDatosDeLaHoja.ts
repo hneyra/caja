@@ -104,7 +104,12 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
   if (consulta.isError) return { ausencia: alFallar(consulta.error) };
 
   const reparto = conector.repartir(consulta.data as never, elegido);
-  if (deLoElegido === undefined) return { ...deUnReparto(reparto), ausencia: conector.ausencia };
+  // El reparto puede afinar la frase con lo que llego: `cierre-caja` la necesita, porque «no
+  // abrio turno», «ya cerro» y «tiene dos ventanillas» dejan los mismos huecos y se arreglan en
+  // tres sitios distintos (#97). Los demas no la ponen, y manda la del conector.
+  if (deLoElegido === undefined) {
+    return { ...deUnReparto(reparto), ausencia: reparto.ausencia ?? conector.ausencia };
+  }
 
   // La lista ya contesto; lo que quede por decir es de la segunda lectura, y **nunca tapa la
   // lista**: un recibo que no existe deja la de arriba donde estaba.

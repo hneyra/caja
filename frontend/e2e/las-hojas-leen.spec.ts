@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { DUPLICADO_MEDIDO, PAGOS_MEDIDOS, RECIBOS_MEDIDOS } from '../src/datos/tesoreriaMedida.ts';
+import {
+  CIERRE_MEDIDO,
+  DUPLICADO_MEDIDO,
+  PAGOS_MEDIDOS,
+  RECIBOS_MEDIDOS,
+  TURNO_MEDIDO,
+} from '../src/datos/tesoreriaMedida.ts';
 import { abrir, conLaSeguridadContestada } from './instalacion.ts';
 
 /**
@@ -18,17 +24,21 @@ import { abrir, conLaSeguridadContestada } from './instalacion.ts';
  */
 
 /**
- * Contesta las tres lecturas de estas dos hojas y apunta lo que se pidio.
+ * Contesta las lecturas de estas dos hojas y apunta lo que se pidio.
  *
  * `sinDuplicado` deja el duplicado en 404, que es lo que el backend contesta a un numero que no
  * existe: es un estado de verdad y hay que poder mirarlo (#99).
+ *
+ * El `7` de `/turnos/7/cierre` es el `turnoId` que `TURNO_MEDIDO` acaba de publicar (#97): si la
+ * interfaz lo compusiera mal —o se lo inventara— esa ruta no casaria, se contestaria 404 y la
+ * peticion no saldria en `pedidas`.
  */
 async function contestaLosDatos(pagina: Page, sinDuplicado = false): Promise<string[]> {
   const pedidas: string[] = [];
-  await pagina.route('**/caja/api/v1/{recibos,recibos/**,pagos/sin-entregar}', async (ruta) => {
+  await pagina.route('**/caja/api/v1/{recibos,recibos/**,pagos/sin-entregar,turnos/**}', async (ruta) => {
     const url = new URL(ruta.request().url());
-    pedidas.push(url.pathname);
     if (url.pathname.endsWith('/duplicado')) {
+      pedidas.push(url.pathname);
       await ruta.fulfill({
         status: sinDuplicado ? 404 : 200,
         contentType: 'application/json',
@@ -36,7 +46,20 @@ async function contestaLosDatos(pagina: Page, sinDuplicado = false): Promise<str
       });
       return;
     }
-    const cuerpo = url.pathname.endsWith('/recibos') ? RECIBOS_MEDIDOS : PAGOS_MEDIDOS;
+    const cuerpo = url.pathname.endsWith('/recibos')
+      ? RECIBOS_MEDIDOS
+      : url.pathname.endsWith('/pagos/sin-entregar')
+        ? PAGOS_MEDIDOS
+        : url.pathname.endsWith('/turnos/del-dia')
+          ? TURNO_MEDIDO
+          : url.pathname.endsWith('/turnos/7/cierre')
+            ? CIERRE_MEDIDO
+            : null;
+    if (cuerpo === null) {
+      await ruta.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    pedidas.push(url.pathname);
     await ruta.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(cuerpo) });
   });
   return pedidas;
@@ -102,11 +125,26 @@ test('«duplicado-recibo»: con el recibo en la direccion se pide al abrir, y un
   await expect(page.getByRole('row').filter({ hasText: '001-000123' })).toBeVisible();
 });
 
-test('«cierre-caja» dibuja los pagos sin entregar, y el arqueo dice que espera al turno', async ({ page }) => {
+/**
+ * **El arqueo se pide con el turno que la lectura de antes nombro** (#97), en el navegador.
+ *
+ * Es la cadena entera y el `turnoId` no esta escrito en `src/`: sale de `/turnos/del-dia`.
+ */
+test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja los tres bloques', async ({ page }) => {
   const pedidas = await contestaLosDatos(page);
   await abrir(page, 'cierre-caja');
 
   await expect(page.getByRole('row').filter({ hasText: PAGOS_MEDIDOS[0]?.pagoId ?? '?' })).toBeVisible();
-  await expect(page.getByText('sin turno').first()).toBeVisible();
-  expect(pedidas).toEqual(['/caja/api/v1/pagos/sin-entregar']);
+  // El arqueo del turno que `/turnos/del-dia` nombro: su neto, formateado por `@kamayuk/formato`.
+  await expect(page.getByText('S/ 1,842.60').first()).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'EFECTIVO' })).toBeVisible();
+  // Y lo que nadie conto NO se pinta como un cero.
+  await expect(page.getByText('sin declarar').first()).toBeVisible();
+  await expect(page.getByText('sin turno')).toHaveCount(0);
+
+  expect([...pedidas].sort()).toEqual([
+    '/caja/api/v1/pagos/sin-entregar',
+    '/caja/api/v1/turnos/7/cierre',
+    '/caja/api/v1/turnos/del-dia',
+  ]);
 });

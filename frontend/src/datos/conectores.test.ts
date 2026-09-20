@@ -16,10 +16,13 @@ import { rutaDelDuplicado } from './lecturas.ts';
 import {
   AVANCE_MEDIDO,
   CAJAS_MEDIDAS,
+  CIERRE_MEDIDO,
   DISTRIBUCION_MEDIDA,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
+  TURNO_MEDIDO,
+  TURNO_SIN_ABRIR_MEDIDO,
 } from './tesoreriaMedida.ts';
 
 /**
@@ -35,7 +38,7 @@ const RESPUESTAS: Readonly<Record<string, unknown>> = {
   'caja-tributaria': CAJAS_MEDIDAS,
   'caja-tasas': CAJAS_MEDIDAS,
   'duplicado-recibo': RECIBOS_MEDIDOS,
-  'cierre-caja': PAGOS_MEDIDOS,
+  'cierre-caja': { turno: TURNO_MEDIDO, cierre: CIERRE_MEDIDO, pagos: PAGOS_MEDIDOS },
   'avance-recaudacion': AVANCE_MEDIDO,
   'recaudacion-area': DISTRIBUCION_MEDIDA,
 };
@@ -127,10 +130,12 @@ describe.each(CONECTADAS.map(([clave]) => clave))('«%s» reparte a su definicio
     }
   });
 
-  it('su ruta es una lectura que su hoja declara', () => {
+  it('cada una de las rutas de su primera lectura es una que su hoja declara', () => {
     const conector = CONECTORES[clave];
-    const rutas = lecturasDe(hojaDe(clave)).map((o) => o.ruta);
-    expect(rutas).toContain(conector?.ruta.split('?')[0]);
+    const declaradas = lecturasDe(hojaDe(clave)).map((o) => o.ruta);
+    const pedidas = (conector?.rutas ?? []).map((r) => r.split('?')[0]);
+    expect(pedidas.length).toBeGreaterThan(0);
+    for (const ruta of pedidas) expect(declaradas).toContain(ruta);
   });
 
   it('y la de lo elegido, si la tiene, tambien', () => {
@@ -166,11 +171,55 @@ describe('lo que el reparto decide, con los casos que la captura planta', () => 
     expect(reparto?.valores.get(coordenada(0, 3))).not.toBe(formatearImporte('1962.60'));
   });
 
-  it('en el cierre, el arqueo espera al turno y la conciliacion a la fecha', () => {
+  it('en el cierre, el arqueo ya no espera al turno; la conciliacion sigue esperando la fecha', () => {
     const cierre = repartoDe('cierre-caja');
-    expect(cierre.sinDato.get(coordenada(0, 0))).toBe('sin turno');
+    expect(cierre.valores.get(coordenada(0, 2)), 'recibos emitidos').toBe('12');
+    expect(cierre.valores.get(coordenada(0, 6)), 'neto').toBe(formatearImporte('1842.60'));
+    expect(cierre.valores.get(coordenada(0, 1)), 'puede cerrarse').toBe('no');
     expect(cierre.sinDato.get(coordenada(2, 1))).toBe('sin fecha');
-    expect(cierre.filas.get(1)).toHaveLength(1);
+    expect(cierre.filas.get(0), 'una fila por forma de pago').toHaveLength(2);
+    expect(cierre.filas.get(1), 'y los pagos que impiden cerrar').toHaveLength(1);
+  });
+});
+
+/**
+ * **El turno de la ventanilla y su arqueo** (#97).
+ *
+ * Las cuatro situaciones que `GET /turnos/del-dia` distingue, medidas sobre el reparto. Lo que se
+ * comprueba no es que «funcione»: es que **ninguna de las tres sin arqueo diga lo mismo que otra**,
+ * porque se arreglan en sitios distintos, y que lo que nadie conto **no se pinte como un cero**.
+ */
+describe('«cierre-caja»: el turno del dia, y lo que nadie ha contado', () => {
+  const conSituacion = (situacion: string) =>
+    CONECTORES['cierre-caja']?.repartir({
+      turno: { ...TURNO_SIN_ABRIR_MEDIDO, situacion },
+      cierre: null,
+      pagos: PAGOS_MEDIDOS,
+    } as never);
+
+  it('lo que nadie conto se dice «sin declarar», en los tres campos y en las dos columnas', () => {
+    const cierre = repartoDe('cierre-caja');
+    for (const campo of [7, 8, 9]) {
+      expect(cierre.sinDato.get(coordenada(0, campo)), `campo ${String(campo)}`).toBe('sin declarar');
+    }
+    // Un cero aqui seria «conte el cajon y no habia nada», que descuadra el turno entero.
+    expect(cierre.filas.get(0)?.[0]?.slice(4)).toEqual(['sin declarar', 'sin declarar']);
+    expect([...cierre.valores.values()]).not.toContain(formatearImporte('0.00'));
+  });
+
+  it('sin turno abierto no hay arqueo, y los diez campos dicen por que no lo hay', () => {
+    const reparto = conSituacion('SIN_ABRIR');
+    expect(reparto?.valores.size, 'no se finge ni una cifra').toBe(0);
+    expect(reparto?.sinDato.get(coordenada(0, 0))).toBe('sin turno');
+    expect(reparto?.ausencia?.explicacion).toContain('no tiene turno abierto hoy');
+    expect(reparto?.filas.get(1), 'los pagos sin entregar se leen igual').toHaveLength(1);
+  });
+
+  it('«ya cerro» y «tiene dos ventanillas» no dicen lo mismo que «no abrio»', () => {
+    expect(conSituacion('CERRADO')?.sinDato.get(coordenada(0, 0))).toBe('turno cerrado');
+    expect(conSituacion('CERRADO')?.ausencia?.explicacion).toContain('reversar');
+    expect(conSituacion('VARIOS_ABIERTOS')?.sinDato.get(coordenada(0, 0))).toBe('varias cajas');
+    expect(conSituacion('VARIOS_ABIERTOS')?.ausencia?.explicacion).toContain('más de una ventanilla');
   });
 });
 

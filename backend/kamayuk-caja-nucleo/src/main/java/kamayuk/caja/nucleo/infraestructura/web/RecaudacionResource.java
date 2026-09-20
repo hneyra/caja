@@ -166,7 +166,8 @@ public final class RecaudacionResource {
      * @param cajero de quien es el turno
      * @param fecha el dia del turno, en ISO
      * @param estadoDelTurno ABIERTO o CERRADO, derivado de sus movimientos
-     * @param arqueo lo cobrado y lo anulado hasta ahora, sin nada declarado todavia
+     * @param arqueo lo cobrado y lo anulado hasta ahora. Sin nada declarado todavia, y desde #97
+     *     eso viaja como <b>nulo</b> y no como un cero: ver {@link ArqueoResource}
      */
     public record AvanceDelTurno(
             String caja,
@@ -181,7 +182,7 @@ public final class RecaudacionResource {
                     avance.turno().cajero(),
                     avance.turno().fecha().toString(),
                     avance.turno().estado().name(),
-                    ArqueoResource.de(avance.arqueo()));
+                    ArqueoResource.enVivo(avance.arqueo()));
         }
     }
 }

@@ -30,6 +30,22 @@ import org.springframework.web.bind.annotation.RestController;
  * <p><b>No devuelve un booleano a secas.</b> Quien no puede cerrar tiene derecho a saber cuales
  * son, con su hora de cobro y su ultimo error, porque cada uno se resuelve de una manera: esperar a
  * que el publicador lo consiga, o explicarlo por escrito.
+ *
+ * <h2>De donde sale el {@code turnoId}, desde #97</h2>
+ *
+ * <p>De {@code GET /turnos/del-dia} ({@link TurnoController}), que publica el turno abierto de
+ * quien pregunta. Hasta entonces esta ruta existia y <b>ninguna lectura daba su argumento</b>, de
+ * modo que la pantalla de cierre no podia pedirla: los diez campos de su primer bloque decian «sin
+ * turno».
+ *
+ * <h2>El arqueo que sale de aqui es EL DE EN VIVO</h2>
+ *
+ * <p>Un {@code GET} no puede llevar el recuento del cajon, asi que {@link ArqueoDeTurno#del} se
+ * llama con el mapa de lo declarado <b>vacio</b> —lo dice su propio javadoc—. Por eso se publica
+ * con {@link ArqueoResource#enVivo}: {@code declarado}, {@code diferencia} y {@code cuadra} salen
+ * <b>nulos</b>. Hasta #97 salian con {@link ArqueoResource#de} y esta lectura contestaba siempre
+ * «declarado 0,00, diferencia -neto, cuadra false», que no es el estado del turno sino el mapa
+ * vacio disfrazado de recuento.
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/turnos")
@@ -56,7 +72,7 @@ public class EstadoDelCierreController {
             return new EstadoDelCierreResource(
                     turnoId,
                     true,
-                    ArqueoResource.de(elArqueo),
+                    ArqueoResource.enVivo(elArqueo),
                     new ImporteActualizado(cuadre.conEvento(), cuadre.aLaFecha()),
                     new ImporteActualizado(cuadre.sinEvento(), cuadre.aLaFecha()),
                     List.of());
@@ -69,7 +85,7 @@ public class EstadoDelCierreController {
             return new EstadoDelCierreResource(
                     turnoId,
                     false,
-                    ArqueoResource.de(elArqueo),
+                    ArqueoResource.enVivo(elArqueo),
                     null,
                     null,
                     List.copyOf(pendientes));
