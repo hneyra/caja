@@ -28,9 +28,13 @@ import kamayuk.caja.nucleo.dominio.TurnoConSuCaja;
  * GET /turnos/&#123;turnoId&#125;/cierre} con la fecha de cada importe pegada (regla 9). Repetir
  * aqui un total seria tener dos sitios donde mirar el mismo dinero.
  *
- * <p><b>Ni la hora de apertura.</b> Consta —{@code cierre_caja.fecha_apertura} (V29)— pero {@link
- * kamayuk.caja.nucleo.dominio.TurnoDeCaja} no la lleva, y anadirsela tocaria el camino del cobro
- * para adornar una lectura. Queda anotado, no inventado.
+ * <h2>La hora de apertura, desde #104</h2>
+ *
+ * <p>Cada turno lleva {@code abiertoEn}: {@code cierre_caja.fecha_apertura}, la que escribio la
+ * apertura con el reloj de la caja. Hasta #104 no viajaba porque {@link
+ * kamayuk.caja.nucleo.dominio.TurnoDeCaja} no la llevaba. Viaja <b>aqui</b> y no en el arqueo: es
+ * la lectura con la que la pantalla de cierre ya encadena el arqueo por su {@code turnoId}, y el
+ * arqueo no conoce el turno, sino sus recibos.
  *
  * @param cajero de quien es esta respuesta; sale del token, nunca de un parametro (ADR-0028)
  * @param fecha el dia de trabajo al que corresponde, en ISO: el del reloj de esta caja
@@ -59,6 +63,7 @@ public record TurnoDelDiaResource(
      * @param cajero de quien es el turno; el mismo de la respuesta, repetido para que una fila
      *     copiada a otra pantalla no pierda el sujeto
      * @param fecha el dia del turno, en ISO
+     * @param abiertoEn el instante en que se abrio, en ISO UTC; la pantalla lo dice en su zona
      * @param estadoDelTurno ABIERTO o CERRADO, derivado de sus movimientos (V32)
      */
     public record TurnoResource(
@@ -67,6 +72,7 @@ public record TurnoDelDiaResource(
             String cajaNombre,
             String cajero,
             String fecha,
+            String abiertoEn,
             String estadoDelTurno) {
 
         static TurnoResource de(TurnoConSuCaja uno) {
@@ -76,6 +82,7 @@ public record TurnoDelDiaResource(
                     uno.cajaNombre(),
                     uno.turno().cajero(),
                     uno.turno().fecha().toString(),
+                    uno.turno().abiertoEn().toString(),
                     uno.turno().estado().name());
         }
     }

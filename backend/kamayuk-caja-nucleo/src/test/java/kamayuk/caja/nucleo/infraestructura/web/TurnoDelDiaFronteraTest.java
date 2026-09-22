@@ -9,7 +9,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +80,13 @@ class TurnoDelDiaFronteraTest {
 
     private static final LocalDate AYER = HOY.minusDays(1);
 
+    /**
+     * La hora a la que se abrio el turno de hoy de {@link #CAJERO} en A (#104). Las 21:30 de Lima
+     * del dia 15, que en UTC ya son el 16: distinta del reloj, del dia del turno y de {@code
+     * now()}.
+     */
+    private static final Instant APERTURA_DE_A = Instant.parse("2026-03-16T02:30:00Z");
+
     private static final Clock RELOJ =
             Clock.fixed(HOY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC);
 
@@ -106,7 +115,9 @@ class TurnoDelDiaFronteraTest {
         long principalA = sembrarCaja(municipalidadA, "C-01", "CAJA TRIBUTARIA", "001");
         long mercadoA = sembrarCaja(municipalidadA, "C-07", "MERCADO CENTRAL", "007");
 
-        turnoAbiertoDeA = sembrarTurno(municipalidadA, principalA, CAJERO, HOY);
+        // Con una hora fija y nocturna en Lima (#104): now() saldria igual por cualquier camino
+        // que leyera «algo reciente», y esta solo sale si se lee la columna de esta fila.
+        turnoAbiertoDeA = sembrarTurno(municipalidadA, principalA, CAJERO, HOY, APERTURA_DE_A);
         // El MISMO cajero, ayer: lo que separa «mi turno» de «mis turnos» es la fecha, y
         // sin el WHERE por dia esta fila saldria hoy con su arqueo de ayer.
         sembrarTurno(municipalidadA, principalA, CAJERO, AYER);
@@ -189,6 +200,19 @@ class TurnoDelDiaFronteraTest {
                 .contains("\"cajaNombre\":\"CAJA TRIBUTARIA\"")
                 .contains("\"cajero\":\"jperez\"")
                 .contains("\"fecha\":\"2026-03-15\"");
+    }
+
+    @Test
+    @DisplayName("#104 — el turno dice a que hora se abrio: la de su fila, no otra")
+    void elTurnoDiceLaHoraDeSuFila() throws Exception {
+        String cuerpo = delDia(CAJERO).getResponse().getContentAsString();
+
+        assertThat(cuerpo)
+                .as(
+                        "cierre_caja.fecha_apertura es NOT NULL desde el baseline y la escribe la"
+                                + " apertura: la lectura la devuelve tal cual, sin recortarla al dia"
+                                + " ni deducirla del primer cobro")
+                .contains("\"abiertoEn\":\"2026-03-16T02:30:00Z\"");
     }
 
     @Test
@@ -375,19 +399,26 @@ class TurnoDelDiaFronteraTest {
 
     private static long sembrarTurno(
             long municipalidadId, long cajaId, String cajero, LocalDate fecha) throws SQLException {
+        return sembrarTurno(municipalidadId, cajaId, cajero, fecha, Instant.now());
+    }
+
+    private static long sembrarTurno(
+            long municipalidadId, long cajaId, String cajero, LocalDate fecha, Instant apertura)
+            throws SQLException {
         try (Connection app = base.conexion(BaseDeDatosDePrueba.APP)) {
             ContextoDeTenant.fijar(app, municipalidadId);
             try (PreparedStatement sentencia =
                     app.prepareStatement(
                             "INSERT INTO cierre_caja (municipalidad_id, caja_id, cajero, fecha,"
                                     + " fecha_apertura, usuario_apertura, observacion)"
-                                    + " VALUES (?, ?, ?, ?, now(), ?, 'apertura de la prueba')"
+                                    + " VALUES (?, ?, ?, ?, ?, ?, 'apertura de la prueba')"
                                     + " RETURNING id")) {
                 sentencia.setLong(1, municipalidadId);
                 sentencia.setLong(2, cajaId);
                 sentencia.setString(3, cajero);
                 sentencia.setObject(4, fecha);
-                sentencia.setString(5, cajero);
+                sentencia.setObject(5, OffsetDateTime.ofInstant(apertura, ZoneOffset.UTC));
+                sentencia.setString(6, cajero);
                 try (ResultSet resultado = sentencia.executeQuery()) {
                     resultado.next();
                     long id = resultado.getLong(1);

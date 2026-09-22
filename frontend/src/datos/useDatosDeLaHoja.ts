@@ -130,7 +130,7 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
   // Y lo dice de una de las dos maneras (#98): hablando por la pantalla entera —`aporte.ausencia`,
   // que es lo que hace `duplicado-recibo`— o por la PIEZA que la declara —`aporte.lecturas`, que es
   // lo que hace la conciliacion de `cierre-caja`—. Sin lo segundo, elegir un dia borraria de la
-  // pantalla el motivo por el que faltan los diez campos del arqueo, que lo decide el turno (#97).
+  // pantalla el motivo por el que faltan los campos del arqueo, que lo decide el turno (#97).
   return {
     ...deUnReparto({
       valores: unir(reparto.valores, aporte.reparto.valores),

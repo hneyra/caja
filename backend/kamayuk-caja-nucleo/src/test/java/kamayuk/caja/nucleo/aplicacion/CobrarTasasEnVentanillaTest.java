@@ -86,6 +86,20 @@ class CobrarTasasEnVentanillaTest {
         }
 
         @Test
+        @DisplayName("#104 — el turno se abre con la hora del reloj de la caja, y la lleva")
+        void elTurnoLlevaLaHoraDelReloj() {
+            tasas.con(tasa("T-001", Dinero.de("12.50"), LocalDate.of(2026, 1, 1), null));
+
+            cobrarTasa.cobrar(cobroDe("T-001", 1, null), porQue());
+
+            assertThat(turnos.abierto(1L, "cajero.prueba", PAGO))
+                    .as(
+                            "la apertura escribe reloj.instant() en fecha_apertura; el turno la devuelve")
+                    .hasValueSatisfying(
+                            turno -> assertThat(turno.abiertoEn()).isEqualTo(RELOJ.instant()));
+        }
+
+        @Test
         @DisplayName("contra un turno cerrado no se cobra: su arqueo ya se firmo")
         void unTurnoCerradoNoCobra() {
             turnos.conTurnoCerrado(1L, "cajero.prueba", PAGO);

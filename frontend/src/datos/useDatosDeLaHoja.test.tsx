@@ -341,7 +341,7 @@ describe('«cierre-caja»: la conciliacion se pide con el dia elegido, y no ante
     await waitFor(() => {
       expect(result.current.lecturas?.get('conciliacion')).toEqual({ estado: 'con-datos' });
     });
-    // Elegir un dia **no** borra el motivo por el que faltan los diez campos del arqueo (#97).
+    // Elegir un dia **no** borra el motivo por el que faltan los campos del arqueo (#97).
     expect(result.current.ausencia.explicacion).toMatch(/turno abierto/);
   });
 

@@ -3,6 +3,7 @@ package kamayuk.caja.nucleo.infraestructura.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import kamayuk.caja.auditoria.Origen;
@@ -109,6 +110,23 @@ class ElTurnoYSuArqueoEnVivoTest {
         assertThat(cuerpo)
                 .as("y el estado de cada turno, derivado de sus movimientos (V32)")
                 .contains("\"estadoDelTurno\":\"ABIERTO\"");
+    }
+
+    @Test
+    @DisplayName("#104 — el turno dice a que hora se abrio: el instante que se guardo, en ISO UTC")
+    void elTurnoDiceSuHoraDeApertura() throws Exception {
+        // Una hora nocturna de Lima: en UTC ya es el dia siguiente. Si alguien la recortara a
+        // la fecha, o la dedujera del dia del turno, no saldria esta cadena.
+        turnos.conTurnoAbierto(
+                TURNO, CAJA_PRINCIPAL, CAJERO, HOY, Instant.parse("2026-03-16T02:30:00Z"));
+
+        String cuerpo = delDia(CAJERO).getResponse().getContentAsString();
+
+        assertThat(cuerpo)
+                .as(
+                        "cierre_caja.fecha_apertura consta desde el baseline: sin este campo la"
+                                + " pantalla de cierre no puede decir desde cuando arquea (#104)")
+                .contains("\"abiertoEn\":\"2026-03-16T02:30:00Z\"");
     }
 
     @Test
