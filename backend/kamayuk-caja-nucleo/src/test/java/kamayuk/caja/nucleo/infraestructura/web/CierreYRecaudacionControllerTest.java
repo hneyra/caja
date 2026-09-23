@@ -89,7 +89,14 @@ class CierreYRecaudacionControllerTest {
                                     "PREDIAL",
                                     Dinero.de("500.00"),
                                     Dinero.de("100.00")))
-                    .conTurno(new TurnoDeCaja(TURNO, CAJA, CAJERO, HOY, EstadoDeTurno.ABIERTO));
+                    .conTurno(
+                            new TurnoDeCaja(
+                                    TURNO,
+                                    CAJA,
+                                    CAJERO,
+                                    HOY,
+                                    HOY.atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
+                                    EstadoDeTurno.ABIERTO));
 
     /** Quien puede todo salvo lo que la prueba le quite. */
     private Privilegio negado = Privilegio.ESPECIAL;

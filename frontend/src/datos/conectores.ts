@@ -19,6 +19,7 @@ import {
   NUMERO_DEL_RECIBO,
   TABLA_DE_LINEAS,
   TABLA_DE_RECIBOS,
+  TESORERIA,
 } from '../pantallas/definiciones/tesoreria.ts';
 import type {
   AvanceDeRecaudacion,
@@ -118,7 +119,7 @@ export interface Reparto {
    * depende de lo que llego. Ausente cuando no depende, y entonces manda `Conector.ausencia`.
    *
    * Lo pide `cierre-caja` (#97): «no abrio turno hoy», «ya cerro» y «tiene dos ventanillas
-   * abiertas» dejan los mismos diez campos vacios por tres motivos distintos, y cada uno se
+   * abiertas» dejan los mismos campos vacios por tres motivos distintos, y cada uno se
    * resuelve en otro sitio. Una sola frase fija mandaria a los tres al mismo.
    */
   readonly ausencia?: Ausencia;
@@ -204,7 +205,7 @@ export type PasoDeLoElegido =
  *
  * `cierre-caja` necesita la segunda y no la primera, y no es un capricho: su frase de arriba ya la
  * decide el turno —«no abrio turno hoy», «ya cerro», «tiene dos ventanillas»—, y una conciliacion
- * que la pisara borraria de la pantalla el motivo por el que faltan otros diez campos. Con
+ * que la pisara borraria de la pantalla el motivo por el que faltan los campos del arqueo. Con
  * `lecturas`, cada cosa dice lo suyo donde se mira.
  *
  * Las dos son opcionales y **no se excluyen**; sin ninguna, manda la ausencia de la primera lectura.
@@ -623,7 +624,19 @@ export interface DatosDelCierre {
   readonly pagos: readonly PagoDelBuzon[];
 }
 
-/** Que se dice arriba, y con ella la palabra de los diez campos del arqueo, segun la situacion. */
+/**
+ * Cuantos campos tiene el bloque del arqueo, **leido de su definicion** (#104).
+ *
+ * Hasta #104 era un `10` escrito a mano en la llamada a `bloqueSinDato`, y el campo que se anadiera
+ * al final —el de la hora de apertura— se habria quedado sin palabra y sin dato. Contado aqui, un
+ * campo nuevo cae en el hueco por si solo.
+ */
+const CAMPOS_DEL_ARQUEO = TESORERIA['cierre-caja'].bloques[0]?.campos.length ?? 0;
+
+/** La posicion de «Abierto desde»: el ultimo del bloque del arqueo (#104). */
+const ABIERTO_DESDE = CAMPOS_DEL_ARQUEO - 1;
+
+/** Que se dice arriba, y con ella la palabra de los campos del arqueo, segun la situacion. */
 function ausenciaDelCierre(situacion: string): Ausencia {
   if (situacion === 'ABIERTO') return CIERRE_CON_TURNO;
   if (situacion === 'CERRADO') return CIERRE_YA_CERRADO;
@@ -654,7 +667,8 @@ function filasDeLosPagos(pagos: readonly PagoDelBuzon[]): readonly (readonly str
  *
  * El turno y los pagos se piden a la vez —no dependen uno del otro—; el arqueo va despues, porque
  * **necesita el `turnoId` que la primera acaba de dar**. Si no hay exactamente un turno abierto no
- * se pide: los diez campos dicen por que en su hueco, y la frase de arriba donde se arregla.
+ * se pide: los campos del arqueo dicen por que en su hueco, y la frase de arriba donde se arregla.
+ * La hora de apertura (#104) no espera al arqueo: sale del turno, y se dice en cuanto hay uno.
  */
 const CIERRE_CAJA: Conector = {
   clave: ['cierre-caja', 'turno-y-arqueo'],
@@ -674,11 +688,22 @@ const CIERRE_CAJA: Conector = {
   repartir: (datos: DatosDelCierre): Reparto => {
     const pagos = filasDeLosPagos(datos.pagos);
     const ausencia = ausenciaDelCierre(datos.turno.situacion);
+    // La hora de apertura sale del TURNO de del-dia, no del arqueo (#104): `cierre_caja.fecha_apertura`
+    // tal como la publica `TurnoResource.abiertoEn`, dicha en Lima. Solo con UN turno abierto —el
+    // mismo del que se pide el arqueo—; con dos, o ninguno, no hay un «desde» que decir.
+    const abierto =
+      datos.turno.situacion === 'ABIERTO'
+        ? datos.turno.turnos.find((t) => t.estadoDelTurno === 'ABIERTO')
+        : undefined;
+    const apertura: [Coordenada, string] | null =
+      abierto === undefined ? null : [coordenada(0, ABIERTO_DESDE), instanteEnLima(abierto.abiertoEn)];
     if (datos.cierre === null) {
+      const huecos = bloqueSinDato(0, CAMPOS_DEL_ARQUEO, ausencia.enElCampo);
       return {
         ...NADA,
+        valores: new Map(apertura === null ? [] : [apertura]),
         filas: new Map([[1, pagos]]),
-        sinDato: new Map(bloqueSinDato(0, 10, ausencia.enElCampo)),
+        sinDato: new Map(apertura === null ? huecos : huecos.filter(([k]) => k !== apertura[0])),
         ausencia,
       };
     }
@@ -709,6 +734,8 @@ const CIERRE_CAJA: Conector = {
     const cuadra = coordenada(0, 9);
     if (arqueo.cuadra === null) sinDato.push([cuadra, SIN_DECLARAR]);
     else valores.push([cuadra, arqueo.cuadra ? SI : NO]);
+    if (apertura === null) sinDato.push([coordenada(0, ABIERTO_DESDE), ausencia.enElCampo]);
+    else valores.push(apertura);
 
     return {
       valores: new Map(valores),

@@ -43,9 +43,10 @@ import org.jspecify.annotations.Nullable;
  * cajero tiene un turno al dia por ventanilla. Publicar «CONTINUO» fijo seria inventar un campo que
  * despues alguien filtraria.
  *
- * <p><b>{@code horaDeApertura} y {@code horaDeCierre}</b>: la apertura consta —{@code
- * cierre_caja.fecha_apertura} (V29)— pero {@code TurnoDeCaja} no la lleva y este recurso tampoco;
- * la hora de cierre es {@code registradoEn} del acta. Queda anotado.
+ * <p><b>{@code horaDeApertura} y {@code horaDeCierre}</b>: no viajan aqui. La apertura —{@code
+ * cierre_caja.fecha_apertura}— la publica desde #104 {@code GET /turnos/del-dia} como {@code
+ * abiertoEn} de cada turno ({@link TurnoDelDiaResource}), que es la lectura de la que la pantalla
+ * saca el {@code turnoId} de este arqueo; la hora de cierre es {@code registradoEn} del acta.
  *
  * @param turnoId el turno arqueado
  * @param fecha el dia del turno, en ISO

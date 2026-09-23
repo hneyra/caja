@@ -290,6 +290,9 @@ export const TESORERIA = {
           { etiqueta: 'Declarado S/', tipo: 'r' },
           { etiqueta: 'Diferencia S/', tipo: 'r' },
           { etiqueta: 'Cuadra', tipo: 'r' },
+          // Al final y no tras «Fecha» (#104): moverlo renumeraria los nueve de arriba, que el
+          // conector llena por su posicion. Sale del turno de del-dia, no del arqueo.
+          { etiqueta: 'Abierto desde', tipo: 'r' },
         ],
         tabla: {
           titulo: 'Por forma de pago',

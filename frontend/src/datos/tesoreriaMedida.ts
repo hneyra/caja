@@ -166,6 +166,9 @@ export const TURNO_MEDIDO: TurnoDelDia = {
       cajaNombre: 'Caja principal',
       cajero: 'jperez',
       fecha: '2026-03-15',
+      // Nocturna a proposito (#104): las 02:30 UTC del 16 son las 21:30 del 15 en Lima, asi que un
+      // reparto que cortara el instante en UTC diria otro dia que el del turno, y saldria rojo.
+      abiertoEn: '2026-03-16T02:30:00Z',
       estadoDelTurno: 'ABIERTO',
     },
   ],

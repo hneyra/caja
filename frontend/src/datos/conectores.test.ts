@@ -226,12 +226,37 @@ describe('«cierre-caja»: el turno del dia, y lo que nadie ha contado', () => {
     expect([...cierre.valores.values()]).not.toContain(formatearImporte('0.00'));
   });
 
-  it('sin turno abierto no hay arqueo, y los diez campos dicen por que no lo hay', () => {
+  it('sin turno abierto no hay arqueo, y los once campos dicen por que no lo hay', () => {
     const reparto = conSituacion('SIN_ABRIR');
     expect(reparto?.valores.size, 'no se finge ni una cifra').toBe(0);
-    expect(reparto?.sinDato.get(coordenada(0, 0))).toBe('sin turno');
+    // Los once, uno a uno: hasta #104 eran diez y el conector los contaba con un `10` escrito a
+    // mano, asi que el campo que se anadiera al final se quedaba sin palabra y sin dato.
+    const campos = bloquesDe(pantallaDe('cierre-caja'))[0]?.campos.length;
+    expect(campos, 'el bloque del arqueo tiene once campos desde #104').toBe(11);
+    for (let campo = 0; campo < 11; campo += 1) {
+      expect(reparto?.sinDato.get(coordenada(0, campo)), `el campo ${String(campo)}`).toBe('sin turno');
+    }
     expect(reparto?.ausencia?.explicacion).toContain('no tiene turno abierto hoy');
     expect(reparto?.filas.get(1), 'los pagos sin entregar se leen igual').toHaveLength(1);
+  });
+
+  it('la hora de apertura se dice en Lima, desde el turno y no desde el arqueo (#104)', () => {
+    const cierre = repartoDe('cierre-caja');
+    // `TURNO_MEDIDO` se abrio a las 02:30 UTC del 16, que en Lima son las 21:30 del 15. Cortar el
+    // instante en UTC fecharia la apertura al dia siguiente del turno que arquea.
+    expect(cierre.valores.get(coordenada(0, 10)), 'abierto desde').toBe('15/03/2026 21:30');
+    expect(cierre.sinDato.has(coordenada(0, 10))).toBe(false);
+  });
+
+  it('con su turno abierto y sin arqueo todavia, la hora se dice igual: viene de del-dia', () => {
+    const reparto = CONECTORES['cierre-caja']?.repartir({
+      turno: TURNO_MEDIDO,
+      cierre: null,
+      pagos: PAGOS_MEDIDOS,
+    } as never);
+    expect(reparto?.valores.get(coordenada(0, 10))).toBe('15/03/2026 21:30');
+    expect(reparto?.sinDato.has(coordenada(0, 10))).toBe(false);
+    expect(reparto?.sinDato.get(coordenada(0, 0)), 'el resto sigue esperando al arqueo').toBeDefined();
   });
 
   it('«ya cerro» y «tiene dos ventanillas» no dicen lo mismo que «no abrio»', () => {
@@ -377,7 +402,7 @@ describe('la conciliacion se pide con la fecha elegida, y no antes (#98)', () =>
     expect(aporte?.reparto.filas.size).toBe(0);
     expect(aporte?.lecturas?.get('conciliacion')).toEqual({ estado: 'en-espera' });
     // **No toca la ausencia de la pantalla**: la de esta hoja la decide el turno (#97), y pisarla
-    // borraria el motivo por el que faltan los diez campos del arqueo.
+    // borraria el motivo por el que faltan los campos del arqueo.
     expect(aporte?.ausencia).toBeUndefined();
   });
 

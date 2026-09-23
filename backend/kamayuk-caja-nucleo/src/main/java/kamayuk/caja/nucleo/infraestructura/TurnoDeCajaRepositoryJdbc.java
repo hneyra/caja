@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -41,7 +42,7 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
      * {@code estado} ya no esta: V32 la retiro (ver {@link EstadoDeTurno}). Se lee la fila desnuda
      * y el estado se resuelve aparte, con {@link #ultimoMovimientoDe}.
      */
-    private static final String COLUMNAS = "id, caja_id, cajero, fecha";
+    private static final String COLUMNAS = "id, caja_id, cajero, fecha, fecha_apertura";
 
     private static final String DEL_TURNO =
             " WHERE caja_id = :caja AND cajero = :cajero AND fecha = :fecha";
@@ -113,7 +114,7 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
     public List<TurnoConSuCaja> delCajeroEn(String cajero, LocalDate fecha) {
         List<TurnoConSuCaja> crudos =
                 jdbc().sql(
-                                "SELECT t.id, t.caja_id, t.cajero, t.fecha,"
+                                "SELECT t.id, t.caja_id, t.cajero, t.fecha, t.fecha_apertura,"
                                         + " c.codigo AS caja_codigo, c.nombre AS caja_nombre"
                                         + " FROM cierre_caja t JOIN caja c ON c.id = t.caja_id"
                                         + " WHERE t.cajero = :cajero AND t.fecha = :fecha"
@@ -156,6 +157,7 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
                 turno.cajaId(),
                 turno.cajero(),
                 turno.fecha(),
+                turno.abiertoEn(),
                 EstadoDeTurno.trasElUltimoMovimiento(ultimoMovimientoDe(turno.idGuardado())));
     }
 
@@ -198,6 +200,23 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
                 fila.getLong("caja_id"),
                 fila.getString("cajero"),
                 fila.getDate("fecha").toLocalDate(),
+                aperturaDe(fila),
                 EstadoDeTurno.ABIERTO);
+    }
+
+    /**
+     * {@code cierre_caja.fecha_apertura} como instante (#104).
+     *
+     * <p>Por {@link OffsetDateTime} y no por {@link Timestamp}: el conductor devuelve la columna
+     * {@code timestamptz} con su desplazamiento, y {@code getTimestamp} la pasaria por la zona de
+     * la JVM. Lo usa tambien {@code RecaudacionRepositoryJdbc}, que lee el mismo turno.
+     */
+    static Instant aperturaDe(ResultSet fila) throws SQLException {
+        OffsetDateTime apertura = fila.getObject("fecha_apertura", OffsetDateTime.class);
+        if (apertura == null) {
+            throw new IllegalStateException(
+                    "cierre_caja.fecha_apertura es NOT NULL: una fila sin ella esta rota");
+        }
+        return apertura.toInstant();
     }
 }

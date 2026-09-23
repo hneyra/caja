@@ -130,7 +130,7 @@ public class RecaudacionRepositoryJdbc extends RepositorioJdbc implements Recaud
     @Override
     public Optional<TurnoDeCaja> turnoDe(String codigoDeCaja, String cajero, LocalDate fecha) {
         return jdbc().sql(
-                        "SELECT t.id, t.caja_id, t.cajero, t.fecha,"
+                        "SELECT t.id, t.caja_id, t.cajero, t.fecha, t.fecha_apertura,"
                                 + "       (SELECT ct.tipo FROM cierre_turno ct"
                                 + "         WHERE ct.municipalidad_id = t.municipalidad_id"
                                 + "           AND ct.turno_id = t.id"
@@ -217,6 +217,7 @@ public class RecaudacionRepositoryJdbc extends RepositorioJdbc implements Recaud
                 fila.getLong("caja_id"),
                 fila.getString("cajero"),
                 fila.getDate("fecha").toLocalDate(),
+                TurnoDeCajaRepositoryJdbc.aperturaDe(fila),
                 EstadoDeTurno.trasElUltimoMovimiento(
                         ultimo == null
                                 ? null

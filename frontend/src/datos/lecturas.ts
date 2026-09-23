@@ -174,6 +174,11 @@ export interface TurnoDeLaVentanilla {
   readonly cajaNombre: string;
   readonly cajero: string;
   readonly fecha: string;
+  /**
+   * El instante en que se abrio, en ISO UTC: `cierre_caja.fecha_apertura` (#104). Se dice en Lima,
+   * nunca se deduce del primer cobro.
+   */
+  readonly abiertoEn: string;
   readonly estadoDelTurno: string;
 }
 

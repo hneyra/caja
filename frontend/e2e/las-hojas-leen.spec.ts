@@ -142,6 +142,9 @@ test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja sus
   // Y lo que nadie conto NO se pinta como un cero.
   await expect(page.getByText('sin declarar').first()).toBeVisible();
   await expect(page.getByText('sin turno')).toHaveCount(0);
+  // Y desde cuando esta abierto (#104): el `abiertoEn` del turno, dicho en Lima y no en UTC —en UTC
+  // seria el 16—, aunque el navegador de la prueba este en otra zona.
+  await expect(page.getByText('15/03/2026 21:30')).toBeVisible();
 
   expect([...pedidas].sort()).toEqual([
     '/caja/api/v1/pagos/sin-entregar',
