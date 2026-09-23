@@ -24,8 +24,11 @@ import org.jspecify.annotations.Nullable;
  * descuadrado sin que el cajero pudiera decir nada.
  *
  * @param caja el codigo de la ventanilla
- * @param cajero quien cierra su turno
- * @param fecha el dia del turno, en ISO; sin ella, hoy
+ * @param cajero opcional, y solo el propio. Quien cierra es quien firma el token: el cajero sale
+ *     del token (#114, ADR-0028) y este campo solo sigue por compatibilidad del contrato: se admite
+ *     omitido o igual al usuario del token; con otro nombre, 403
+ * @param fecha el dia del turno, en ISO; sin ella, hoy. Admite un dia pasado —el turno propio que
+ *     se quedo abierto—, y una fecha futura es 422 (#114)
  * @param declarado lo contado en el cajon por forma de pago, en texto decimal
  * @param motivoDeReversion si viene, la peticion reversa el cierre vigente en vez de cerrar
  * @param observacion por que se hace (regla 10, RNF-052). Obligatoria

@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import kamayuk.caja.auditoria.Origen;
+import kamayuk.caja.auditoria.OrigenContext;
 import kamayuk.caja.auditoria.RegistroDeAuditoria;
 import kamayuk.caja.dominio.Dinero;
 import kamayuk.caja.dominio.Observacion;
@@ -37,6 +39,8 @@ import kamayuk.caja.nucleo.dominio.Tasa;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
 import kamayuk.caja.web.ConfiguracionDeJson;
 import kamayuk.caja.web.ManejadorDeErrores;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -102,6 +106,17 @@ class ElDiaDeLaVentanillaEsElDeLimaTest {
 
     private static final CobrarOrdenes.ComponedorDeEventos EVENTOS =
             new ComponedorDeEventosJson(new JsonMapper());
+
+    /** El cajero sale del token desde #114. */
+    @BeforeEach
+    void fijarElToken() {
+        OrigenContext.fijar(new Origen(CAJERO, null, null));
+    }
+
+    @AfterEach
+    void limpiarElToken() {
+        OrigenContext.limpiar();
+    }
 
     @Test
     @DisplayName("a las 19:30 el cobro sin fecha va al turno abierto del 23, no abre uno del 24")

@@ -3,7 +3,6 @@ package kamayuk.caja.nucleo.infraestructura.web;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.EnumMap;
 import java.util.Map;
 import kamayuk.caja.auditoria.OrigenContext;
@@ -45,6 +44,12 @@ import org.springframework.web.bind.annotation.RestController;
  * Privilegio#ELIMINACION}</b>, comprobado en el metodo con el mismo puerto que usa el guardia.
  * Reversar reabre una caja cuyo arqueo ya estaba firmado, que es una operacion de otra categoria
  * que cerrarla: la anotacion declara lo que exige la ruta, y la ruta es una sola.
+ *
+ * <p><b>Cada cajero cierra y reversa su propio turno (#114).</b> El cajero sale del token ({@link
+ * QuienYCuando}); hasta #114 venia en el cuerpo, y con REGISTRO se podia cerrar el turno de otro
+ * con el declarado propio. La fecha admite hoy <b>o un dia pasado</b> ({@code
+ * HOY_O_UN_DIA_PASADO}): el turno que se quedo abierto ayer tiene que poder cerrarse, y sigue
+ * siendo el del cajero del token. Una fecha futura es 422.
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/turnos")
@@ -73,8 +78,13 @@ public class CierreController {
     @RequiereAcceso(acceso = ACCESO, privilegio = Privilegio.REGISTRO)
     public ResponseEntity<CierreResource> cierre(@RequestBody PeticionDeCierre peticion) {
         String caja = exigir(peticion.caja(), "caja");
-        String cajero = exigir(peticion.cajero(), "cajero");
-        LocalDate fecha = fechaDe(peticion.fecha());
+        String cajero = QuienYCuando.cajero(peticion.cajero());
+        LocalDate fecha =
+                QuienYCuando.dia(
+                        peticion.fecha(),
+                        "fecha",
+                        QuienYCuando.Politica.HOY_O_UN_DIA_PASADO,
+                        reloj);
         Observacion observacion = observacionDe(peticion.observacion());
         String motivo = vacioAnulo(peticion.motivoDeReversion());
 
@@ -164,26 +174,6 @@ public class CierreController {
             }
         }
         return porForma;
-    }
-
-    /**
-     * La fecha del turno. Si no viene, hoy.
-     *
-     * <p>Admitirla explicita es lo que permite cerrar el turno de ayer que se quedo sin sistema.
-     * Quien puede hacerlo tiene el privilegio de REGISTRO sobre la opcion, y todo queda en la
-     * auditoria con su observacion.
-     */
-    private LocalDate fechaDe(@Nullable String texto) {
-        if (texto == null || texto.isBlank()) {
-            return LocalDate.now(reloj);
-        }
-        try {
-            return LocalDate.parse(texto.strip());
-        } catch (DateTimeParseException invalida) {
-            throw new ProblemaDeNegocio(
-                    CodigoDeError.VALIDACION,
-                    "El campo 'fecha' no es una fecha ISO valida: '" + texto + "'");
-        }
     }
 
     private static Observacion observacionDe(@Nullable String texto) {
