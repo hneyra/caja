@@ -299,16 +299,20 @@ class AuditoriaJdbcTest {
     @Test
     @DisplayName("un ejercicio sin particion falla en vez de perderse")
     void unEjercicioSinParticionFalla() {
-        // Las particiones declaradas son 2026 y 2027. Que falle es lo correcto: la
-        // alternativa —una particion por omision— guardaria la fila donde nadie la
-        // busca, y una auditoria que no se encuentra es una auditoria que no existe.
+        // Las particiones declaradas van de 2026 a 2035 (V1: 2026-2027; V4, #113: 2028-2035).
+        // 2036 es a proposito el primer ejercicio que se queda fuera de ese rango: si V4 alguna
+        // vez ampliara la cobertura mas alla de 2035, esta prueba tendria que moverse con ella, y
+        // es justo lo que CoberturaFuturaDeParticionesDeAuditoriaTest, en el esquema, avisa con
+        // dos anios de antelacion. Que falle es lo correcto: la alternativa —una particion por
+        // omision— guardaria la fila donde nadie la busca, y una auditoria que no se encuentra es
+        // una auditoria que no existe.
         assertThatThrownBy(
                         () ->
                                 transaccion.execute(
                                         estado -> {
                                             auditoria.registrar(
                                                     new RegistroDeAuditoria(
-                                                            new Ejercicio(2035),
+                                                            new Ejercicio(2036),
                                                             "area",
                                                             "10",
                                                             Operacion.ALTA,
