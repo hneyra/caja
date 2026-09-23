@@ -123,8 +123,11 @@ public class AnularRecibo {
         long reciboId =
                 Objects.requireNonNull(recibo.id(), "Un recibo leido trae su identificador");
 
+        // El candado del turno, antes de mirar su estado (#110): el mismo que toma el
+        // cierre. Sin el, un cierre que ya congelo su arqueo con este recibo como cobrado
+        // confirmaria despues de esta anulacion, y el acta firmada lo seguiria contando.
         TurnoDeCaja turno =
-                turnos.porId(recibo.turnoId())
+                turnos.bloquear(recibo.turnoId())
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

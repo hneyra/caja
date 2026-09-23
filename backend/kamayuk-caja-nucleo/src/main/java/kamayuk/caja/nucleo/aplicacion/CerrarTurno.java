@@ -40,16 +40,21 @@ import org.springframework.transaction.annotation.Transactional;
  * reversar el cierre. El cierre siguiente vuelve a congelar sus totales, que ya incluiran lo
  * cobrado despues, y el historial conserva los dos arqueos y la reversion entre ellos.
  *
- * <h2>Dos cierres a la vez</h2>
+ * <h2>Nada se cuela en un cierre en curso, y dos cierres no se pisan</h2>
  *
  * <p>Dos barreras, y las dos en la base:
  *
  * <ol>
- *   <li>el turno bloqueado con {@code FOR UPDATE} —el mismo candado con el que se serializa la
- *       ventanilla desde #33—: mientras una cobranza tenga el turno, el cierre espera, y al reves;
+ *   <li>el <b>candado del turno</b> ({@link TurnoDeCajaRepository#bloquear}, #110): un {@code
+ *       pg_advisory_xact_lock} que toman tambien la cobranza de ordenes, la de tasas y la
+ *       anulacion. Mientras una de ellas lo tenga, el cierre espera, y al reves: el arqueo que se
+ *       congela no puede quedarse corto entre leerlo y escribirlo. <b>No es un {@code FOR
+ *       UPDATE}</b>, y hasta #110 este parrafo decia que lo era: desde `V2` {@code kamayuk_app} no
+ *       tiene UPDATE sobre {@code cierre_caja}, el turno se leia sin candado y nada ocupaba su
+ *       lugar;
  *   <li>{@code cierre_turno_secuencia_uq}: dos cierres simultaneos calculan la misma secuencia y
  *       uno recibe {@code 23505}. Es lo que sigue valiendo si algun dia alguien escribe un camino
- *       que no bloquee.
+ *       que no tome el candado.
  * </ol>
  *
  * <h2>El descuadre se guarda, no se rechaza</h2>
@@ -101,9 +106,9 @@ public class CerrarTurno {
         Objects.requireNonNull(peticion, "No se cierra sin peticion");
         Objects.requireNonNull(observacion, "Sin observacion no se guarda (regla 10, RNF-052)");
 
-        // 1. La ventanilla, serializada: el mismo candado que toma una cobranza. Mientras
-        //    el cierre lo tenga, ninguna cobranza de esta caja entra, y por eso el arqueo
-        //    que se congela no puede quedarse corto entre leerlo y escribirlo.
+        // 1. El turno, con su candado: el mismo que toman la cobranza y la anulacion (#110).
+        //    Mientras el cierre lo tenga, nada de este turno entra, y por eso el arqueo que
+        //    se congela no puede quedarse corto entre leerlo y escribirlo.
         Bloqueado bloqueado =
                 bloquear(peticion.codigoDeCaja(), peticion.cajero(), peticion.fecha());
         long turnoId = bloqueado.turno().idGuardado();
@@ -196,14 +201,14 @@ public class CerrarTurno {
     // ------------------------------------------------------------------
 
     /**
-     * Resuelve la caja y su turno.
+     * Resuelve la caja y su turno, y toma el candado del turno.
      *
-     * <p>Se llamaba {@code bloquear} y bloqueaba de verdad: hasta P5D el turno era el punto de
-     * serializacion de la ventanilla. Desde `V2` no lo es —lo son las ordenes— y el turno se lee
-     * sin {@code FOR UPDATE}, porque `kamayuk_app` ya no tiene el privilegio de UPDATE sobre {@code
-     * cierre_caja} y pedirlo daria {@code permission denied}. Lo que serializa dos cierres del
-     * mismo turno sigue siendo {@code cierre_turno_secuencia_uq}: los dos calculan la misma
-     * secuencia y uno recibe {@code 23505} (V32).
+     * <p>Se llamaba {@code bloquear} porque bloqueaba de verdad: hasta P5D, con {@code FOR UPDATE}
+     * sobre {@code cierre_caja}. Desde `V2` eso daria {@code permission denied} —{@code
+     * kamayuk_app} ya no tiene UPDATE sobre la tabla— y el turno se leyo sin candado, con el nombre
+     * de este metodo prometiendo uno que no existia, hasta #110. Hoy vuelve a bloquear, con el
+     * candado consultivo de {@link TurnoDeCajaRepository#bloquear}, y el turno que devuelve es el
+     * leido con el candado puesto.
      */
     private Bloqueado bloquear(String codigoDeCaja, String cajero, LocalDate fecha) {
         Caja caja =
@@ -212,9 +217,12 @@ public class CerrarTurno {
         long cajaId =
                 Objects.requireNonNull(
                         caja.id(), "Una caja leida del repositorio siempre trae su identificador");
-        TurnoDeCaja turno =
+        long turnoId =
                 turnos.abierto(cajaId, cajero, fecha)
-                        .orElseThrow(() -> new TurnoSinAbrir(caja, cajero, fecha));
+                        .orElseThrow(() -> new TurnoSinAbrir(caja, cajero, fecha))
+                        .idGuardado();
+        TurnoDeCaja turno =
+                turnos.bloquear(turnoId).orElseThrow(() -> new TurnoSinAbrir(caja, cajero, fecha));
         return new Bloqueado(caja, turno);
     }
 
@@ -258,7 +266,7 @@ public class CerrarTurno {
 
     // ------------------------------------------------------------------
 
-    /** La caja y su turno, ya bloqueado. */
+    /** La caja y su turno, con el candado del turno puesto. */
     private record Bloqueado(Caja caja, TurnoDeCaja turno) {}
 
     /**

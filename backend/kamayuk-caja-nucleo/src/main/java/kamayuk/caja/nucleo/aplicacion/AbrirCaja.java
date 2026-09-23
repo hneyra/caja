@@ -42,12 +42,15 @@ public class AbrirCaja {
     }
 
     /**
-     * Deja abierto el turno de ese cajero en esa caja y ese dia, y lo devuelve <b>bloqueado</b>.
+     * Deja abierto el turno de ese cajero en esa caja y ese dia, y lo devuelve <b>con su candado
+     * puesto</b> hasta el fin de la transaccion ({@link TurnoDeCajaRepository#bloquear}, #110).
      *
-     * <p>El bloqueo es lo importante y por eso no se puede separar de la apertura: quien va a
-     * cobrar necesita que la ventanilla este serializada desde antes de mirar nada, y devolver aqui
-     * un turno sin bloquear obligaria a quien llama a acordarse de bloquearlo despues —que es
-     * exactamente la clase de paso que se olvida—.
+     * <p>El candado es lo importante y por eso no se puede separar de la apertura: quien va a
+     * cobrar necesita que el turno no se cierre entre que lo ve abierto y que confirma su recibo, y
+     * devolver aqui un turno sin candado obligaria a quien llama a acordarse de tomarlo despues
+     * —que es exactamente la clase de paso que se olvida—. No es un {@code FOR UPDATE}: desde `V2`
+     * {@code kamayuk_app} no tiene UPDATE sobre {@code cierre_caja}. Es un candado consultivo de
+     * transaccion, el mismo que toman la anulacion y el cierre.
      *
      * @param fechaDeTrabajo el dia del turno; entra como argumento y no sale del reloj, para que
      *     una cobranza registrada con fecha de ayer no abra un turno de hoy
@@ -70,15 +73,31 @@ public class AbrirCaja {
                         caja.id(), "Una caja leida del repositorio siempre trae su identificador");
 
         java.util.Optional<TurnoDeCaja> existente = turnos.abierto(cajaId, cajero, fechaDeTrabajo);
+        long turnoId =
+                existente
+                        .orElseGet(
+                                () ->
+                                        turnos.abrir(
+                                                cajaId,
+                                                cajero,
+                                                fechaDeTrabajo,
+                                                reloj.instant(),
+                                                observacion))
+                        .idGuardado();
+
+        // El candado del turno, ANTES de mirar su estado y antes de cualquier otro candado
+        // de la cobranza (#110). El estado que decide es el leido con el candado puesto: si
+        // un cierre confirmo mientras se esperaba, aqui ya se ve CERRADO.
         TurnoDeCaja turno =
-                existente.orElseGet(
-                        () ->
-                                turnos.abrir(
-                                        cajaId,
-                                        cajero,
-                                        fechaDeTrabajo,
-                                        reloj.instant(),
-                                        observacion));
+                turnos.bloquear(turnoId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "El turno "
+                                                        + turnoId
+                                                        + " se acaba de leer y ya no se ve; con"
+                                                        + " RLS activo eso solo puede pasar sin"
+                                                        + " contexto de tenant"));
         if (!turno.estaAbierto()) {
             throw new TurnoCerrado(caja, cajero, fechaDeTrabajo);
         }

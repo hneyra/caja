@@ -30,9 +30,10 @@ import org.springframework.stereotype.Repository;
  *       lectura del que quedo. Con un {@code SELECT} previo, dos aperturas simultaneas del mismo
  *       cajero lo pasarian las dos y la segunda reventaria la clave unica <b>abortando su
  *       transaccion entera</b> —y con ella la cobranza que iba dentro—.
- *   <li>{@link #abierto} es un {@code SELECT} llano. HASTA P5D llevaba {@code FOR UPDATE} y era
- *       primera barrera contra el doble cobro, y la que hace que la lectura de idempotencia que
- *       viene despues pueda ver lo que la peticion anterior escribio.
+ *   <li>{@link #abierto} es un {@code SELECT} llano. HASTA P5D llevaba {@code FOR UPDATE}; desde
+ *       `V2` no puede, porque {@code kamayuk_app} ya no tiene UPDATE sobre {@code cierre_caja}. Lo
+ *       que serializa el turno desde #110 es {@link #bloquear}, un candado consultivo de
+ *       transaccion.
  * </ul>
  */
 @Repository
@@ -98,6 +99,44 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
     }
 
     /**
+     * El candado del turno: {@code pg_advisory_xact_lock} con el {@code id} del turno como clave, y
+     * el turno releido despues (#110).
+     *
+     * <h2>La clave</h2>
+     *
+     * <p>El {@code id} solo, en la forma de un {@code bigint}. Es {@code GENERATED ALWAYS AS
+     * IDENTITY} con <b>una</b> secuencia para toda la tabla, asi que ya es unico entre todas las
+     * municipalidades del cluster: meter la municipalidad en la clave no lo haria mas unico, y la
+     * forma de dos enteros de 32 bits partiria un {@code bigint} que un dia no cabra. Un choque con
+     * otra clave consultiva de la base —Flyway, o el candado de provisionamiento de las pruebas—
+     * solo haria esperar a alguien de mas; nunca dejaria pasar a dos a la vez.
+     *
+     * <h2>Por que se toma a traves de la tabla y no con la clave suelta</h2>
+     *
+     * <p>{@code SELECT pg_advisory_xact_lock(id) FROM cierre_caja WHERE id = :turno}: la funcion se
+     * evalua solo sobre las filas que RLS deja ver. Una sesion de otra municipalidad que pidiera
+     * este turno por su numero no encuentra la fila y <b>no toma nada</b>: no puede dejar esperando
+     * a la ventanilla de otra, ni por error ni a proposito.
+     *
+     * <h2>Por que se relee</h2>
+     *
+     * <p>El estado se lee con otra sentencia, <b>despues</b> de tener el candado. En READ COMMITTED
+     * cada sentencia ve lo confirmado hasta su comienzo, asi que un cierre que confirmo mientras se
+     * esperaba el candado ya se ve aqui. Leerlo en la misma sentencia que el candado lo leeria con
+     * la foto de antes de esperar, que es exactamente el defecto.
+     */
+    @Override
+    public Optional<TurnoDeCaja> bloquear(long turnoId) {
+        boolean visto =
+                jdbc().sql("SELECT pg_advisory_xact_lock(id) FROM cierre_caja WHERE id = :turno")
+                        .param("turno", turnoId)
+                        .query((fila, numero) -> Boolean.TRUE)
+                        .optional()
+                        .isPresent();
+        return visto ? porId(turnoId) : Optional.empty();
+    }
+
+    /**
      * Los turnos del cajero ese dia, con el rotulo de su ventanilla (#97).
      *
      * <p>El {@code JOIN} es <b>interno</b> y no izquierdo, al reves que el del catalogo de cajas:
@@ -145,11 +184,10 @@ public class TurnoDeCajaRepositoryJdbc extends RepositorioJdbc implements TurnoD
     /**
      * El estado del turno, derivado de {@code cierre_turno} (V32).
      *
-     * <p>En una consulta aparte y no en un {@code JOIN} sobre la de {@link #bloquear}: mezclar un
-     * {@code LEFT JOIN LATERAL} con {@code FOR UPDATE} obliga a acotar el bloqueo con {@code FOR
-     * UPDATE OF}, y eso es exactamente la clase de SQL que alguien simplifica meses despues sin
-     * darse cuenta de que estaba bloqueando la tabla equivocada. Son dos viajes dentro de la misma
-     * transaccion, con la fila ya bloqueada: nadie puede cerrar el turno entre uno y otro.
+     * <p>En una consulta aparte y no en un {@code JOIN}. Lo que impide que alguien cierre el turno
+     * entre esta lectura y lo que se escriba despues no es esta consulta sino el candado de {@link
+     * #bloquear}, que la antecede en todo camino que escribe (#110); sin el, esta lectura es solo
+     * una foto.
      */
     private TurnoDeCaja conSuEstado(TurnoDeCaja turno) {
         return new TurnoDeCaja(
