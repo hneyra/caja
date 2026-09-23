@@ -153,6 +153,14 @@ class ArranqueDeLaAplicacionTest {
                 .as("el controlador que C-6 vio caerse por el comprobador que faltaba")
                 .isNotEmpty();
 
+        // #112: el reloj que llega a los 21 `LocalDate.now(reloj)` es el del contexto VIVO, y
+        // solo aqui se ve si otro bean lo sustituye. Uno y con la zona del producto.
+        assertThat(contexto.getBeansOfType(java.time.Clock.class).values())
+                .as("un solo reloj en el contexto, y con ZonaHoraria.DEL_PRODUCTO")
+                .singleElement()
+                .extracting(java.time.Clock::getZone)
+                .isEqualTo(kamayuk.caja.dominio.ZonaHoraria.DEL_PRODUCTO);
+
         assertThat(contexto.getBeanNamesForType(PublicadorDelBuzon.class))
                 .as(
                         "el publicador no va en web (#79): con replicas, varios publicadores gastan"

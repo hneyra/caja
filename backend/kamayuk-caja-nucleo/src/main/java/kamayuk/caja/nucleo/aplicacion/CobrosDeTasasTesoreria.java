@@ -1,11 +1,11 @@
 package kamayuk.caja.nucleo.aplicacion;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import kamayuk.caja.dominio.Dinero;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.nucleo.CobrosDeTasas;
 import kamayuk.caja.nucleo.RecaudacionDeTasa;
 import kamayuk.caja.nucleo.TasaCobrada;
@@ -87,7 +87,9 @@ public class CobrosDeTasasTesoreria implements CobrosDeTasas {
                             linea.tributo(),
                             cantidad == null ? 1 : cantidad,
                             totalDe(linea),
-                            LocalDate.ofInstant(recibo.emitidoEn(), ZoneOffset.UTC)));
+                            // El dia de Lima (#112): truncado en UTC, un cobro de las 19:30
+                            // constaba del dia siguiente.
+                            ZonaHoraria.diaDe(recibo.emitidoEn())));
         }
         return Optional.empty();
     }

@@ -3,6 +3,8 @@ package kamayuk.caja.nucleo.infraestructura;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +15,7 @@ import kamayuk.caja.compartido.Paginacion;
 import kamayuk.caja.dominio.Dinero;
 import kamayuk.caja.dominio.Ejercicio;
 import kamayuk.caja.dominio.Observacion;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.nucleo.dominio.Caja;
 import kamayuk.caja.nucleo.dominio.CriterioDeRecibos;
 import kamayuk.caja.nucleo.dominio.EstadoDeRecibo;
@@ -227,13 +230,18 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
         // `recibo.fecha` es timestamptz y el rango del filtro es de dias: se compara
         // sobre la fecha, no sobre el instante, o un recibo de las 09:14 quedaria fuera
         // de un «hasta» que es su mismo dia.
+        //
+        // Y los dias son DE LIMA, pasados como instantes con su desfase (#112). Hasta aqui
+        // viajaban como `LocalDateTime`, o sea `timestamp` sin zona, y PostgreSQL lo
+        // convierte con la zona de la SESION —la de la JVM, que pgjdbc copia al conectar—:
+        // en el contenedor, UTC, y el recibo de las 19:30 caia fuera de su propio dia.
         if (criterio.desde() != null) {
             donde.append(" AND r.fecha >= :desde");
-            parametros.put("desde", criterio.desde().atStartOfDay());
+            parametros.put("desde", comienzoDe(criterio.desde()));
         }
         if (criterio.hasta() != null) {
             donde.append(" AND r.fecha < :hasta");
-            parametros.put("hasta", criterio.hasta().plusDays(1).atStartOfDay());
+            parametros.put("hasta", comienzoDe(criterio.hasta().plusDays(1)));
         }
         if (criterio.estado() != null) {
             donde.append(criterio.estado() == EstadoDeRecibo.ANULADO ? " AND " : " AND NOT ")
@@ -424,5 +432,10 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
                 new Dinero(fila.getBigDecimal("reajuste")),
                 new Dinero(fila.getBigDecimal("interes")),
                 new Dinero(fila.getBigDecimal("gasto")));
+    }
+
+    /** La medianoche de Lima de ese dia, como instante con su desfase (#112). */
+    private static OffsetDateTime comienzoDe(LocalDate dia) {
+        return ZonaHoraria.conSuDesfase(ZonaHoraria.comienzoDelDia(dia));
     }
 }

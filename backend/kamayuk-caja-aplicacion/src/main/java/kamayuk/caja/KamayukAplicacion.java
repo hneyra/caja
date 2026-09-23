@@ -1,6 +1,7 @@
 package kamayuk.caja;
 
 import java.time.Clock;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.plataforma.ConfiguracionDeTenant;
 import kamayuk.caja.plataforma.SeguridadWeb;
 import org.springframework.boot.SpringApplication;
@@ -94,9 +95,29 @@ public class KamayukAplicacion {
      * fecha —la auditoria se particiona por ejercicio— pero sigue siendo indeseable que sea
      * imposible de fijar en una prueba. Un {@code Clock} inyectado resuelve las dos cosas sin
      * discutir con nadie.
+     *
+     * <p><b>Lleva la zona del producto, y no la del servidor</b> (#112, lo mismo que {@code
+     * rentas}#316). {@code LocalDate.now(reloj)} trunca con la zona <i>del reloj</i>, y {@code
+     * src/main} lo llama 21 veces en 16 archivos para decidir que dia es: el turno al que va un
+     * cobro sin fecha, si un recibo todavia se anula, la vigencia de un permiso, el turno de {@code
+     * /turnos/del-dia}, la fecha de la auditoria. Con {@code Clock.systemDefaultZone()} ese dia era
+     * el del sistema operativo, y el contenedor corre en UTC: desde las 19:00 de Lima el cobro
+     * abria el turno de manana y la anulacion de un recibo de la tarde salia {@code
+     * FueraDelDiaDePago}.
+     *
+     * <p><b>Por que aqui y no en los 21 sitios</b>, medido el 2026-09-23 sobre {@code
+     * backend/*&#47;src/main}: el reloj se lee ademas en 14 {@code reloj.instant()} —un instante no
+     * tiene zona— y en un {@code OffsetDateTime.now(reloj)} ({@code AuditoriaJdbc}) que va a una
+     * columna {@code timestamptz}, que guarda el instante y descarta el desfase. Fijar la zona aqui
+     * cambia exactamente los 21 sitios que tenia que cambiar y ninguno mas.
+     *
+     * <p>Que no vuelva un reloj sin esta zona lo vigila {@code
+     * NingunRelojSinLaZonaDelProductoTest}; que el dia salga bien en la franja en que las dos zonas
+     * discrepan, {@code ElDiaDelRelojEsElDelProductoTest}, y lo que el cajero ve a esa hora, {@code
+     * ElDiaDeLaVentanillaEsElDeLimaTest}.
      */
     @Bean
     Clock reloj() {
-        return Clock.systemDefaultZone();
+        return Clock.system(ZonaHoraria.DEL_PRODUCTO);
     }
 }
