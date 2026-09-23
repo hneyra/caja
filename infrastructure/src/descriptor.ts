@@ -161,6 +161,63 @@ const RECURSOS_DE_ARRANQUE = {
  */
 const VENTANA_DEL_CONSUMIDOR = "*/5 * * * *";
 
+/** El periodo de `VENTANA_DEL_CONSUMIDOR` en segundos: lo que tarda un tick en volver. */
+const PERIODO_DEL_CONSUMIDOR_SEGUNDOS = 5 * 60;
+
+/**
+ * `startingDeadlineSeconds` del `CronJob` del consumidor (#116): si el controlador se atrasa mas
+ * de un minuto en arrancar el pod —una caida breve del plano de control—, este tick se cuenta
+ * como perdido en vez de arrancar tan tarde que casi no le quede ventana antes del siguiente. Ver
+ * la seccion «Los dos plazos» de `lotes()`.
+ */
+const PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS = 60;
+
+/**
+ * `activeDeadlineSeconds` del `CronJob` del consumidor (#116), por DEBAJO del periodo de cinco
+ * minutos y no en cualquier punto por debajo: `PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS` (60) +
+ * `PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS` (240) suman exactamente los 300 s del periodo, asi que un
+ * job que arranca en el ultimo instante que el plazo de arranque admite y corre hasta su limite
+ * termina justo cuando toca el siguiente tick: nunca se come la ventana ajena. Ver la seccion «Los
+ * dos plazos» de `lotes()` para lo que tarda una corrida y por que morir a medias a los 240 s es
+ * seguro —no «sobra»: una corrida sana con mucho atraso puede llegar a este limite y cortarse ahi—.
+ */
+const PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS = 240;
+
+/**
+ * `startingDeadlineSeconds` (en `spec`) y `activeDeadlineSeconds` (en `spec.jobTemplate.spec`)
+ * son campos de Kubernetes que el `CronJob` de `@kamayuk/infra-contrato` todavia no declara —
+ * #116 es el primero de los cinco repositorios que los necesita—. Se extienden aqui, LOCALMENTE,
+ * en vez de tocar `infrastructure`: son datos planos que Kubernetes entiende igual sin que el
+ * contrato compartido los conozca, y la auditoria de `infrastructure` los recorre como cualquier
+ * otro campo del objeto que recibe.
+ */
+export type CronJobConPlazos = CronJob & {
+  spec: CronJob["spec"] & {
+    startingDeadlineSeconds: number;
+    jobTemplate: {
+      spec: CronJob["spec"]["jobTemplate"]["spec"] & { activeDeadlineSeconds: number };
+    };
+  };
+};
+
+// La propiedad de seguridad es <=, no ===: un job que arranca en el ultimo instante admitido y
+// corre hasta su propio limite no puede terminar DESPUES del siguiente tick —eso si se comeria la
+// ventana ajena—, pero terminar ANTES no rompe nada, es solo mas margen. Con === bajar uno solo de
+// los dos numeros en el futuro (mas margen, menos plazo activo) reventaria el modulo sin motivo;
+// con <= sigue vigilando lo unico que de verdad hace falta. Los 60 + 240 = 300 de hoy son ademas el
+// caso exacto (ver los dos docblocks de arriba), y por eso la prueba del descriptor los pide tal
+// cual: esta aserción es el limite de la propiedad, no el valor concreto.
+if (
+  PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS + PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS >
+  PERIODO_DEL_CONSUMIDOR_SEGUNDOS
+) {
+  throw new Error(
+    "PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS + PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS no puede " +
+      "superar PERIODO_DEL_CONSUMIDOR_SEGUNDOS: un job que arranca al final del plazo de arranque " +
+      "y corre hasta su plazo activo terminaria despues del siguiente tick",
+  );
+}
+
 /** La conexion de la aplicacion: `kamayuk_app` y solo `kamayuk_app` (ARQ-03 §4). */
 function credencialesDeLaAplicacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
   return [
@@ -1021,6 +1078,50 @@ export const caja: DescriptorDeSistema = {
    * un fallo transitorio se arregla solo y la vuelta siguiente llega en cinco minutos —reintentar
    * seis veces en ese hueco es pedirle seis tokens al emisor por lo mismo—.
    *
+   * ## Los dos plazos, y por que un job colgado no congela todas las vueltas siguientes (#116)
+   *
+   * Hasta #116 este `CronJob` no llevaba ni `activeDeadlineSeconds` ni `startingDeadlineSeconds`:
+   * un job colgado —un HTTP a `identidad` que no vuelve, o una fila bloqueada en la base— se
+   * quedaba corriendo, y con `concurrencyPolicy: Forbid` eso le impide a todas las corridas
+   * siguientes empezar, sin que nada lo avise.
+   *
+   * `activeDeadlineSeconds: 240` NO es un margen que «sobre» frente a lo que tarda una corrida:
+   * **una corrida sana con mucho atraso puede superarlo y morir a medias**, y eso es a proposito,
+   * no un accidente que este numero tenga que evitar. `CorrerElConsumidorDeIdentidad.VUELTAS_MAXIMAS`
+   * topa una corrida en 50 vueltas, `ConsumirEventosDeIdentidad.POR_VUELTA` pide hasta 200 eventos
+   * por vuelta, y cada evento se aplica en su propia transaccion `REQUIRES_NEW`
+   * (`AplicarUnEventoDeIdentidad.aplicar`): hasta 10 000 transacciones pequenas en el peor
+   * backlog, y con eso 240 s puede no bastar para vaciarlo entero. Una peticion HTTP que de verdad
+   * se cuelga es mas barata de acotar: los plazos de `ClienteHttpDelBuzonDeIdentidad` —5 s de
+   * conexion y 30 s de lectura— hacen que lance su excepcion en unos 35 s como mucho, y esa
+   * excepcion termina la corrida entera ahi mismo —no hay reintento por vuelta dentro del proceso;
+   * `backoffLimit: 1` es del `Job`, que arranca un pod nuevo, no del cliente HTTP—. Lo que ningun
+   * timeout de aplicacion cubre —ni el HTTP, ni el tope de vueltas— es una fila bloqueada en la
+   * base, la otra mitad del hallazgo que abrio este issue: para eso `activeDeadlineSeconds` es el
+   * UNICO limite que hay.
+   *
+   * **Y que Kubernetes mate el pod a medio vaciar el backlog es seguro, no solo tolerable.** Cada
+   * evento se confirma en su propia transaccion ANTES del acuse al emisor —el javadoc de
+   * `ConsumirEventosDeIdentidad` lo dice explicito: el acuse va despues de TODAS las transacciones
+   * de la pagina, una vez por vuelta—, asi que un pod matado a media vuelta deja lo ya aplicado
+   * COMMITEADO y sin acusar: el emisor lo vuelve a servir, y `AplicarUnEventoDeIdentidad.aplicar`
+   * devuelve `YA_APLICADO` sin volver a escribir nada —lo decide el `INSERT … ON CONFLICT DO
+   * NOTHING` sobre `identidad_evento_aplicado`, que es barato—. La corrida siguiente retoma donde
+   * el emisor todavia ve pendiente: nada se pierde y nada se aplica dos veces. Y si este patron se
+   * repite lo bastante como para que un evento quede sin resolver mas de
+   * `ConsumirEventosDeIdentidad.MINUTOS_QUE_SE_ADMITEN` (15 min), la alerta de pospuestos que ya
+   * existe —`avisarDeLosPospuestosQueLlevanDemasiado`— es quien avisa al responsable; este plazo no
+   * tiene que resolver ese caso por su cuenta, solo no impedir que la siguiente corrida arranque.
+   *
+   * Y 240 s queda por DEBAJO del periodo de cinco minutos (300 s) a proposito, y no en cualquier
+   * punto por debajo: ver `PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS` y
+   * `PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS`. La propiedad que de verdad hace falta es que su
+   * suma NO SUPERE el periodo —la aserción de mas arriba lo vigila con `<=`, no con `===`, porque
+   * mas margen nunca es un fallo— y hoy da exactamente 300: un job que arranca en el ultimo
+   * instante que el plazo de arranque admite y corre hasta su propio limite termina justo cuando
+   * toca el siguiente tick. Los dos campos no estan en el `CronJob` de `@kamayuk/infra-contrato`
+   * todavia —ver `CronJobConPlazos`—.
+   *
    * ## Lo que este CronJob NO es
    *
    * No nace con `suspend: true`. Hasta #21 el ingestor de `rentas` nacia suspendido por falta de
@@ -1032,18 +1133,21 @@ export const caja: DescriptorDeSistema = {
   lotes(e): Manifiesto[] {
     const nombre = `kamayuk-${SISTEMA}-consumidor-de-identidad`;
     const etiquetas = { ...e.etiquetas, componente: SISTEMA };
-    const consumidor: CronJob = {
+    const consumidor: CronJobConPlazos = {
       apiVersion: "batch/v1",
       kind: "CronJob",
       metadata: { name: nombre, namespace: e.namespace, labels: etiquetas },
       spec: {
         schedule: VENTANA_DEL_CONSUMIDOR,
+        // Ver "Los dos plazos" arriba: 60 + 240 = 300 = el periodo, a proposito.
+        startingDeadlineSeconds: PLAZO_DE_ARRANQUE_DEL_CONSUMIDOR_SEGUNDOS,
         concurrencyPolicy: "Forbid",
         successfulJobsHistoryLimit: 3,
         failedJobsHistoryLimit: 3,
         jobTemplate: {
           spec: {
             backoffLimit: 1,
+            activeDeadlineSeconds: PLAZO_ACTIVO_DEL_CONSUMIDOR_SEGUNDOS,
             template: {
               metadata: { labels: { ...etiquetas, app: nombre } },
               spec: {
