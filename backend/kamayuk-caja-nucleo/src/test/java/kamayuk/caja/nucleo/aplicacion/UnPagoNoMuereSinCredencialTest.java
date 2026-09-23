@@ -343,7 +343,10 @@ class UnPagoNoMuereSinCredencialTest {
             buzon = new BuzonEnMemoria();
             entrega =
                     new EntregarEventos(
-                            buzon, destino, muertos -> {}, 8, Clock.fixed(AHORA, ZoneOffset.UTC));
+                            new AnotarLaEntrega(buzon, Clock.fixed(AHORA, ZoneOffset.UTC)),
+                            destino,
+                            muertos -> {},
+                            8);
         }
 
         private EventoDePago encolado() {

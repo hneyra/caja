@@ -62,11 +62,20 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
     /**
      * Lo pendiente, en el orden en que se cobro.
      *
-     * <p>{@code FOR UPDATE SKIP LOCKED}: si dos instancias del publicador corren a la vez —y en un
-     * despliegue con dos replicas corren— la segunda <b>salta</b> lo que la primera tiene tomado en
-     * vez de esperarla. Sin {@code SKIP LOCKED} las dos entregarian el mismo evento en cuanto la
-     * primera soltara, y aunque el receptor deduplique por {@code pagoId}, el segundo intento
-     * contaria como intento y acercaria el evento a MUERTO sin que hubiera pasado nada malo.
+     * <p><b>Sin {@code FOR UPDATE SKIP LOCKED} desde #109, y no es un descuido.</b> Ese candado se
+     * tomaba en la transaccion del recorrido y duraba la vuelta entera, con todos sus {@code POST}
+     * dentro: no porque se quisiera, sino porque el {@code REQUIRES_NEW} que debia partir la vuelta
+     * no se aplicaba (autoinvocacion). Con la vuelta partida de verdad, el candado ya no sirve en
+     * este sitio: la lectura va en su propia transaccion, que se cierra antes de la primera llamada
+     * al origen, y lo soltaria al instante; y si se quedara abierto, la marca de cada evento —en
+     * otra transaccion— esperaria detras de el para siempre.
+     *
+     * <p>Lo que el candado impedia —dos publicadores contando dos veces el intento de un mismo
+     * evento— lo impide ahora {@link #marcarFallido}, que solo cuenta si {@code intentos} sigue
+     * valiendo lo que valia al leerlo. Lo que ya no impide nada es que dos publicadores
+     * <b>entreguen</b> el mismo evento: el receptor deduplica por {@code pagoId}, que es la razon
+     * de que lo genere la caja al cobrar, y el despliegue corre uno solo ({@code replicas: 1},
+     * {@code maxSurge: 0}).
      */
     @Override
     public List<EventoDePago> pendientes(int cuantos) {
@@ -74,7 +83,7 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
                         "SELECT "
                                 + COLUMNAS
                                 + " FROM pago_evento WHERE estado = 'PENDIENTE'"
-                                + " ORDER BY id LIMIT :cuantos FOR UPDATE SKIP LOCKED")
+                                + " ORDER BY id LIMIT :cuantos")
                 .param("cuantos", cuantos)
                 .query(BuzonDeSalidaJdbc::mapear)
                 .list();
@@ -92,12 +101,14 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
     }
 
     @Override
-    public void marcarFallido(long id, String error, boolean seAgotaron) {
+    public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
         jdbc().sql(
                         "UPDATE pago_evento SET intentos = intentos + 1, ultimo_error = :error,"
                                 + " estado = CASE WHEN :muerto THEN 'MUERTO' ELSE estado END"
-                                + " WHERE id = :id AND estado = 'PENDIENTE'")
+                                + " WHERE id = :id AND estado = 'PENDIENTE'"
+                                + " AND intentos = :leidos")
                 .param("error", error)
+                .param("leidos", intentosLeidos)
                 .param("muerto", seAgotaron)
                 .param("id", id)
                 .update();

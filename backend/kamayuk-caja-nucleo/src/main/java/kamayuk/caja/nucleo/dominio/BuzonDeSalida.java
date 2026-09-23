@@ -23,8 +23,16 @@ public interface BuzonDeSalida {
     /** Marca la entrega, con su hora. */
     void marcarEntregado(long id, Instant cuando);
 
-    /** Cuenta un intento fallido, y mata el evento si se agotaron. */
-    void marcarFallido(long id, String error, boolean seAgotaron);
+    /**
+     * Cuenta un intento fallido, y mata el evento si se agotaron.
+     *
+     * <p>Solo cuenta si el evento sigue PENDIENTE <b>y</b> sus intentos siguen siendo {@code
+     * intentosLeidos}: dos publicadores que leyeron el mismo evento y fallaron los dos cuentan una
+     * caida, no dos (#109). Si otro ya lo conto, no hace nada.
+     *
+     * @param intentosLeidos los intentos que tenia el evento cuando se leyo para entregarlo
+     */
+    void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron);
 
     /** Alguien se hizo cargo por escrito. */
     void explicar(long id, String explicacion);

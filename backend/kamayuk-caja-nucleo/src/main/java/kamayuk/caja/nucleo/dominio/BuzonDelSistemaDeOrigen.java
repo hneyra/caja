@@ -17,7 +17,9 @@ public interface BuzonDelSistemaDeOrigen {
      * garantiza el otro lado— y por eso lo dice aqui: quien escriba un receptor que no deduplique
      * produce un asiento por reintento, que es el criterio 3 del encargo incumplido.
      *
-     * @throws NoContesta si no se pudo entregar. Es lo unico que hace que se reintente
+     * @throws NoContesta si no se pudo entregar. Se reintenta; y desde #109 tambien cualquier otra
+     *     excepcion que no sea {@link Rechazado}, que el publicador cuenta como intento en vez de
+     *     dejar el evento atascado primero en la cola
      * @throws Rechazado si el receptor dijo que no. NO se reintenta: reintentar un rechazo es
      *     gastar los intentos hasta matar el evento por un motivo que no va a cambiar
      */
