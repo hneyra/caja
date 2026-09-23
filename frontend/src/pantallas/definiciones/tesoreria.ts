@@ -128,6 +128,10 @@ export const TESORERIA = {
     ],
   },
   'duplicado-recibo': {
+    // Lo tecleado en el acto de anular vive fuera de la pantalla (#117): asi la costura
+    // (`useLaAnulacion.ts`) lo copia a la pestana, y un 401 a mitad del acto no se lo lleva al
+    // volver a entrar. Sin `suciaAlTeclear`: la hoja no ofrece «Guardar» ni se marca sucia.
+    hoja: { conservaLoTecleado: 'soloSiSucia' },
     instruccion:
       'busque el recibo por el documento del pagador, la caja, el cajero o las fechas, ábralo para ver su duplicado y, si procede, anúlelo desde aquí.',
     bloques: [

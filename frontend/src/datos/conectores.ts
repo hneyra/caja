@@ -85,6 +85,22 @@ import { RUTAS, pedirPagina, pedirUno, rutaDeLaConciliacion, rutaDelCierre, ruta
  * de las municipalidades a las que sirve el producto.
  */
 
+/**
+ * **El reparto de una respuesta lanzo** (#117): llego algo que esta pantalla no sabe leer.
+ *
+ * Lo lanza `useDatosDeLaHoja` desde el `select` de la consulta, envolviendo la causa —casi siempre
+ * `formatearImporte`, que nombra el valor—, y es lo que deja distinguir «no se pudo pedir» de «llego,
+ * pero mal». Vive aqui y no en el gancho porque la segunda lectura de un conector tambien lo mira.
+ */
+export class ErrorAlRepartir extends Error {
+  constructor(causa: unknown) {
+    super(`La respuesta llegó, pero no se pudo repartir: ${causa instanceof Error ? causa.message : String(causa)}`, {
+      cause: causa,
+    });
+    this.name = 'ErrorAlRepartir';
+  }
+}
+
 /** Lo que una pantalla saca de una respuesta. */
 export interface Reparto {
   /** Los campos de solo lectura que SI salen de lo que llego. */
@@ -266,6 +282,14 @@ const RECIBO_QUE_NO_ESTA: Ausencia = {
   tono: 'atencion',
 };
 
+/** Llego el recibo, pero con una forma que no se sabe leer (#117). La lista sigue siendo buena. */
+const RECIBO_ILEGIBLE: Ausencia = {
+  enElCampo: 'fallo',
+  explicacion:
+    'El recibo elegido llegó con datos que esta pantalla no sabe leer, y no se pintan. La lista de arriba es la que contestó el sistema y sigue siendo válida.',
+  tono: 'atencion',
+};
+
 const RECIBO_QUE_NO_LLEGO: Ausencia = {
   enElCampo: 'fallo',
   explicacion:
@@ -324,6 +348,7 @@ export const FRASES_DE_LOS_CONECTORES: readonly string[] = [
     PIDIENDO_EL_RECIBO,
     RECIBO_QUE_NO_ESTA,
     RECIBO_QUE_NO_LLEGO,
+    RECIBO_ILEGIBLE,
     CIERRE_CON_TURNO,
     CIERRE_SIN_TURNO,
     CIERRE_YA_CERRADO,
@@ -416,6 +441,7 @@ const bloqueDelRecibo = (palabra: string): Reparto => ({
  */
 function alNoLlegarElRecibo(error: unknown): Ausencia {
   const estado = error instanceof ErrorDeLaApi ? error.estado : null;
+  if (error instanceof ErrorAlRepartir) return RECIBO_ILEGIBLE;
   return estado === 404 ? RECIBO_QUE_NO_ESTA : RECIBO_QUE_NO_LLEGO;
 }
 

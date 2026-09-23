@@ -1,13 +1,14 @@
 import type { Ausencia, DatosDeLaPantalla, RutaDeLaHoja } from '@kamayuk/ui';
 import { valorEnLaRuta } from '@kamayuk/ui';
 import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
 import type { ClaveDeHoja } from '../pantallas/arbol.ts';
 import { hojaDe } from '../pantallas/arbol.ts';
 import { porQueNoHayDato } from '../porQueNoHayDato.ts';
-import type { PasoDeLoElegido, Reparto } from './conectores.ts';
-import { CONECTORES } from './conectores.ts';
+import type { Aporte, Conector, LecturaDeLoElegido, PasoDeLoElegido, Reparto } from './conectores.ts';
+import { CONECTORES, ErrorAlRepartir } from './conectores.ts';
 
 /**
  * **Los datos de una hoja de la ventanilla, pedidos de verdad** (#84).
@@ -36,7 +37,8 @@ const CARGANDO: Ausencia = {
 
 const SIN_SESION: Ausencia = {
   enElCampo: 'sin acceso',
-  explicacion: 'La sesión no vale para pedir estos datos. Vuelva a entrar.',
+  // Dice COMO se vuelve a entrar (#117): el token caduca a los quince minutos y nadie lo renueva.
+  explicacion: 'La sesión caducó o no vale para pedir estos datos. Vuelva a entrar recargando la página.',
   tono: 'atencion',
 };
 
@@ -52,16 +54,29 @@ const FALLO: Ausencia = {
   tono: 'atencion',
 };
 
+/**
+ * Llego una respuesta, pero con una forma que esta pantalla no sabe leer (#117): un importe con
+ * separador de miles, una fecha que no es fecha. No se pinta nada —una cifra a medio leer es peor que
+ * ninguna— y se dice que el resto de la ventanilla sigue en pie, porque sigue.
+ */
+const ILEGIBLE: Ausencia = {
+  enElCampo: 'fallo',
+  explicacion:
+    'Llegaron datos que esta pantalla no sabe leer, y no se pintan para no enseñar una cifra equivocada. El resto de la ventanilla sigue en pie: avise a soporte con el nombre de esta pantalla.',
+  tono: 'atencion',
+};
+
 /** Lo que se dice cuando fallo. El codigo decide la frase, y la frase no lleva el codigo: se traduce. */
 export function alFallar(error: unknown): Ausencia {
   const estado = error instanceof ErrorDeLaApi ? error.estado : null;
   if (estado === 401) return SIN_SESION;
   if (estado === 403) return SIN_PERMISO;
+  if (error instanceof ErrorAlRepartir) return ILEGIBLE;
   return FALLO;
 }
 
 /** Todas las frases de este archivo, para el catalogo del locale. */
-export const AUSENCIAS_DE_UNA_LECTURA: readonly Ausencia[] = [CARGANDO, SIN_SESION, SIN_PERMISO, FALLO];
+export const AUSENCIAS_DE_UNA_LECTURA: readonly Ausencia[] = [CARGANDO, SIN_SESION, SIN_PERMISO, FALLO, ILEGIBLE];
 
 /** Dos mapas en uno, con el de la derecha encima. El de la segunda lectura no pisa nada del primero. */
 function unir<K, V>(uno: ReadonlyMap<K, V>, otro: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
@@ -80,6 +95,16 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
   const deLoElegido = conector?.deLoElegido;
   const elegido = deLoElegido === undefined || ruta === undefined ? null : valorEnLaRuta(ruta, deLoElegido.enLaRuta);
 
+  // **El reparto corre en el `select`, y no en el render** (#117). `formatearImporte` e
+  // `instanteEnLima` lanzan —a proposito, nombrando el valor— con un dato que el backend no sirve,
+  // y en el render ese lanzamiento desmontaba la raiz entera: menu y sesion con la hoja. En el
+  // `select`, TanStack lo recoge y la consulta pasa a `isError`, que es el estado de fallo que ya
+  // existia. `useCallback` para que no se reparta en cada pintada: el `select` se vuelve a correr
+  // solo si cambian los datos o la funcion.
+  const repartirLaLista = useCallback(
+    (respuesta: unknown): Reparto => sinLanzar(() => (conector as Conector).repartir(respuesta as never, elegido)),
+    [conector, elegido],
+  );
   const consulta = useQuery({
     queryKey: conector?.clave ?? ['sin-conector', clave],
     queryFn: ({ signal }) => conector?.pedir(signal) ?? Promise.resolve(null),
@@ -87,10 +112,16 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
     // hoja nueva que llegara sin el, y entonces `porQueNoHayDato` dice cual de los dos casos es.
     enabled: conector !== undefined,
     retry: false,
+    select: repartirLaLista,
   });
 
   // La segunda lectura. **La clave lleva lo elegido dentro**: dos recibos no comparten cache, y
   // volver al de antes lo ensena mientras refresca en vez de pedirlo de cero.
+  const repartirElDetalle = useCallback(
+    (respuesta: unknown): Aporte =>
+      sinLanzar(() => (deLoElegido as LecturaDeLoElegido).repartir({ paso: 'dato', respuesta: respuesta as never })),
+    [deLoElegido],
+  );
   const delDetalle = useQuery({
     queryKey: deLoElegido !== undefined && elegido !== null ? deLoElegido.clave(elegido) : ['sin-elegir', clave],
     queryFn: ({ signal }) =>
@@ -98,6 +129,7 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
     // Sin nada elegido no se pide nada: abrir la hoja no manda una peticion a un numero inventado.
     enabled: deLoElegido !== undefined && elegido !== null,
     retry: false,
+    select: repartirElDetalle,
   });
 
   /*
@@ -108,15 +140,20 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
    * bloque que declara `lectura` dibuja «nadie ha dado el estado de «conciliacion»», que el
    * interprete dice en castellano y sin pasar por `t()`. Lo destapo `todo-el-texto-se-traduce`
    * montando la hoja sin backend.
+   *
+   * Con dato, el aporte ya viene repartido del `select` (#117); en los otros tres pasos no hay
+   * respuesta que leer, y se reparte aqui lo que cada uno dice.
    */
-  const aporte = deLoElegido?.repartir(pasoDe(elegido, delDetalle));
+  const paso = pasoDe(elegido, delDetalle);
+  const aporte =
+    deLoElegido === undefined ? undefined : paso.paso === 'dato' ? paso.aporte : deLoElegido.repartir(paso);
   const conLasLecturas = aporte?.lecturas === undefined ? {} : { lecturas: aporte.lecturas };
 
   if (conector === undefined) return { ausencia: porQueNoHayDato(hojaDe(clave)) };
   if (consulta.isPending) return { ...conLasLecturas, ausencia: CARGANDO };
   if (consulta.isError) return { ...conLasLecturas, ausencia: alFallar(consulta.error) };
 
-  const reparto = conector.repartir(consulta.data as never, elegido);
+  const reparto = consulta.data;
   // El reparto puede afinar la frase con lo que llego: `cierre-caja` la necesita, porque «no
   // abrio turno», «ya cerro» y «tiene dos ventanillas» dejan los mismos huecos y se arreglan en
   // tres sitios distintos (#97). Los demas no la ponen, y manda la del conector.
@@ -147,15 +184,29 @@ export function useDatosDeLaHoja(clave: ClaveDeHoja, ruta?: RutaDeLaHoja): Datos
   };
 }
 
-/** En cual de sus cuatro pasos esta la segunda lectura. */
+/** En cual de sus cuatro pasos esta la segunda lectura; con dato, ya repartido por el `select`. */
 function pasoDe(
   elegido: string | null,
-  consulta: { isPending: boolean; isError: boolean; error: unknown; data: unknown },
-): PasoDeLoElegido {
+  consulta: { isPending: boolean; isError: boolean; error: unknown; data: Aporte | undefined },
+): Exclude<PasoDeLoElegido, { readonly paso: 'dato' }> | { readonly paso: 'dato'; readonly aporte: Aporte } {
   if (elegido === null) return { paso: 'sin-elegir' };
   if (consulta.isError) return { paso: 'fallo', error: consulta.error };
-  if (consulta.isPending) return { paso: 'pidiendo' };
-  return { paso: 'dato', respuesta: consulta.data as never };
+  if (consulta.isPending || consulta.data === undefined) return { paso: 'pidiendo' };
+  return { paso: 'dato', aporte: consulta.data };
+}
+
+/**
+ * Corre un reparto y, si lanza, lanza **un `ErrorAlRepartir`** con la causa dentro (#117).
+ *
+ * Envolverlo es lo que deja decir «llego algo que no se sabe leer» en vez de «no se pudo pedir»: el
+ * dato si llego, y mandar a mirar la red seria mandar al sitio equivocado.
+ */
+function sinLanzar<T>(repartir: () => T): T {
+  try {
+    return repartir();
+  } catch (causa) {
+    throw new ErrorAlRepartir(causa);
+  }
 }
 
 /** Un reparto, con los nombres que el interprete lee. */

@@ -1,12 +1,15 @@
 import type {
+  CambioDeLoTecleado,
   DatoConNombre,
   DatosDeLaPantalla,
   EnvioDeUnActo,
   EstadoDeUnaLectura,
+  HojaDelMarco,
+  LoTecleado,
   ManejadoresDeLosActos,
 } from '@kamayuk/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
@@ -16,6 +19,7 @@ import {
   PUEDE_ANULAR,
   PUEDE_LEER_RECIBOS,
 } from '../pantallas/definiciones/tesoreria.ts';
+import { aperturaDeLaAnulacion, guardarLosBorradores, leerLosBorradores } from './borradorDeLaAnulacion.ts';
 import { anularElCobro, loQuePuedeLaSesion } from './laAnulacion.ts';
 import { usePermisosDeLaSesion } from './useCatalogoPermitido.ts';
 
@@ -40,6 +44,16 @@ import { usePermisosDeLaSesion } from './useCatalogoPermitido.ts';
  * de duplicados. Guardar aqui el acta y pintarla seria una tercera version de la verdad; invalidar
  * hace que la hoja vuelva a preguntar, que es lo que haria cualquiera al recargar.
  *
+ * <h2>Y desde #117, el borrador, y que decir cuando la sesion caduco</h2>
+ *
+ * El token caduca a los quince minutos y nadie lo renueva (la renovacion silenciosa es de
+ * `@kamayuk/sesion`, pendiente). Un 401 al confirmar ya no dice «No se pudo anular el cobro»: dice
+ * que la sesion caduco y que hay que volver a entrar. Y lo escrito no se pierde en esa vuelta: la
+ * definicion pide `conservaLoTecleado`, el interprete guarda lo tecleado donde esta costura le dice
+ * —`conLaHoja`— y esta costura lo copia a la pestana (`borradorDeLaAnulacion.ts`). Al volver del
+ * emisor, abrir la anulacion sobre el mismo recibo lo encuentra escrito. Se borra al anular con
+ * exito y al cerrar el acto, que es cancelarlo.
+ *
  * <h2>Y por que vive fuera de `useDatosDeLaHoja`</h2>
  *
  * Porque aquel gancho es **las lecturas de una hoja** y se prueba sin saber quien mira. Meterle la
@@ -53,10 +67,18 @@ export interface LaAnulacion {
   readonly actos: ManejadoresDeLosActos;
   /** Los datos de la hoja, con lo que la sesion puede y el fallo de la escritura si lo hubo. */
   readonly conLaSesion: (datos: DatosDeLaPantalla) => DatosDeLaPantalla;
+  /**
+   * La hoja del marco, con lo tecleado en los actos guardado **aqui** y copiado a la pestana (#117).
+   * En las hojas sin acto, la misma hoja.
+   */
+  readonly conLaHoja: (hoja: HojaDelMarco) => HojaDelMarco;
+  /** Se abrio o se cerro un acto. Cerrar el de anular es cancelarlo: su borrador se va (#117). */
+  readonly alAbrirActo: (clave: string | null, parametros?: Readonly<Record<string, string>>) => void;
 }
 
 /** El titulo del peldano, por lo que el backend contesto. Cada uno se arregla en otro sitio. */
 function tituloDelRechazo(estado: number | null, t: (clave: string) => string): string {
+  if (estado === 401) return t('La sesión caducó antes de anular el cobro');
   if (estado === 403) return t('Su cuenta no puede anular este cobro');
   if (estado === 404) return t('Ese recibo no existe en esta municipalidad');
   if (estado === 409) return t('El estado de ese recibo ya no admite la anulación');
@@ -66,6 +88,13 @@ function tituloDelRechazo(estado: number | null, t: (clave: string) => string): 
 
 /** Y que hacer para salir de ahi. Sin remedio cuando insistir no puede cambiar nada. */
 function remedioDelRechazo(estado: number | null, t: (clave: string) => string): string | undefined {
+  // El cobro NO se anulo: el backend no llego a mirarlo. Lo que se arregla es la sesion, y lo
+  // escrito espera en esta pestana (#117).
+  if (estado === 401) {
+    return t(
+      'Vuelva a entrar: recargue la página y, cuando la ventanilla abra, abra otra vez la anulación sobre este mismo recibo. Lo escrito se conserva en esta pestaña.',
+    );
+  }
   if (estado === 403) {
     return t(
       'Ese recibo lo cobró otro cajero, y anularlo toca el arqueo de su turno: lo autoriza quien responde por la caja.',
@@ -107,6 +136,27 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
   const permisos = usePermisosDeLaSesion();
   const [fallo, setFallo] = useState<EstadoDeUnaLectura | null>(null);
   const puede = loQuePuedeLaSesion(permisos);
+  const conActos = clave === 'duplicado-recibo';
+  // Lo tecleado en los actos de la hoja. Nace de lo que la pestana guardaba: es lo que hace que,
+  // al volver del emisor, el acto se abra con lo escrito (#117).
+  const [tecleado, setTecleado] = useState<LoTecleado>(() => ({
+    campos: {},
+    actos: conActos ? leerLosBorradores() : {},
+  }));
+  useEffect(() => {
+    if (conActos) guardarLosBorradores(tecleado.actos);
+  }, [conActos, tecleado.actos]);
+  /** Los parametros del acto de anular abierto, para saber que borrador se cancela al cerrarlo. */
+  const abierto = useRef<Readonly<Record<string, string>> | null>(null);
+  const olvidar = (parametros: Readonly<Record<string, string>>): void => {
+    const apertura = aperturaDeLaAnulacion(parametros);
+    setTecleado((antes) => {
+      if (!Object.hasOwn(antes.actos, apertura)) return antes;
+      const actos = { ...antes.actos };
+      delete actos[apertura];
+      return { ...antes, actos };
+    });
+  };
 
   const anular = async (envio: EnvioDeUnActo): Promise<void> => {
     // El numero sale de lo que la accion le dio al acto (`con`), que a su vez sale de la ruta de la
@@ -130,6 +180,9 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
       // tragarla aqui dejaria el acto diciendo que el cobro quedo anulado cuando no lo esta.
       throw error;
     }
+    // Anulado, el borrador ya no sirve: volver a abrir el acto no puede ofrecer lo de un cobro que ya
+    // no existe como tal (#117).
+    olvidar(envio.parametros);
     // Lo que se ensena despues no es el acta: es el recibo tal como quedo. Ver el javadoc.
     await consultas.invalidateQueries({ queryKey: ['duplicado-recibo'] });
   };
@@ -139,6 +192,24 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
 
   return {
     actos,
+    conLaHoja: (hoja) =>
+      conActos
+        ? {
+            ...hoja,
+            tecleado,
+            alTeclear: (cambio: CambioDeLoTecleado) => {
+              setTecleado((antes) => cambio(antes));
+            },
+          }
+        : hoja,
+    alAbrirActo: (claveDelActo, parametros) => {
+      if (claveDelActo === null) {
+        if (abierto.current !== null) olvidar(abierto.current);
+        abierto.current = null;
+        return;
+      }
+      abierto.current = claveDelActo === ACTO_DE_ANULACION ? (parametros ?? {}) : null;
+    },
     conLaSesion: (datos) => {
       const nombrados = new Map<string, DatoConNombre>([
         ...(datos.nombrados ?? []),

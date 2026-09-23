@@ -9,6 +9,7 @@ import { MandoDeTema } from './preferencias/MandoDeTema.tsx';
 import { useCatalogoPermitido } from './datos/useCatalogoPermitido.ts';
 import { useCuentaDeLaSesion } from './datos/useCuentaDeLaSesion.ts';
 import { traducirCatalogo } from './catalogo.ts';
+import { LaHojaNoSePudoDibujar } from './pantallas/LaHojaNoSePudoDibujar.tsx';
 import { PantallaDelSistema } from './pantallas/PantallaDelSistema.tsx';
 import type { ClaveDeHoja } from './pantallas/arbol.ts';
 import { pantallaDe } from './pantallas/definiciones/index.ts';
@@ -75,8 +76,9 @@ import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
  *   el tema aqui se lo cambiaria a las otras tres.
  *
  * **Quien guarda es la libreria, no este archivo**, y eso es lo que hace que siga siendo cierto que
- * un solo archivo de produccion de este repositorio toca el almacenamiento del navegador: la
- * puerta. Lo comprueba `verificaciones/camino-a-la-api.test.ts`.
+ * un solo archivo de produccion de este repositorio toca el almacenamiento del navegador: desde
+ * #117, el borrador del acto de anular (`datos/borradorDeLaAnulacion.ts`). Lo comprueba
+ * `verificaciones/camino-a-la-api.test.ts`.
  *
  * **Y el modo no se declara**, que es la tercera decision y va por omision: ausente significa «el
  * del equipo». Traer aqui un `claro` de fabrica congelaria en claro a quien tenga la maquina en
@@ -146,9 +148,11 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
     <PantallaDelSistema
       definicion={pantallaDe(clave)}
       datos={anulacion.conLaSesion(datos)}
-      hoja={hoja}
+      // Lo tecleado en el acto lo guarda la costura, y lo copia a la pestana (#117).
+      hoja={anulacion.conLaHoja(hoja)}
       navegacion={navegacion}
       actos={anulacion.actos}
+      alAbrirActo={anulacion.alAbrirActo}
     />
   );
 }
@@ -257,7 +261,13 @@ function ArmazonDelSistema() {
             ? t('La ventanilla de Tesorería: lo que esta cuenta puede abrir en esta caja.')
             : sesion.porQue
         }
-        pantalla={(hoja) => <CuerpoDeLaPantalla clave={hoja.destino.clave as ClaveDeHoja} />}
+        // Cada pantalla con su red (#117): lo que lance al dibujarse se queda en ella, y el carril
+        // sigue para elegir otra. La `key` por destino hace que cambiar de hoja empiece limpio.
+        pantalla={(hoja) => (
+          <LaHojaNoSePudoDibujar key={hoja.destino.clave}>
+            <CuerpoDeLaPantalla clave={hoja.destino.clave as ClaveDeHoja} />
+          </LaHojaNoSePudoDibujar>
+        )}
       />
       <MandoDeTema
         abierto={preferencias}
