@@ -45,11 +45,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Reversar reabre una caja cuyo arqueo ya estaba firmado, que es una operacion de otra categoria
  * que cerrarla: la anotacion declara lo que exige la ruta, y la ruta es una sola.
  *
- * <p><b>Cada cajero cierra y reversa su turno, y el de hoy (#114).</b> El cajero sale del token y
- * el dia del reloj ({@link QuienYCuando}). Hasta #114 los dos venian en el cuerpo, y con REGISTRO
- * se podia cerrar el turno de otro con el declarado propio, o el de hace un mes. Cerrar el turno de
- * ayer que se quedo sin sistema <b>ya no se hace por esta ruta</b>: si hace falta, sera un
- * privilegio explicito del catalogo, no una fecha que el cliente escribe.
+ * <p><b>Cada cajero cierra y reversa su propio turno (#114).</b> El cajero sale del token ({@link
+ * QuienYCuando}); hasta #114 venia en el cuerpo, y con REGISTRO se podia cerrar el turno de otro
+ * con el declarado propio. La fecha admite hoy <b>o un dia pasado</b> ({@code
+ * HOY_O_UN_DIA_PASADO}): el turno que se quedo abierto ayer tiene que poder cerrarse, y sigue
+ * siendo el del cajero del token. Una fecha futura es 422.
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/turnos")
@@ -79,7 +79,12 @@ public class CierreController {
     public ResponseEntity<CierreResource> cierre(@RequestBody PeticionDeCierre peticion) {
         String caja = exigir(peticion.caja(), "caja");
         String cajero = QuienYCuando.cajero(peticion.cajero());
-        LocalDate fecha = QuienYCuando.dia(peticion.fecha(), "fecha", reloj);
+        LocalDate fecha =
+                QuienYCuando.dia(
+                        peticion.fecha(),
+                        "fecha",
+                        QuienYCuando.Politica.HOY_O_UN_DIA_PASADO,
+                        reloj);
         Observacion observacion = observacionDe(peticion.observacion());
         String motivo = vacioAnulo(peticion.motivoDeReversion());
 

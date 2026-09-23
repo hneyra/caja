@@ -61,7 +61,8 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Ahora el cajero sale siempre de {@link OrigenContext}. El campo {@code cajero} sigue en el
  * contrato por compatibilidad, y solo se admite igual al del token: si trae otro nombre, 403 que lo
  * dice —ignorarlo en silencio dejaria al cliente creyendo que cobro por otro—. La fecha de trabajo,
- * si viene, tiene que ser hoy en Lima; si no, 422.
+ * si viene, tiene que ser hoy en Lima para cobrar, y hoy o un dia pasado para cerrar —el turno
+ * propio que se quedo abierto ayer—; si no, 422.
  */
 @DisplayName("#114 — El cajero y el dia de trabajo salen del token, no del cuerpo")
 class ElCajeroYElDiaSalenDelTokenTest {
@@ -359,19 +360,40 @@ class ElCajeroYElDiaSalenDelTokenTest {
         }
 
         @Test
-        @DisplayName("con la fecha de ayer, 422, y no se cierra nada")
-        void conLaFechaDeAyerSeRechaza() throws Exception {
+        @DisplayName(
+                "el turno propio que se quedo abierto ayer se cierra: 201 con la fecha de ayer")
+        void elTurnoPropioDeAyerSeCierra() throws Exception {
             turnos.conTurnoAbierto(30L, CAJA, YO, HOY.minusDays(1));
 
             MvcResult resultado =
-                    post("/caja/api/v1/turnos/cierre", cierre(YO, "2026-09-22", null));
+                    post("/caja/api/v1/turnos/cierre", cierre(null, "2026-09-22", null));
+
+            assertThat(resultado.getResponse().getStatus())
+                    .as(resultado.getResponse().getContentAsString())
+                    .isEqualTo(201);
+            assertThat(cierres.registrados())
+                    .singleElement()
+                    .satisfies(acta -> assertThat(acta.turnoId()).isEqualTo(30L));
+            assertThat(turnos.abierto(CAJA, YO, HOY))
+                    .as("y el de hoy sigue abierto: se cerro el de ayer y solo ese")
+                    .isPresent();
+        }
+
+        @Test
+        @DisplayName("con la fecha de manana, 422, aunque haya un turno de manana abierto")
+        void conLaFechaDeMananaSeRechaza() throws Exception {
+            turnos.conTurnoAbierto(40L, CAJA, YO, HOY.plusDays(1));
+
+            MvcResult resultado =
+                    post("/caja/api/v1/turnos/cierre", cierre(null, "2026-09-24", null));
 
             assertThat(resultado.getResponse().getStatus())
                     .as(resultado.getResponse().getContentAsString())
                     .isEqualTo(422);
             assertThat(resultado.getResponse().getContentAsString())
-                    .contains("fecha")
-                    .contains("2026-09-23");
+                    .contains("'fecha'")
+                    .contains("2026-09-23")
+                    .contains("nunca uno futuro");
             assertThat(cierres.registrados()).isEmpty();
         }
     }

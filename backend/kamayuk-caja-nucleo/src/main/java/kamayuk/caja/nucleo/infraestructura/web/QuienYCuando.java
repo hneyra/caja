@@ -31,13 +31,48 @@ import org.jspecify.annotations.Nullable;
  *
  * <h2>El dia de trabajo</h2>
  *
- * <p>Si no viene, hoy segun el reloj de la caja, que lleva la zona del producto (#112). Si viene y
- * no es hoy, 422: la fecha de un cobro o de un cierre no es un dato que el cliente elija. Sin
- * excepcion por privilegio.
+ * <p>Si no viene, hoy segun el reloj de la caja, que lleva la zona del producto (#112). Si viene,
+ * lo que se admite depende del acto, y cada acto nombra su {@link Politica}:
+ *
+ * <ul>
+ *   <li><b>cobrar</b> ({@link Politica#SOLO_HOY}): solo hoy. La fecha de un cobro no es un dato que
+ *       el cliente elija, y cobrar «ayer» abriria un turno de ayer;
+ *   <li><b>cerrar o reversar</b> ({@link Politica#HOY_O_UN_DIA_PASADO}): hoy o cualquier dia
+ *       pasado, nunca uno futuro. Un turno que se quedo abierto ayer tiene que poder cerrarse, y
+ *       eso no reabre lo que #114 cierra: el turno sigue siendo el del cajero del token, asi que
+ *       nadie cierra el de otro.
+ * </ul>
+ *
+ * <p>Sin excepcion por privilegio en ninguno de los dos.
  */
 final class QuienYCuando {
 
     private QuienYCuando() {}
+
+    /** Que dias admite un acto de ventanilla. */
+    enum Politica {
+
+        /** Solo hoy: el cobro y el cobro de tasas. */
+        SOLO_HOY,
+
+        /** Hoy o un dia pasado, nunca futuro: el cierre y su reversion. */
+        HOY_O_UN_DIA_PASADO;
+
+        boolean admite(LocalDate pedida, LocalDate hoy) {
+            return switch (this) {
+                case SOLO_HOY -> pedida.equals(hoy);
+                case HOY_O_UN_DIA_PASADO -> !pedida.isAfter(hoy);
+            };
+        }
+
+        String loQueAdmite(LocalDate hoy) {
+            return switch (this) {
+                case SOLO_HOY -> "solo admite el dia de hoy (" + hoy + ")";
+                case HOY_O_UN_DIA_PASADO ->
+                        "admite hoy (" + hoy + ") o un dia pasado, nunca uno futuro";
+            };
+        }
+    }
 
     /**
      * El cajero de la operacion: quien firma el token.
@@ -61,13 +96,15 @@ final class QuienYCuando {
     }
 
     /**
-     * El dia de trabajo: hoy, en la zona del reloj de la caja.
+     * El dia de trabajo: hoy, en la zona del reloj de la caja, si no viene; si viene, el que la
+     * politica del acto admita.
      *
      * @param texto la fecha que trae la peticion, en ISO, si trae alguna
      * @param campo el nombre del campo, para decirlo en el error
-     * @throws ProblemaDeNegocio 422 si no es una fecha ISO o si no es hoy
+     * @param politica que dias admite el acto
+     * @throws ProblemaDeNegocio 422 si no es una fecha ISO o si la politica no la admite
      */
-    static LocalDate dia(@Nullable String texto, String campo, Clock reloj) {
+    static LocalDate dia(@Nullable String texto, String campo, Politica politica, Clock reloj) {
         LocalDate hoy = LocalDate.now(reloj);
         if (texto == null || texto.isBlank()) {
             return hoy;
@@ -80,17 +117,16 @@ final class QuienYCuando {
                     CodigoDeError.VALIDACION,
                     "El campo '" + campo + "' no es una fecha ISO: '" + texto + "'");
         }
-        if (!pedida.equals(hoy)) {
+        if (!politica.admite(pedida, hoy)) {
             throw new ProblemaDeNegocio(
                     CodigoDeError.VALIDACION,
                     "El campo '"
                             + campo
-                            + "' solo admite el dia de hoy ("
-                            + hoy
-                            + "), y trae "
+                            + "' "
+                            + politica.loQueAdmite(hoy)
+                            + ", y trae "
                             + pedida
-                            + ": la ventanilla trabaja en el dia en que esta. Omita el campo o"
-                            + " mande el de hoy");
+                            + ". Omita el campo para trabajar en el dia de hoy");
         }
         return pedida;
     }

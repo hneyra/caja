@@ -34,9 +34,10 @@ import org.springframework.web.bind.annotation.RestController;
  *       LOCAL} de la transaccion del caso de uso, y la politica RLS filtra las dos tablas;
  *   <li><b>el dia</b> es el del reloj de esta caja. Lo que esta lectura contesta es «donde estoy
  *       ahora», que es la pregunta con la que se abre la pantalla. Desde #114 las escrituras dicen
- *       lo mismo: {@code POST /cobros} y {@code POST /turnos/cierre} toman el cajero del token y
- *       solo admiten el dia de hoy ({@link QuienYCuando}); el turno de ayer se consulta por {@code
- *       /recaudacion/avance} con su rango.
+ *       lo mismo: {@code POST /cobros} y {@code POST /turnos/cierre} toman el cajero del token
+ *       ({@link QuienYCuando}). Cobrar solo admite hoy; cerrar admite ademas un dia pasado, que es
+ *       como se cierra el turno propio que se quedo abierto ayer, y {@code /recaudacion/avance} lo
+ *       consulta con su rango.
  * </ul>
  *
  * <p>Desde #539 un parametro declarado que ningun argumento reclama se contesta con 422

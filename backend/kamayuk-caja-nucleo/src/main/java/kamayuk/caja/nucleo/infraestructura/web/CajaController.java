@@ -51,8 +51,8 @@ import org.springframework.web.bind.annotation.RestController;
  * <h2>Quien cobra y en que dia (#114)</h2>
  *
  * <p>El cajero es quien firma el token y el dia es hoy segun el reloj de la caja: ver {@link
- * QuienYCuando}. Un {@code cajero} distinto en el cuerpo es 403 y una fecha que no es hoy es 422,
- * los dos antes de escribir nada.
+ * QuienYCuando}. Un {@code cajero} distinto en el cuerpo es 403 y una fecha que no es hoy es 422
+ * ({@code SOLO_HOY}), los dos antes de escribir nada.
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/cobros")
@@ -76,7 +76,12 @@ public class CajaController {
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String clave) {
 
         String cajero = QuienYCuando.cajero(peticion.cajero());
-        LocalDate fechaDePago = QuienYCuando.dia(peticion.fechaDePago(), "fechaDePago", reloj);
+        LocalDate fechaDePago =
+                QuienYCuando.dia(
+                        peticion.fechaDePago(),
+                        "fechaDePago",
+                        QuienYCuando.Politica.SOLO_HOY,
+                        reloj);
         Observacion observacion = observacionDe(peticion.observacion());
 
         CobrarOrdenes.Cobranza cobranza;
@@ -128,7 +133,12 @@ public class CajaController {
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String clave) {
 
         String cajero = QuienYCuando.cajero(peticion.cajero());
-        LocalDate fechaDeCobro = QuienYCuando.dia(peticion.fechaDeCobro(), "fechaDeCobro", reloj);
+        LocalDate fechaDeCobro =
+                QuienYCuando.dia(
+                        peticion.fechaDeCobro(),
+                        "fechaDeCobro",
+                        QuienYCuando.Politica.SOLO_HOY,
+                        reloj);
         Observacion observacion = observacionDe(peticion.observacion());
 
         CobrarTasa.CobroDeTasas cobro;
