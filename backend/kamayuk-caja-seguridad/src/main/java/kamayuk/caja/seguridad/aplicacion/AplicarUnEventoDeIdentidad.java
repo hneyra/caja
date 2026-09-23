@@ -3,6 +3,7 @@ package kamayuk.caja.seguridad.aplicacion;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.persistencia.RepositorioJdbc;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
@@ -30,15 +31,32 @@ import tools.jackson.databind.json.JsonMapper;
  * regla de negocio —ni la del ultimo administrador, ni la de la vigencia—: eso ya paso en el
  * emisor, y lo que llega es la fila tal como quedo.
  *
- * <h2>Por que casa por claves naturales y no por el {@code sujetoId}</h2>
+ * <h2>Con que casa: el sujeto de {@code identidad}, guardado aparte, y la clave natural detras</h2>
  *
  * <p>Los identificadores de {@code identidad} son los de SU base: un {@code usuarioId} de alli no
- * es ningun {@code usuario.id} de aqui, donde las filas nacen con identidad propia. Lo que las dos
- * copias comparten son las claves que el propio esquema declara unicas —{@code (municipalidad_id,
- * cuenta)}, {@code (municipalidad_id, nombre)}, {@code (municipalidad_id, codigo)}—, y el cuerpo
- * del evento las trae a proposito ({@code cuenta}, {@code grupoNombre}, {@code usuarioCuenta},
- * {@code sujetoNombre}, {@code codigo}). Es la misma forma que el aplicador de referencia de {@code
- * identidad}, y es lo que hace que la copia no dependa del orden en que nacieron las filas.
+ * es ningun {@code usuario.id} de aqui, donde las filas nacen con identidad propia, y {@code
+ * miembro} y {@code permiso} siguen apuntando a esa identidad propia. Eso sigue siendo cierto, y
+ * por eso el id de alli <b>no se reutiliza como id de aqui</b>: se guarda en su propia columna,
+ * {@code identidad_sujeto_id} (V5), unica por municipalidad.
+ *
+ * <p>Hasta #111 se casaba SOLO por las claves que el esquema declara unicas —{@code
+ * (municipalidad_id, cuenta)}, {@code (municipalidad_id, nombre)}—, y eso fallaba justo donde mas
+ * duele: {@code identidad} <b>renombra</b> cuentas y grupos ({@code UPDATE usuario SET cuenta},
+ * {@code UPDATE grupo SET nombre} en su {@code AdministracionRepositoryJdbc}) y publica el {@code
+ * *_MODIFICADO} con la clave nueva. El {@code ON CONFLICT} no encontraba nada, insertaba otra fila
+ * y la vieja se quedaba habilitada con sus miembros y sus permisos. Lo que no cambia con un
+ * renombrado es el {@code id} de la fila alli, y el cuerpo lo trae ({@code usuarioId}, {@code
+ * grupoId}, y en el permiso {@code sujetoId}: {@code HechoDeIdentidad} lo escribe en el cuerpo y en
+ * el sobre con el mismo valor). Se lee del cuerpo, igual que las claves naturales.
+ *
+ * <p>Asi que un alta o una modificacion casan primero por ese id —y si la fila lo lleva, se le
+ * escribe la clave nueva: es el renombrado— y, si ninguna fila lo lleva, por la clave natural
+ * <b>entre las filas que no llevan ninguno</b>, que se adoptan estampandoles el id: son las de
+ * antes de V5, que no tienen de donde saber de que sujeto son. Una afiliacion o un permiso casan
+ * igual, sin estampar nada (la adopcion la hace el evento del propio sujeto, que trae la fila
+ * entera). Los dos choques posibles —la clave nueva ya es de otra fila, o es de otro sujeto— no se
+ * aplican nunca: ver {@code casarParaEscribir}. El acceso sigue casando por su {@code codigo},
+ * porque cada sistema siembra su catalogo por su cuenta.
  *
  * <h2>Los tres desenlaces, y por que hacen falta los tres</h2>
  *
@@ -47,8 +65,9 @@ import tools.jackson.databind.json.JsonMapper;
  *       transaccion</b>. Un evento que se vuelva a servir se descarta por {@code
  *       identidad_evento_aplicado} sin tocar nada.
  *   <li><b>No se podra aplicar NUNCA</b> ({@link NoSePuedeAplicar}): un tipo que esta copia no
- *       conoce, un cuerpo que no es JSON, un cuerpo al que le falta la clave con la que se casa.
- *       Mandarlo otra vez da lo mismo; quien lo llama lo aparta y avisa.
+ *       conoce, un cuerpo que no es JSON, un cuerpo al que le falta la clave con la que se casa, o
+ *       un renombrado que choca con otra fila de esta copia (#111). Mandarlo otra vez da lo mismo;
+ *       quien lo llama lo aparta y avisa.
  *   <li><b>No se puede aplicar TODAVIA</b> ({@link TodaviaNo}): el evento nombra un grupo, una
  *       cuenta o un acceso que esta copia no tiene aun. Casi siempre es orden —la afiliacion que
  *       llego en la misma pagina que el alta del usuario, y en esta copia el alta fallo por otra
@@ -200,42 +219,62 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     }
 
     private Aplicacion usuario(JsonNode cuerpo) {
-        jdbc().sql(
-                        "INSERT INTO usuario (municipalidad_id, cuenta, nombre, correo, habilitado,"
-                                + " vigencia_desde, vigencia_hasta) VALUES ("
+        long identidadId = exigirId(cuerpo, Sujeto.USUARIO.campoId);
+        String cuenta = exigir(cuerpo, "cuenta");
+        @Nullable Long local = casarParaEscribir(Sujeto.USUARIO, identidadId, cuenta);
+        String sql =
+                local == null
+                        ? "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
+                                + " nombre, correo, habilitado, vigencia_desde, vigencia_hasta)"
+                                + " VALUES ("
                                 + MUNICIPALIDAD_ACTUAL
-                                + ", :cuenta, :nombre, :correo, :habilitado, :desde, :hasta)"
-                                + " ON CONFLICT (municipalidad_id, cuenta) DO UPDATE SET"
-                                + " nombre = EXCLUDED.nombre, correo = EXCLUDED.correo,"
-                                + " habilitado = EXCLUDED.habilitado,"
-                                + " vigencia_desde = EXCLUDED.vigencia_desde,"
-                                + " vigencia_hasta = EXCLUDED.vigencia_hasta")
-                .param("cuenta", exigir(cuerpo, "cuenta"))
+                                + ", :identidadId, :cuenta, :nombre, :correo, :habilitado, :desde,"
+                                + " :hasta)"
+                        : "UPDATE usuario SET identidad_sujeto_id = :identidadId,"
+                                + " cuenta = :cuenta, nombre = :nombre, correo = :correo,"
+                                + " habilitado = :habilitado, vigencia_desde = :desde,"
+                                + " vigencia_hasta = :hasta WHERE municipalidad_id = "
+                                + MUNICIPALIDAD_ACTUAL
+                                + " AND id = :local";
+        jdbc().sql(sql)
+                .param("identidadId", identidadId)
+                .param("cuenta", cuenta)
                 .param("nombre", exigir(cuerpo, "nombre"))
                 .param("correo", textoONulo(cuerpo, "correo"))
                 .param("habilitado", cuerpo.path("habilitado").asBoolean(true))
                 .param("desde", fechaONula(cuerpo, "vigenciaDesde"))
                 .param("hasta", fechaONula(cuerpo, "vigenciaHasta"))
+                .param("local", local)
                 .update();
         return Aplicacion.APLICADO;
     }
 
     private Aplicacion grupo(JsonNode cuerpo) {
-        jdbc().sql(
-                        "INSERT INTO grupo (municipalidad_id, nombre, descripcion, habilitado,"
-                                + " vigencia_desde, vigencia_hasta) VALUES ("
+        long identidadId = exigirId(cuerpo, Sujeto.GRUPO.campoId);
+        String nombre = exigir(cuerpo, "nombre");
+        @Nullable Long local = casarParaEscribir(Sujeto.GRUPO, identidadId, nombre);
+        String sql =
+                local == null
+                        ? "INSERT INTO grupo (municipalidad_id, identidad_sujeto_id, nombre,"
+                                + " descripcion, habilitado, vigencia_desde, vigencia_hasta)"
+                                + " VALUES ("
                                 + MUNICIPALIDAD_ACTUAL
-                                + ", :nombre, :descripcion, :habilitado, :desde, :hasta)"
-                                + " ON CONFLICT (municipalidad_id, nombre) DO UPDATE SET"
-                                + " descripcion = EXCLUDED.descripcion,"
-                                + " habilitado = EXCLUDED.habilitado,"
-                                + " vigencia_desde = EXCLUDED.vigencia_desde,"
-                                + " vigencia_hasta = EXCLUDED.vigencia_hasta")
-                .param("nombre", exigir(cuerpo, "nombre"))
+                                + ", :identidadId, :nombre, :descripcion, :habilitado, :desde,"
+                                + " :hasta)"
+                        : "UPDATE grupo SET identidad_sujeto_id = :identidadId,"
+                                + " nombre = :nombre, descripcion = :descripcion,"
+                                + " habilitado = :habilitado, vigencia_desde = :desde,"
+                                + " vigencia_hasta = :hasta WHERE municipalidad_id = "
+                                + MUNICIPALIDAD_ACTUAL
+                                + " AND id = :local";
+        jdbc().sql(sql)
+                .param("identidadId", identidadId)
+                .param("nombre", nombre)
                 .param("descripcion", textoONulo(cuerpo, "descripcion"))
                 .param("habilitado", cuerpo.path("habilitado").asBoolean(true))
                 .param("desde", fechaONula(cuerpo, "vigenciaDesde"))
                 .param("hasta", fechaONula(cuerpo, "vigenciaHasta"))
+                .param("local", local)
                 .update();
         return Aplicacion.APLICADO;
     }
@@ -243,43 +282,38 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     private Aplicacion miembro(JsonNode cuerpo) {
         String grupo = exigir(cuerpo, "grupoNombre");
         String cuenta = exigir(cuerpo, "usuarioCuenta");
+        @Nullable Long grupoId = casarParaNombrar(Sujeto.GRUPO, exigirId(cuerpo, "grupoId"), grupo);
+        @Nullable Long usuarioId =
+                casarParaNombrar(Sujeto.USUARIO, exigirId(cuerpo, "usuarioId"), cuenta);
+        if (grupoId == null || usuarioId == null) {
+            throw todaviaNo(
+                    "El evento de `miembro` nombra el grupo «"
+                            + grupo
+                            + "» y la cuenta «"
+                            + cuenta
+                            + "», y esta copia no conoce a los dos todavia");
+        }
         boolean activo = cuerpo.path("activo").asBoolean(true);
         String usuarioAlta = textoONulo(cuerpo, "usuarioAlta");
-        int escritas =
-                jdbc().sql(
-                                "INSERT INTO miembro (municipalidad_id, grupo_id, usuario_id,"
-                                        + " usuario_alta, activo, fecha_baja, usuario_baja)"
-                                        + " SELECT "
-                                        + MUNICIPALIDAD_ACTUAL
-                                        + ", g.id, u.id, :usuarioAlta, :activo, :fechaBaja,"
-                                        + " :usuarioBaja FROM grupo g, usuario u"
-                                        + " WHERE g.municipalidad_id = "
-                                        + MUNICIPALIDAD_ACTUAL
-                                        + " AND g.nombre = :grupo AND u.municipalidad_id = "
-                                        + MUNICIPALIDAD_ACTUAL
-                                        + " AND u.cuenta = :cuenta"
-                                        + " ON CONFLICT (municipalidad_id, grupo_id, usuario_id)"
-                                        + " DO UPDATE SET activo = EXCLUDED.activo,"
-                                        + " fecha_baja = EXCLUDED.fecha_baja,"
-                                        + " usuario_baja = EXCLUDED.usuario_baja")
-                        .param(
-                                "usuarioAlta",
-                                usuarioAlta == null ? SIN_QUIEN_LO_DIO_DE_ALTA : usuarioAlta)
-                        .param("activo", activo)
-                        .param(
-                                "fechaBaja",
-                                activo ? null : reloj.instant().atOffset(java.time.ZoneOffset.UTC))
-                        .param("usuarioBaja", activo ? null : textoONulo(cuerpo, "usuarioBaja"))
-                        .param("grupo", grupo)
-                        .param("cuenta", cuenta)
-                        .update();
-        exigirQueEscribiera(
-                escritas,
-                "El evento de `miembro` nombra el grupo «"
-                        + grupo
-                        + "» y la cuenta «"
-                        + cuenta
-                        + "», y esta copia no conoce a los dos todavia");
+        jdbc().sql(
+                        "INSERT INTO miembro (municipalidad_id, grupo_id, usuario_id,"
+                                + " usuario_alta, activo, fecha_baja, usuario_baja) VALUES ("
+                                + MUNICIPALIDAD_ACTUAL
+                                + ", :grupoId, :usuarioId, :usuarioAlta, :activo, :fechaBaja,"
+                                + " :usuarioBaja)"
+                                + " ON CONFLICT (municipalidad_id, grupo_id, usuario_id)"
+                                + " DO UPDATE SET activo = EXCLUDED.activo,"
+                                + " fecha_baja = EXCLUDED.fecha_baja,"
+                                + " usuario_baja = EXCLUDED.usuario_baja")
+                .param("grupoId", grupoId)
+                .param("usuarioId", usuarioId)
+                .param("usuarioAlta", usuarioAlta == null ? SIN_QUIEN_LO_DIO_DE_ALTA : usuarioAlta)
+                .param("activo", activo)
+                .param(
+                        "fechaBaja",
+                        activo ? null : reloj.instant().atOffset(java.time.ZoneOffset.UTC))
+                .param("usuarioBaja", activo ? null : textoONulo(cuerpo, "usuarioBaja"))
+                .update();
         return Aplicacion.APLICADO;
     }
 
@@ -291,6 +325,20 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
         String codigo = exigir(cuerpo, "codigo");
         String sujetoNombre = exigir(cuerpo, "sujetoNombre");
         boolean deGrupo = "GRUPO".equals(exigir(cuerpo, "sujeto"));
+        Sujeto sujeto = deGrupo ? Sujeto.GRUPO : Sujeto.USUARIO;
+        @Nullable Long sujetoId =
+                casarParaNombrar(sujeto, exigirId(cuerpo, "sujetoId"), sujetoNombre);
+        String queFalta =
+                "El evento de `permiso` nombra el acceso «"
+                        + codigo
+                        + "» de `caja` y el "
+                        + sujeto.tabla
+                        + " «"
+                        + sujetoNombre
+                        + "», y esta copia no conoce a los dos todavia";
+        if (sujetoId == null) {
+            throw todaviaNo(queFalta);
+        }
         JsonNode privilegios = cuerpo.path("privilegios");
         StringBuilder columnas = new StringBuilder();
         StringBuilder valores = new StringBuilder();
@@ -308,18 +356,12 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                         + ") SELECT "
                         + MUNICIPALIDAD_ACTUAL
                         + ", a.id, "
-                        + (deGrupo ? "s.id, NULL" : "NULL, s.id")
+                        + (deGrupo ? ":sujeto, NULL" : "NULL, :sujeto")
                         + ", :quien"
                         + valores
-                        + " FROM acceso a, "
-                        + (deGrupo ? "grupo" : "usuario")
-                        + " s WHERE a.municipalidad_id = "
+                        + " FROM acceso a WHERE a.municipalidad_id = "
                         + MUNICIPALIDAD_ACTUAL
-                        + " AND a.codigo = :codigo AND s.municipalidad_id = "
-                        + MUNICIPALIDAD_ACTUAL
-                        + " AND s."
-                        + (deGrupo ? "nombre" : "cuenta")
-                        + " = :sujeto"
+                        + " AND a.codigo = :codigo"
                         + " ON CONFLICT (municipalidad_id, acceso_id, "
                         + (deGrupo ? "grupo_id) WHERE grupo_id" : "usuario_id) WHERE usuario_id")
                         + " IS NOT NULL DO UPDATE SET usuario_registro = EXCLUDED.usuario_registro"
@@ -328,23 +370,155 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                 jdbc().sql(sql)
                         .param("quien", exigir(cuerpo, "usuarioRegistro"))
                         .param("codigo", codigo)
-                        .param("sujeto", sujetoNombre);
+                        .param("sujeto", sujetoId);
         for (Privilegio privilegio : Privilegio.values()) {
             sentencia =
                     sentencia.param(
                             privilegio.columna(),
                             privilegios.path(privilegio.columna()).asBoolean(false));
         }
-        exigirQueEscribiera(
-                sentencia.update(),
-                "El evento de `permiso` nombra el acceso «"
-                        + codigo
-                        + "» de `caja` y el "
-                        + (deGrupo ? "grupo" : "usuario")
-                        + " «"
-                        + sujetoNombre
-                        + "», y esta copia no conoce a los dos todavia");
+        exigirQueEscribiera(sentencia.update(), queFalta);
         return Aplicacion.APLICADO;
+    }
+
+    // ------------------------------------------------------------------
+    //  Casar por el sujeto de `identidad` (#111)
+    // ------------------------------------------------------------------
+
+    /** Las dos tablas cuyas filas son sujetos de {@code identidad}, y con que se casan. */
+    private enum Sujeto {
+        USUARIO("usuario", "cuenta", "usuarioId", "la cuenta"),
+        GRUPO("grupo", "nombre", "grupoId", "el grupo");
+
+        final String tabla;
+        final String clave;
+        final String campoId;
+        final String articulado;
+
+        Sujeto(String tabla, String clave, String campoId, String articulado) {
+            this.tabla = tabla;
+            this.clave = clave;
+            this.campoId = campoId;
+            this.articulado = articulado;
+        }
+    }
+
+    /** Una fila local candidata: su id de aqui, el sujeto de {@code identidad} y su clave. */
+    private record Candidata(long id, @Nullable Long identidadId, String clave) {}
+
+    /**
+     * La fila que un alta o una modificacion tiene que escribir, o {@code null} si es nueva.
+     *
+     * <ol>
+     *   <li>La que ya lleva ese sujeto de {@code identidad}: es ella aunque la clave haya cambiado
+     *       —eso es un renombrado, y se le escribe la clave nueva—.
+     *   <li>Si ninguna lo lleva, la que tiene esa clave natural <b>y ningun sujeto</b>: una fila de
+     *       antes de V5, que se adopta estampandole el id.
+     *   <li>Si ninguna de las dos, es nueva.
+     * </ol>
+     *
+     * <p>Y dos choques que no se aplican nunca ({@link NoSePuedeAplicar}): la clave nueva ya la
+     * tiene OTRA fila, o la tiene una fila que es de otro sujeto. En los dos esta copia tendria que
+     * decidir cual de las dos filas vale y mover miembros y permisos de una a otra, y esta clase
+     * <b>no decide nada</b>: se aparta con su motivo y se avisa, que es lo que permite resolverlo a
+     * mano sin que se pierda el evento.
+     */
+    private @Nullable Long casarParaEscribir(Sujeto sujeto, long identidadId, String clave) {
+        List<Candidata> candidatas =
+                jdbc().sql(
+                                "SELECT id, identidad_sujeto_id, "
+                                        + sujeto.clave
+                                        + " AS clave FROM "
+                                        + sujeto.tabla
+                                        + " WHERE municipalidad_id = "
+                                        + MUNICIPALIDAD_ACTUAL
+                                        + " AND (identidad_sujeto_id = :identidadId OR "
+                                        + sujeto.clave
+                                        + " = :clave)")
+                        .param("identidadId", identidadId)
+                        .param("clave", clave)
+                        .query(
+                                (fila, n) ->
+                                        new Candidata(
+                                                fila.getLong("id"),
+                                                fila.getObject("identidad_sujeto_id", Long.class),
+                                                fila.getString("clave")))
+                        .list();
+        @Nullable Candidata porId = null;
+        @Nullable Candidata porClave = null;
+        for (Candidata candidata : candidatas) {
+            if (Long.valueOf(identidadId).equals(candidata.identidadId())) {
+                porId = candidata;
+            }
+            if (clave.equals(candidata.clave())) {
+                porClave = candidata;
+            }
+        }
+        if (porId != null) {
+            if (porClave != null && porClave.id() != porId.id()) {
+                throw new NoSePuedeAplicar(
+                        "`identidad` dice que "
+                                + sujeto.articulado
+                                + " "
+                                + identidadId
+                                + " se llama ahora «"
+                                + clave
+                                + "», y en esta copia ese nombre ya lo tiene otra fila, "
+                                + deQuien(porClave)
+                                + ". Esta copia no decide cual de las dos vale ni mueve miembros"
+                                + " ni permisos de una a otra: hay que resolverlo a mano y volver"
+                                + " a aplicar este evento");
+            }
+            return porId.id();
+        }
+        if (porClave != null) {
+            if (porClave.identidadId() != null) {
+                throw new NoSePuedeAplicar(
+                        "`identidad` publica "
+                                + sujeto.articulado
+                                + " "
+                                + identidadId
+                                + " con el nombre «"
+                                + clave
+                                + "», y en esta copia ese nombre es "
+                                + deQuien(porClave)
+                                + ": a esta copia le falta el evento que lo renombro, y escribir"
+                                + " este sobre esa fila se la daria a otro");
+            }
+            return porClave.id();
+        }
+        return null;
+    }
+
+    private static String deQuien(Candidata fila) {
+        return fila.identidadId() == null
+                ? "sin sujeto de `identidad` (una huerfana: de antes de V5, o la que dejo un"
+                        + " renombrado antes de #111)"
+                : "del sujeto " + fila.identidadId() + " de `identidad`";
+    }
+
+    /**
+     * La fila de aqui a la que se refiere una afiliacion o un permiso, o {@code null} si todavia no
+     * esta: la que lleva ese sujeto de {@code identidad} y, si ninguna, la que tiene esa clave
+     * natural y ningun sujeto (una de antes de V5, que se adoptara con su propio evento). Una fila
+     * con esa clave pero de OTRO sujeto no vale: el que se nombra no ha llegado.
+     */
+    private @Nullable Long casarParaNombrar(Sujeto sujeto, long identidadId, String clave) {
+        return jdbc().sql(
+                        "SELECT id FROM "
+                                + sujeto.tabla
+                                + " WHERE municipalidad_id = "
+                                + MUNICIPALIDAD_ACTUAL
+                                + " AND (identidad_sujeto_id = :identidadId OR"
+                                + " (identidad_sujeto_id IS NULL AND "
+                                + sujeto.clave
+                                + " = :clave))"
+                                + " ORDER BY identidad_sujeto_id IS NULL LIMIT 1")
+                .param("identidadId", identidadId)
+                .param("clave", clave)
+                .query(Long.class)
+                .optional()
+                .orElse(null);
     }
 
     // ------------------------------------------------------------------
@@ -374,13 +548,33 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      */
     private static void exigirQueEscribiera(int escritas, String queFalta) {
         if (escritas == 0) {
-            throw new TodaviaNo(
-                    queFalta
-                            + ": la sentencia escribio 0 filas. Un evento que llega antes que aquel"
-                            + " del que depende no se puede aplicar, y descartarlo en silencio"
-                            + " dejaria la copia desatrasada sin que nada lo diga; se deja"
-                            + " pendiente y se vuelve a intentar");
+            throw todaviaNo(queFalta + ": la sentencia escribio 0 filas");
         }
+    }
+
+    private static TodaviaNo todaviaNo(String queFalta) {
+        return new TodaviaNo(
+                queFalta
+                        + ". Un evento que llega antes que aquel del que depende no se puede"
+                        + " aplicar, y descartarlo en silencio dejaria la copia desatrasada sin que"
+                        + " nada lo diga; se deja pendiente y se vuelve a intentar");
+    }
+
+    /**
+     * El identificador del sujeto en {@code identidad} (#111): un entero positivo, porque alli es
+     * un {@code GENERATED ALWAYS AS IDENTITY} y {@code HechoDeIdentidad} rechaza el cero.
+     */
+    private static long exigirId(JsonNode cuerpo, String campo) {
+        JsonNode valor = cuerpo.path(campo);
+        if (!valor.isIntegralNumber() || !valor.canConvertToLong() || valor.asLong() <= 0) {
+            throw new NoSePuedeAplicar(
+                    "El cuerpo del evento no trae «"
+                            + campo
+                            + "» como un entero positivo, y es el identificador del sujeto en"
+                            + " `identidad`: sin el no hay forma de distinguir una fila nueva de"
+                            + " una que se renombro (#111)");
+        }
+        return valor.asLong();
     }
 
     private static String exigir(JsonNode cuerpo, String campo) {

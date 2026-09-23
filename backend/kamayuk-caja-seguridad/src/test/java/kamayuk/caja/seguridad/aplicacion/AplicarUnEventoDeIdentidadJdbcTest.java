@@ -12,13 +12,16 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -340,6 +343,260 @@ class AplicarUnEventoDeIdentidadJdbcTest {
         }
     }
 
+    /**
+     * #111: {@code identidad} renombra cuentas y grupos ({@code UPDATE … SET cuenta}, {@code UPDATE
+     * … SET nombre}) y publica el {@code *_MODIFICADO} con la clave NUEVA. Casar solo por la clave
+     * natural insertaba una fila nueva y dejaba la vieja habilitada, con sus miembros y sus
+     * permisos. El identificador de {@code identidad} —el {@code usuarioId}/{@code grupoId} del
+     * cuerpo, que no cambia con el renombrado— es lo que casa ahora.
+     */
+    @Nested
+    @DisplayName("#111 — un renombrado en identidad")
+    class UnRenombrado {
+
+        @Test
+        @DisplayName(
+                "renombrar y luego inhabilitar un GRUPO deja una sola fila, inhabilitada, y el comprobador niega")
+        void unGrupoRenombradoEInhabilitado() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(100, "GRUPO_DADO_DE_ALTA", grupo(20, "Recaudadores", true)));
+            aplicador.aplicar(evento(101, "USUARIO_DADO_DE_ALTA", usuario(30, "lvargas", true)));
+            aplicador.aplicar(
+                    evento(102, "MIEMBRO_AFILIADO", afiliacion(20, "Recaudadores", 30, "lvargas")));
+            aplicador.aplicar(evento(103, "PERMISO_FIJADO", permisoDeGrupo(20, "Recaudadores")));
+            assertThat(autoriza("lvargas"))
+                    .as("antes del renombrado el grupo concede: si no, la prueba no mide nada")
+                    .isTrue();
+
+            aplicador.aplicar(
+                    evento(104, "GRUPO_MODIFICADO", grupo(20, "Recaudadores-baja", true)));
+            aplicador.aplicar(
+                    evento(105, "GRUPO_MODIFICADO", grupo(20, "Recaudadores-baja", false)));
+
+            assertThat(contar(municipalidadA, "grupo", "nombre LIKE 'Recaudadores%'"))
+                    .as(
+                            "[el renombrado se aplica a la MISMA fila: una segunda fila deja la"
+                                    + " vieja habilitada con sus miembros y sus permisos]")
+                    .isEqualTo(1);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT nombre || '|' || habilitado || '|' ||"
+                                            + " identidad_sujeto_id FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND nombre LIKE"
+                                            + " 'Recaudadores%'"))
+                    .isEqualTo("Recaudadores-baja|false|20");
+            assertThat(autoriza("lvargas"))
+                    .as(
+                            "[«Recaudadores» sigue concediendo `caja_tributaria` aunque identidad lo"
+                                    + " renombro y lo inhabilito]")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName(
+                "renombrar y luego inhabilitar una CUENTA deja una sola fila, inhabilitada, y el comprobador niega a las dos cuentas")
+        void unaCuentaRenombradaEInhabilitada() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(110, "GRUPO_DADO_DE_ALTA", grupo(21, "Tesoreros", true)));
+            aplicador.aplicar(evento(111, "USUARIO_DADO_DE_ALTA", usuario(31, "ctorres", true)));
+            aplicador.aplicar(
+                    evento(112, "MIEMBRO_AFILIADO", afiliacion(21, "Tesoreros", 31, "ctorres")));
+            aplicador.aplicar(evento(113, "PERMISO_FIJADO", permisoDeGrupo(21, "Tesoreros")));
+            assertThat(autoriza("ctorres")).isTrue();
+
+            aplicador.aplicar(
+                    evento(114, "USUARIO_MODIFICADO", usuario(31, "ctorres-anterior", true)));
+            aplicador.aplicar(
+                    evento(115, "USUARIO_MODIFICADO", usuario(31, "ctorres-anterior", false)));
+
+            assertThat(contar(municipalidadA, "usuario", "cuenta LIKE 'ctorres%'"))
+                    .as("[una fila nueva por la cuenta nueva, y la vieja intacta]")
+                    .isEqualTo(1);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT cuenta || '|' || habilitado || '|' ||"
+                                            + " identidad_sujeto_id FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND cuenta LIKE"
+                                            + " 'ctorres%'"))
+                    .isEqualTo("ctorres-anterior|false|31");
+            assertThat(autoriza("ctorres"))
+                    .as(
+                            "[la cuenta vieja sigue habilitada con los permisos de antes: quien la"
+                                    + " reciba despues los hereda, porque el guardia casa por"
+                                    + " u.cuenta]")
+                    .isFalse();
+            assertThat(autoriza("ctorres-anterior")).isFalse();
+        }
+
+        @Test
+        @DisplayName(
+                "una afiliacion casa por el id: nombrando el grupo por su nombre viejo o por el nuevo")
+        void unaAfiliacionCasaPorElId() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(120, "GRUPO_DADO_DE_ALTA", grupo(22, "Cobradores", true)));
+            aplicador.aplicar(evento(121, "USUARIO_DADO_DE_ALTA", usuario(32, "aramos", true)));
+            aplicador.aplicar(evento(122, "USUARIO_DADO_DE_ALTA", usuario(33, "bsilva", true)));
+            aplicador.aplicar(
+                    evento(123, "GRUPO_MODIFICADO", grupo(22, "Cobradores de campo", true)));
+
+            // Emitida ANTES del renombrado (el nombre viejo) y aplicada despues —la que se quedo
+            // esperando en el buzon—, y emitida DESPUES (el nombre nuevo).
+            aplicador.aplicar(
+                    evento(124, "MIEMBRO_AFILIADO", afiliacion(22, "Cobradores", 32, "aramos")));
+            aplicador.aplicar(
+                    evento(
+                            125,
+                            "MIEMBRO_AFILIADO",
+                            afiliacion(22, "Cobradores de campo", 33, "bsilva")));
+
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "miembro",
+                                    "grupo_id = (SELECT id FROM grupo WHERE municipalidad_id = "
+                                            + municipalidadA
+                                            + " AND identidad_sujeto_id = 22) AND activo"))
+                    .isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName(
+                "un renombrado que se sirve dos veces se descarta la segunda, y sigue habiendo una fila")
+        void unRenombradoRepetidoEsIdempotente() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(130, "GRUPO_DADO_DE_ALTA", grupo(23, "Arqueadores", true)));
+            EventoDeIdentidadRecibido renombrado =
+                    evento(131, "GRUPO_MODIFICADO", grupo(23, "Arqueadores-2", true));
+
+            assertThat(aplicador.aplicar(renombrado))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+            assertThat(aplicador.aplicar(renombrado))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.YA_APLICADO);
+            assertThat(contar(municipalidadA, "grupo", "nombre LIKE 'Arqueadores%'")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName(
+                "una fila de antes de V5, sin id de identidad, se adopta en su primer evento y desde ahi se renombra")
+        void unaFilaSinIdSeAdopta() throws SQLException {
+            // Como la dejo la implantacion de antes de la etapa 5, o el aplicador de antes de V5.
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'Heredados', true)");
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'heredada', 'Cuenta heredada')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            aplicador.aplicar(evento(140, "GRUPO_MODIFICADO", grupo(24, "Heredados", false)));
+            aplicador.aplicar(evento(141, "USUARIO_MODIFICADO", usuario(34, "heredada", false)));
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || bool_or(habilitado) || '|' ||"
+                                            + " max(identidad_sujeto_id) FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND nombre ="
+                                            + " 'Heredados'"))
+                    .as("adoptada: la misma fila, con el id estampado y el estado del evento")
+                    .isEqualTo("1|false|24");
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || bool_or(habilitado) || '|' ||"
+                                            + " max(identidad_sujeto_id) FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND cuenta ="
+                                            + " 'heredada'"))
+                    .isEqualTo("1|false|34");
+
+            aplicador.aplicar(evento(142, "GRUPO_MODIFICADO", grupo(24, "Heredados-2", false)));
+            assertThat(contar(municipalidadA, "grupo", "nombre LIKE 'Heredados%'"))
+                    .as("y una vez adoptada, el renombrado va a la misma fila")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName(
+                "renombrar sobre una fila huerfana sin id que ya tiene ese nombre no se aplica nunca, y lo dice")
+        void renombrarSobreUnaHuerfanaNoSeAplica() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'Beta', true)");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(150, "GRUPO_DADO_DE_ALTA", grupo(25, "Alfa", true)));
+            EventoDeIdentidadRecibido renombrado =
+                    evento(151, "GRUPO_MODIFICADO", grupo(25, "Beta", false));
+
+            assertThatThrownBy(() -> aplicador.aplicar(renombrado))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«Beta»")
+                    .hasMessageContaining("25");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "identidad_evento_aplicado",
+                                    "evento_id = '" + renombrado.eventoId() + "'"))
+                    .isZero();
+            assertThat(contar(municipalidadA, "grupo", "nombre = 'Alfa' AND habilitado"))
+                    .as("nada se escribio a medias")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName(
+                "un alta cuyo nombre ya es de OTRO sujeto de identidad en esta copia no se aplica nunca")
+        void unNombreDeOtroSujetoNoSeAplica() {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(160, "GRUPO_DADO_DE_ALTA", grupo(26, "Gamma", true)));
+
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    161,
+                                                    "GRUPO_DADO_DE_ALTA",
+                                                    grupo(27, "Gamma", true))))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«Gamma»")
+                    .hasMessageContaining("26")
+                    .hasMessageContaining("27");
+        }
+
+        @Test
+        @DisplayName("un cuerpo sin el id de identidad no se aplica nunca")
+        void unCuerpoSinId() {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    170,
+                                                    "GRUPO_DADO_DE_ALTA",
+                                                    "{\"nombre\":\"Sin id\",\"habilitado\":true}")))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("grupoId");
+        }
+
+        private boolean autoriza(String cuenta) {
+            ComprobadorDeAccesoJdbc comprobador =
+                    new ComprobadorDeAccesoJdbc(JdbcClient.create(gestor.getDataSource()));
+            return Boolean.TRUE.equals(
+                    new TransactionTemplate(gestor)
+                            .execute(
+                                    estado ->
+                                            comprobador.autoriza(
+                                                    cuenta,
+                                                    ACCESO_DE_CAJA,
+                                                    Privilegio.LECTURA,
+                                                    LocalDate.of(2026, 9, 9))));
+        }
+    }
+
     @Nested
     @DisplayName("lo que no se podra aplicar nunca")
     class LoQueNoSePodraAplicarNunca {
@@ -480,6 +737,51 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                 + lecturaYRegistro
                 + ",\"modificacion\":false,\"eliminacion\":false,\"impresion\":false,"
                 + "\"especial\":false},\"usuarioRegistro\":\"admin\"}";
+    }
+
+    private static String grupo(long grupoId, String nombre, boolean habilitado) {
+        return "{\"grupoId\":"
+                + grupoId
+                + ",\"nombre\":\""
+                + nombre
+                + "\",\"descripcion\":null,\"habilitado\":"
+                + habilitado
+                + ",\"vigenciaDesde\":null,\"vigenciaHasta\":null}";
+    }
+
+    private static String usuario(long usuarioId, String cuenta, boolean habilitado) {
+        return "{\"usuarioId\":"
+                + usuarioId
+                + ",\"cuenta\":\""
+                + cuenta
+                + "\",\"nombre\":\"Nombre de "
+                + cuenta
+                + "\",\"correo\":null,\"habilitado\":"
+                + habilitado
+                + ",\"vigenciaDesde\":null,\"vigenciaHasta\":null}";
+    }
+
+    private static String afiliacion(long grupoId, String grupo, long usuarioId, String cuenta) {
+        return "{\"grupoId\":"
+                + grupoId
+                + ",\"grupoNombre\":\""
+                + grupo
+                + "\",\"usuarioId\":"
+                + usuarioId
+                + ",\"usuarioCuenta\":\""
+                + cuenta
+                + "\",\"activo\":true,\"usuarioAlta\":\"admin\",\"usuarioBaja\":null}";
+    }
+
+    private static String permisoDeGrupo(long grupoId, String grupo) {
+        return permiso("caja", grupo, true).replace("\"sujetoId\":4", "\"sujetoId\":" + grupoId);
+    }
+
+    private static void ejecutarComoAdmin(String sql) throws SQLException {
+        try (Connection admin = base.conexionAdmin();
+                Statement sentencia = admin.createStatement()) {
+            sentencia.execute(sql);
+        }
     }
 
     @SuppressWarnings("unchecked")
