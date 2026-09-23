@@ -153,7 +153,10 @@ class CobrarConElOrigenApagadoTest {
         entregar =
                 envolver(
                         new EntregarEventos(
-                                buzon, new BuzonHttpDelSistemaDeOrigen(cliente), alerta, 2, RELOJ));
+                                envolver(new AnotarLaEntrega(buzon, RELOJ)),
+                                new BuzonHttpDelSistemaDeOrigen(cliente),
+                                alerta,
+                                2));
         conciliacion = envolver(new ConciliacionDelDia(buzon, new AbonosAplicadosHttp(cliente)));
 
         sembrarVentanilla();

@@ -22,10 +22,11 @@ import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
  * se explica lo que esta {@code MUERTO}. La segunda importa: sin ella, una prueba podria explicar
  * un evento que todavia esta en camino, el turno cerraria y el pago no llegaria nunca.
  *
- * <p>Lo que <b>no</b> puede demostrar es el {@code FOR UPDATE SKIP LOCKED} de {@link #pendientes}
- * —dos publicadores no se pisan porque aqui no hay dos— ni que la fila del buzon y la del recibo se
- * escriban en la misma transaccion, que es la razon entera de que el buzon exista. Las dos se
- * prueban contra PostgreSQL.
+ * <p>Reproduce tambien la guarda de {@link #marcarFallido} sobre los intentos leidos (#109), que es
+ * lo que impide que dos publicadores cuenten dos veces la misma caida. Lo que <b>no</b> puede
+ * demostrar es que cada evento se marque en su propia transaccion —aqui no hay transacciones— ni
+ * que la fila del buzon y la del recibo se escriban en la misma, que es la razon entera de que el
+ * buzon exista. Las dos se prueban contra PostgreSQL.
  *
  * <p>{@link #recuentoDe} <b>no agrega nada</b>: devuelve lo que se le declara, igual que {@code
  * RecaudacionEnMemoria} y por lo mismo. La cuenta real cruza {@code pago_evento} con {@code
@@ -104,7 +105,12 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
     }
 
     @Override
-    public void marcarFallido(long id, String error, boolean seAgotaron) {
+    public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
+        EventoDePago leido = porId.get(id);
+        if (leido == null || leido.intentos() != intentosLeidos) {
+            // La misma guarda que el `AND intentos = :leidos` de la tabla: otro ya lo conto.
+            return;
+        }
         cambiar(
                 id,
                 EstadoDelEvento.PENDIENTE,

@@ -141,11 +141,10 @@ class ConciliacionDeNDiasTest {
         entregar =
                 envolver(
                         new EntregarEventos(
-                                buzon,
+                                envolver(new AnotarLaEntrega(buzon, relojDe(PRIMER_DIA))),
                                 new BuzonHttpDelSistemaDeOrigen(cliente),
                                 muertos -> {},
-                                8,
-                                relojDe(PRIMER_DIA)));
+                                8));
         conciliacion = envolver(new ConciliacionDelDia(buzon, new AbonosAplicadosHttp(cliente)));
         sembrarVentanilla();
         cobrarDeCadaDia(jdbc, auditoria, eventos);

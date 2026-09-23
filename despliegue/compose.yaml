@@ -278,9 +278,11 @@ services:
   #
   # Porque en el cluster son dos pods, y este archivo y el descriptor tienen que
   # decir lo mismo. Y porque son dos procesos distintos: con dos replicas de `web`
-  # habria dos publicadores sacando el mismo buzon —no duplican pagos, que lo
-  # impide `FOR UPDATE SKIP LOCKED`, pero gastan intentos de mas, y los intentos
-  # son lo que separa un evento vivo de uno MUERTO—.
+  # habria dos publicadores sacando el mismo buzon —entregarian el mismo evento
+  # dos veces, que el receptor deduplica por `pagoId`, y desde #109 no le cuentan
+  # el intento dos veces (`marcarFallido` solo cuenta si `intentos` sigue valiendo
+  # lo leido; el `FOR UPDATE SKIP LOCKED` que lo hacia antes se retiro)—. Sobran
+  # igual: los intentos son lo que separa un evento vivo de uno MUERTO.
   #
   # NI `batch`, QUE ES DONDE ESTUVO HASTA #79. `batch` es el perfil de lo que
   # TERMINA —la implantacion—, y `KamayukAplicacion.main` sale al acabar sus

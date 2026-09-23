@@ -940,8 +940,8 @@ class CajaJdbcTest {
         }
 
         @Override
-        public void marcarFallido(long id, String error, boolean seAgotaron) {
-            real.marcarFallido(id, error, seAgotaron);
+        public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
+            real.marcarFallido(id, intentosLeidos, error, seAgotaron);
         }
 
         @Override

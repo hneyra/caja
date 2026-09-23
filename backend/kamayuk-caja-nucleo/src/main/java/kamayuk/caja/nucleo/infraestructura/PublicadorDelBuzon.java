@@ -20,6 +20,13 @@ import org.springframework.stereotype.Component;
  * usa {@link RecorridoPorMunicipalidades}, el mismo mecanismo que el portal del ciudadano (#57):
  * una transaccion y un {@code SET LOCAL} por municipalidad.
  *
+ * <p><b>Esa transaccion de la rama no es la de los eventos</b> (#109). Dentro de ella, {@link
+ * EntregarEventos} lee y marca cada evento en una transaccion nueva —{@code REQUIRES_NEW}, en otro
+ * bean para que el proxy la aplique—, que recibe su propio {@code SET LOCAL} del mismo contexto de
+ * tenant; la de la rama queda suspendida, sin leer nada ni retener candado alguno mientras dura la
+ * llamada al origen. Hasta #109 no era asi: por autoinvocacion, la vuelta entera corria en la de la
+ * rama.
+ *
  * <p><b>Una rama que revienta no tumba las demas.</b> Si el sistema de origen de una municipalidad
  * esta caido, sus eventos se quedan pendientes y las otras se entregan igual. Lo contrario dejaria
  * a todas las municipalidades del cluster esperando a la que peor esta.
@@ -28,9 +35,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>No va en {@code web} por lo mismo que {@code ImplantarMunicipalidad} (#202): un proceso que
  * corre solo no tiene por que estar en el que atiende peticiones. En un despliegue con tres
- * replicas web, tres publicadores compitiendo por el mismo buzon no producen pagos duplicados
- * —{@code FOR UPDATE SKIP LOCKED} lo impide— pero si gastan intentos de mas, y los intentos son lo
- * que separa un evento vivo de uno MUERTO.
+ * replicas web, tres publicadores compitiendo por el mismo buzon entregarian el mismo evento hasta
+ * tres veces —el receptor lo deduplica por {@code pagoId}— y, desde #109, no le cuentan de mas
+ * intentos: la marca solo cuenta si {@code intentos} sigue valiendo lo que valia al leerlo. Hasta
+ * #109 eso lo decia de un {@code FOR UPDATE SKIP LOCKED} que duraba la vuelta entera, con los
+ * {@code POST} dentro. Aun asi sobran: los intentos son lo que separa un evento vivo de uno MUERTO,
+ * y el descriptor despliega uno solo.
  *
  * <p><b>Y no va en {@code batch}, que es donde estuvo hasta #79.</b> En {@code stg}, el 2026-09-14,
  * {@code pago_evento} valia 0 en la base de {@code rentas}: ningun pago habia llegado. Lo que habia

@@ -362,8 +362,14 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
     @Override
     public Set<String> escriturasSinUsuarioQueObserve() {
         return Set.of(
-                ".nucleo.aplicacion.EntregarEventos.entregarUno("
+                // Las dos marcas del publicador. Hasta #109 era una sola entrada,
+                // `EntregarEventos.entregarUno`, cuyo `REQUIRES_NEW` no se aplicaba por
+                // autoinvocacion; la transaccion de cada evento vive ahora en otro bean, y la
+                // exencion sigue a la escritura.
+                ".nucleo.aplicacion.AnotarLaEntrega.entregado("
                         + "kamayuk.caja.nucleo.dominio.EventoDePago)",
+                ".nucleo.aplicacion.AnotarLaEntrega.fallido("
+                        + "kamayuk.caja.nucleo.dominio.EventoDePago, java.lang.String, boolean)",
                 // Las dos escrituras del consumidor del buzon de `identidad` (etapa 4). No hay
                 // usuario delante por el mismo motivo que arriba: es un proceso. Y la observacion
                 // de cada hecho EXISTE, solo que la escribio quien lo decidio, en `identidad`,
