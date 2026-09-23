@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Contenedor, CronJob, EntornoDelDescriptor, Manifiesto } from "@kamayuk/infra-contrato";
 import { caja } from "../src/descriptor";
+import type { CronJobConPlazos } from "../src/descriptor";
 
 /**
  * El descriptor de `caja`, verificado sobre lo que devuelve.
@@ -271,6 +272,11 @@ describe("ADR-0039 etapa 4 — el consumidor del buzon de identidad, como CronJo
     return cron as CronJob;
   }
 
+  /** Como `elCronJob()`, pero con los dos plazos de #116 en el tipo. */
+  function elCronJobConPlazos(): CronJobConPlazos {
+    return elCronJob() as CronJobConPlazos;
+  }
+
   /**
    * Hasta esta etapa `lotes()` devolvia `[]` con su motivo escrito: el unico periodico era el
    * publicador de pagos. Ese no es un CronJob: desde #79 es un `Deployment` de su perfil, y lo mide
@@ -285,6 +291,29 @@ describe("ADR-0039 etapa 4 — el consumidor del buzon de identidad, como CronJo
     expect(cron.spec.jobTemplate.spec.backoffLimit).toBe(1);
     expect(cron.spec.jobTemplate.spec.template.spec.restartPolicy).toBe("Never");
     expect(cron.spec.jobTemplate.spec.template.spec.priorityClassName).toBe("kamayuk-stg-prioridad-lote");
+  });
+
+  /**
+   * #116: un job colgado —HTTP a `identidad` que no vuelve, o una fila bloqueada en la base— no
+   * puede quedarse corriendo para siempre, porque con `concurrencyPolicy: Forbid` eso congela
+   * TODAS las corridas siguientes sin avisar. Los dos plazos, y por debajo del periodo de cinco
+   * minutos (300 s): el docblock de `lotes()` en `src/descriptor.ts` tiene el porque de cada
+   * numero.
+   */
+  it("lleva activeDeadlineSeconds y startingDeadlineSeconds, los dos por debajo del periodo", () => {
+    const cron = elCronJobConPlazos();
+    expect(cron.spec.startingDeadlineSeconds).toBe(60);
+    expect(cron.spec.jobTemplate.spec.activeDeadlineSeconds).toBe(240);
+    const PERIODO_SEGUNDOS = 5 * 60;
+    expect(cron.spec.jobTemplate.spec.activeDeadlineSeconds).toBeLessThan(PERIODO_SEGUNDOS);
+    // La propiedad de seguridad es <=, no ===: un job que arranca en el ultimo instante que el
+    // plazo de arranque admite y corre hasta su propio limite NO PUEDE terminar despues del
+    // siguiente tick —eso se comeria la ventana ajena—, pero terminar antes no rompe nada, es solo
+    // mas margen. Hoy los dos valores dan exactamente el periodo (ver el docblock de `lotes()`),
+    // y por eso se comprueban tambien uno a uno arriba.
+    expect(
+      cron.spec.startingDeadlineSeconds + cron.spec.jobTemplate.spec.activeDeadlineSeconds,
+    ).toBeLessThanOrEqual(PERIODO_SEGUNDOS);
   });
 
   /**
