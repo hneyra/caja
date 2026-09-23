@@ -76,6 +76,7 @@ Levantar la plataforma sirve para tener la base y la identidad esperando, y est�
 | **Ver la pantalla contra la plataforma** | `yarn dev:con-plataforma` → <http://localhost:5181/caja/> | `frontend/` |
 | **Verificar la pantalla** | `yarn verificar` (ESLint, tipos y Vitest) | `frontend/` |
 | **Construir el artefacto de la pantalla** | `yarn build` → `frontend/dist/` | `frontend/` |
+| **Medir las capturas** contra `stg` o la plataforma (#89) | `node desarrollo/medir-las-capturas.mjs --base … --emisor …`, con la clave en `KAMAYUK_CLAVE_DE_MEDICION` ([DEV-02 §8](pruebas.md#8-medir-las-capturas-contra-un-backend-de-verdad-89)) | `frontend/` |
 | Los caminos en un navegador de verdad | `yarn e2e:navegador` una vez, y `yarn e2e` (construye y sirve el `dist/` solo) | `frontend/` |
 | La imagen de la interfaz | `docker buildx build --build-context kamayuk-lib=../kamayuk-lib --target interfaz -f frontend/Dockerfile frontend` | la raíz |
 | Levantar la plataforma | `docker compose -f despliegue/plataforma.compose.yaml up -d --wait` | `../infrastructure/` |

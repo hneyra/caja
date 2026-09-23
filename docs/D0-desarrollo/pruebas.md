@@ -158,3 +158,56 @@ Las guardas que ocupan el lugar del artboard que caja no tiene:
 
 **Lee el paréntesis.** Vitest imprime `Test Files 35 passed (35)`: el número de fuera es lo que pasó
 y el de dentro, lo que había. Con dos archivos que no cargan, escribe `33 passed (35)`.
+
+## 8. Medir las capturas contra un backend de verdad (#89)
+
+Las tres capturas de `frontend/src/datos/*Medida.ts` están **derivadas** del contrato, y su
+`ORIGEN_DE_LA_CAPTURA` lo dice. Medirlas es **una orden**: `frontend/desarrollo/medir-las-capturas.mjs`
+pide el token de la cuenta de medición, pide las **catorce** lecturas de `RUTAS`
+(`src/datos/lecturas.ts`: cinco de sesión y nueve de Tesorería), guarda cada respuesta **cruda** con
+su estado, su fecha y la orden `curl` exacta, y compara su **forma** —campos que sobran o faltan,
+nulos, formato de `Instant` y de fecha, decimales, tipos— con la de la captura. Sólo lee: un `POST`,
+el del token, y lo demás `GET`.
+
+**Contra `stg`.** La cuenta es `medicion-de-interfaces` y el cliente `kamayuk-verificacion`
+(público, `grant_type=password`). La clave vive en el `Secret` `kamayuk-stg-keycloak`, clave
+`clave-de-medicion`, y se lee con el `KUBECONFIG` de `stg`: todo en el runbook de `infrastructure`,
+[`docs/B0-operacion/runbooks/medir-una-interfaz-con-login-real.md`](https://github.com/hneyra/infrastructure/blob/main/docs/B0-operacion/runbooks/medir-una-interfaz-con-login-real.md).
+El dominio es `kamayuk:domain` de `infra/Pulumi.stg.yaml` —**compruébalo ahí antes**: ya se mudó una
+vez (`infrastructure`#145)— y el emisor cuelga de `/keycloak` (`RUTA_DE_IDENTIDAD`,
+`infra/componentes/Identidad.ts`).
+
+```bash
+cd frontend     # con Node 24
+PRIVADO=$(mktemp -d); chmod 700 "$PRIVADO"; trap 'rm -rf "$PRIVADO"' EXIT
+kubectl -n kamayuk-stg get secret kamayuk-stg-keycloak \
+  -o jsonpath='{.data.clave-de-medicion}' | base64 -d > "$PRIVADO/clave"
+DOMINIO=vmd205066.contaboserver.net
+KAMAYUK_CLAVE_DE_MEDICION="$(cat "$PRIVADO/clave")" node desarrollo/medir-las-capturas.mjs \
+  --base "https://$DOMINIO" --emisor "https://$DOMINIO/keycloak/realms/kamayuk"
+```
+
+**Contra la plataforma local.** Allí la cuenta de medición **no existe** —la siembra `infrastructure`
+sólo donde hay usuarios de prueba—, así que se mide con el administrador que deja
+`preparar-identidades.sh` (`KAMAYUK_ADMINISTRADOR` del `.env`) y la clave que ese guion imprime. Su
+matriz de permisos tiene los siete privilegios y no sólo `lectura`: la forma es la misma.
+
+```bash
+KAMAYUK_CLAVE_DE_MEDICION="$(cat <archivo con la clave>)" node desarrollo/medir-las-capturas.mjs \
+  --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez
+```
+
+**Tres variables se encadenan**, o se dan: el recibo del duplicado sale del primero de `/recibos`
+(`--recibo`), el día de la conciliación de la `fecha` de `/turnos/del-dia` (`--fecha`), y el turno del
+arqueo del turno ABIERTO de `/turnos/del-dia` (`--turno`). La cuenta de medición no cobra, así que en
+`stg` lo normal es `SIN_ABRIR`: sin `--turno <id>` de un turno real el arqueo sale **OMITIDO** y lo
+dice.
+
+Sale con `0` si todo llegó en 200 con la forma de su captura, `1` si algo difiere o falló, y `2` si no
+se pudo medir. **La clave sólo se admite en la variable** —`--clave` es un error— y ni ella ni el token
+llegan a la consola ni a un archivo (lo prueba `verificaciones/el-guion-de-medicion.test.ts`).
+
+**Lo medido lleva datos de personas** —los pagadores de los recibos— y va por omisión a un directorio
+temporal con permisos `700` (`--salida` para otro). **No se versiona**: a la captura se lleva la
+forma, con valores elegidos, y el `ORIGEN_DE_LA_CAPTURA` pasa a decir la orden y la fecha de la
+medición, conservando la marca `captura-medida-de-caja` que busca el `Dockerfile`.
