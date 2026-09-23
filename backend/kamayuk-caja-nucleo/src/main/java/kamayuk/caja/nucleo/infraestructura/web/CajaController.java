@@ -2,7 +2,6 @@ package kamayuk.caja.nucleo.infraestructura.web;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import kamayuk.caja.autorizacion.Privilegio;
@@ -48,6 +47,12 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Reenviar el mismo intento —el doble clic, el reintento del navegador tras un tiempo de espera—
  * devuelve el recibo que se emitio la primera vez, con su mismo numero <b>y con el mismo {@code
  * pagoId}</b>. La garantia ultima es {@code recibo_idempotencia_uq} (V29), no esta lectura.
+ *
+ * <h2>Quien cobra y en que dia (#114)</h2>
+ *
+ * <p>El cajero es quien firma el token y el dia es hoy segun el reloj de la caja: ver {@link
+ * QuienYCuando}. Un {@code cajero} distinto en el cuerpo es 403 y una fecha que no es hoy es 422,
+ * los dos antes de escribir nada.
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/cobros")
@@ -70,7 +75,8 @@ public class CajaController {
             @RequestBody PeticionDeCobranza peticion,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String clave) {
 
-        LocalDate fechaDePago = fechaDe(peticion.fechaDePago(), "fechaDePago");
+        String cajero = QuienYCuando.cajero(peticion.cajero());
+        LocalDate fechaDePago = QuienYCuando.dia(peticion.fechaDePago(), "fechaDePago", reloj);
         Observacion observacion = observacionDe(peticion.observacion());
 
         CobrarOrdenes.Cobranza cobranza;
@@ -78,7 +84,7 @@ public class CajaController {
             cobranza =
                     new CobrarOrdenes.Cobranza(
                             exigir(peticion.caja(), "caja"),
-                            exigir(peticion.cajero(), "cajero"),
+                            cajero,
                             ordenesDe(peticion.ordenes()),
                             FormaDePago.porNombre(exigir(peticion.formaDePago(), "formaDePago")),
                             fechaDePago,
@@ -121,7 +127,8 @@ public class CajaController {
             @RequestBody PeticionDeCobroDeTasas peticion,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String clave) {
 
-        LocalDate fechaDeCobro = fechaDe(peticion.fechaDeCobro(), "fechaDeCobro");
+        String cajero = QuienYCuando.cajero(peticion.cajero());
+        LocalDate fechaDeCobro = QuienYCuando.dia(peticion.fechaDeCobro(), "fechaDeCobro", reloj);
         Observacion observacion = observacionDe(peticion.observacion());
 
         CobrarTasa.CobroDeTasas cobro;
@@ -129,7 +136,7 @@ public class CajaController {
             cobro =
                     new CobrarTasa.CobroDeTasas(
                             exigir(peticion.caja(), "caja"),
-                            exigir(peticion.cajero(), "cajero"),
+                            cajero,
                             new Pagador(
                                     vacioAnulo(peticion.pagadorDocumento()),
                                     vacioAnulo(peticion.pagadorNombre()),
@@ -201,19 +208,6 @@ public class CajaController {
             }
         }
         return conceptos;
-    }
-
-    private LocalDate fechaDe(@Nullable String texto, String campo) {
-        if (texto == null || texto.isBlank()) {
-            return LocalDate.now(reloj);
-        }
-        try {
-            return LocalDate.parse(texto.strip());
-        } catch (DateTimeParseException malEscrita) {
-            throw new ProblemaDeNegocio(
-                    CodigoDeError.VALIDACION,
-                    "El campo '" + campo + "' no es una fecha ISO: '" + texto + "'");
-        }
     }
 
     private static Observacion observacionDe(@Nullable String texto) {

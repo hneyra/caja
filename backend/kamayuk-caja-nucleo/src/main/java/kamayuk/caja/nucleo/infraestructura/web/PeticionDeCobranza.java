@@ -22,9 +22,12 @@ import org.jspecify.annotations.Nullable;
  * quien emite la orden — y llega aqui como un importe ya rebajado con su motivo en {@code detalle}.
  *
  * @param caja el codigo de la ventanilla
- * @param cajero quien cobra
+ * @param cajero opcional, y solo el propio. Quien cobra es quien firma el token: el cajero sale del
+ *     token (#114, ADR-0028) y este campo solo sigue por compatibilidad del contrato: se admite
+ *     omitido o igual al usuario del token; con otro nombre, 403
  * @param formaDePago EFECTIVO, CHEQUE, DEPOSITO, TARJETA o TRANSFERENCIA
- * @param fechaDePago la fecha del cobro, en ISO; si falta, hoy
+ * @param fechaDePago la fecha del cobro, en ISO; si falta, hoy. Una fecha que no sea hoy en la zona
+ *     de la caja, 422 (#114)
  * @param ordenes las ordenes marcadas en la grilla, por su identificador en esta base
  * @param observacion por que se cobra (regla 10)
  */

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import kamayuk.caja.auditoria.Origen;
+import kamayuk.caja.auditoria.OrigenContext;
 import kamayuk.caja.auditoria.RegistroDeAuditoria;
 import kamayuk.caja.dominio.Dinero;
 import kamayuk.caja.dominio.Observacion;
@@ -26,6 +28,8 @@ import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
 import kamayuk.caja.web.ConfiguracionDeJson;
 import kamayuk.caja.web.ManejadorDeErrores;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -98,6 +102,17 @@ class CajaControllerTest {
                                                             .moduloDeObjetosDeValor())
                                             .build()))
                     .build();
+
+    /** El cajero sale del token desde #114: el de los cuerpos de esta prueba. */
+    @BeforeEach
+    void fijarElToken() {
+        OrigenContext.fijar(new Origen("cajero.prueba", null, null));
+    }
+
+    @AfterEach
+    void limpiarElToken() {
+        OrigenContext.limpiar();
+    }
 
     @Test
     @DisplayName("cobra y devuelve 201 con el recibo, su fecha y el pago en transito")

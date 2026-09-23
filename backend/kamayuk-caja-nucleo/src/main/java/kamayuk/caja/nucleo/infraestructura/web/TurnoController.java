@@ -32,10 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
  *       cualquiera mirara el arqueo de otro con solo escribir su nombre;
  *   <li><b>la municipalidad</b> jamas viaja por HTTP (regla 2, ADR-0028): la pone el {@code SET
  *       LOCAL} de la transaccion del caso de uso, y la politica RLS filtra las dos tablas;
- *   <li><b>el dia</b> es el del reloj de esta caja. Cuadrar el turno de ayer que se quedo sin
- *       sistema sigue siendo posible: {@code POST /turnos/cierre} admite su fecha y {@code
- *       /recaudacion/avance} su rango. Lo que esta lectura contesta es «donde estoy ahora», que es
- *       la pregunta con la que se abre la pantalla.
+ *   <li><b>el dia</b> es el del reloj de esta caja. Lo que esta lectura contesta es «donde estoy
+ *       ahora», que es la pregunta con la que se abre la pantalla. Desde #114 las escrituras dicen
+ *       lo mismo: {@code POST /cobros} y {@code POST /turnos/cierre} toman el cajero del token y
+ *       solo admiten el dia de hoy ({@link QuienYCuando}); el turno de ayer se consulta por {@code
+ *       /recaudacion/avance} con su rango.
  * </ul>
  *
  * <p>Desde #539 un parametro declarado que ningun argumento reclama se contesta con 422
