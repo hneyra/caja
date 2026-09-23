@@ -19,11 +19,10 @@ import kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository;
  * <p>Sirve para probar las decisiones del caso de uso: que abrir dos veces no duplique y que un
  * turno cerrado se rechace.
  *
- * <p><b>Desde P5D ya no hay nada que simular del bloqueo.</b> El puerto pasa de {@code bloquear} a
- * {@link #abierto}, sin {@code FOR UPDATE}: quien serializa la ventanilla es la orden de cobro
- * ({@code OrdenDeCobroRepository#bloquear}), y por eso `V2` pudo hacer el {@code REVOKE UPDATE ON
- * cierre_caja} que el monolito intento y no pudo. La serializacion de verdad sigue probandose
- * contra PostgreSQL con hilos, pero sobre otra tabla.
+ * <p><b>No hay nada que simular del candado.</b> Desde P5D {@link #abierto} se lee sin {@code FOR
+ * UPDATE}, y desde #110 lo que serializa el turno es {@link #bloquear}, un candado consultivo de
+ * transaccion: en memoria no hay otra transaccion, asi que devuelve el turno sin mas. La
+ * serializacion de verdad se prueba contra PostgreSQL con hilos.
  */
 public final class TurnosEnMemoria implements TurnoDeCajaRepository {
 
@@ -152,6 +151,16 @@ public final class TurnosEnMemoria implements TurnoDeCajaRepository {
         return turnos.values().stream()
                 .filter(turno -> turno.id() != null && turno.id() == id)
                 .findFirst();
+    }
+
+    /**
+     * El turno, como {@link #porId}: en memoria no hay otra transaccion con quien serializarse. El
+     * candado de verdad (#110) se prueba contra PostgreSQL con hilos, en {@code
+     * CierreDeCajaJdbcTest}.
+     */
+    @Override
+    public Optional<TurnoDeCaja> bloquear(long turnoId) {
+        return porId(turnoId);
     }
 
     private static String clave(long cajaId, String cajero, LocalDate fecha) {

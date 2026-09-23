@@ -69,8 +69,13 @@ import org.springframework.transaction.annotation.Transactional;
  *       «cobrada» no es una palabra en una columna sino un hecho con papel.
  * </ol>
  *
- * <p><b>El turno ya NO se bloquea</b>, y por eso `V2` pudo hacer el {@code REVOKE UPDATE ON
- * cierre_caja} que `V32` del monolito intento y no pudo. Ver la cabecera de esa migracion.
+ * <p><b>El turno ya NO se bloquea con {@code FOR UPDATE}</b>, y por eso `V2` pudo hacer el {@code
+ * REVOKE UPDATE ON cierre_caja} que `V32` del monolito intento y no pudo. Ver la cabecera de esa
+ * migracion. Lo que lleva desde #110 es un <b>candado consultivo</b> ({@link
+ * kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository#bloquear}), que toma {@link AbrirCaja} antes
+ * que el de las ordenes y que no necesita ese privilegio: no ordena un cobro contra otro —eso lo
+ * siguen haciendo las ordenes— sino un cobro contra el <b>cierre</b> del mismo turno, para que el
+ * acta no se firme sin un recibo que confirmo mientras tanto.
  */
 @Service
 public class CobrarOrdenes {
@@ -117,7 +122,8 @@ public class CobrarOrdenes {
         Objects.requireNonNull(peticion, "No se cobra sin peticion");
         Objects.requireNonNull(observacion, "Sin observacion no se guarda (regla 10, RNF-052)");
 
-        // 1. La ventanilla. Ya NO se bloquea el turno: se abre si no estaba (V2 §5).
+        // 1. La ventanilla: se abre si no estaba (V2 §5) y se toma el candado consultivo del
+        //    turno, que la ordena contra su cierre (#110). Sin FOR UPDATE: V2 lo impide.
         AbrirCaja.Abierta abierta =
                 abrirCaja.enLaCaja(
                         peticion.codigoDeCaja(),

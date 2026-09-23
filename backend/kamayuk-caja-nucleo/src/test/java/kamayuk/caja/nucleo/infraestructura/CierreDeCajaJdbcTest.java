@@ -88,6 +88,10 @@ import tools.jackson.databind.json.JsonMapper;
  * porque entonces el turno era el punto de serializacion de la ventanilla y {@code SELECT ... FOR
  * UPDATE} exige ese privilegio. Desde P5D lo serializa la orden de cobro, asi que el turno puede
  * ser inmutable de verdad. Esta clase lo comprueba <b>en las dos tablas</b>.
+ *
+ * <p>Lo que ese {@code REVOKE} se llevo sin que nadie lo sustituyera fue el orden entre un cobro y
+ * el <b>cierre</b> del mismo turno, y {@link DelCierreEnCurso} lo mide desde #110: el candado que
+ * lo repone es consultivo, no un {@code FOR UPDATE}.
  */
 @DisplayName("#36 — El cierre de caja contra PostgreSQL")
 class CierreDeCajaJdbcTest {
@@ -137,6 +141,13 @@ class CierreDeCajaJdbcTest {
     private static AnularRecibo anularRecibo;
     private static CerrarTurno cerrarTurno;
     private static ConsultaDeRecaudacion consulta;
+    private static ArqueoDeTurno arqueos;
+
+    /** El mismo repositorio de cierres, con una pausa justo antes del {@code INSERT} (#110). */
+    private static CierreEnPausa cierresEnPausa;
+
+    /** {@link CerrarTurno} de produccion, montado sobre {@link #cierresEnPausa} (#110). */
+    private static CerrarTurno cerrarTurnoEnPausa;
 
     private static final AtomicInteger CONTADOR = new AtomicInteger();
 
@@ -197,8 +208,18 @@ class CierreDeCajaJdbcTest {
                                 auditoria,
                                 RELOJ));
 
-        ArqueoDeTurno arqueos = new ArqueoDeTurno(cierres, buzon);
+        arqueos = new ArqueoDeTurno(cierres, buzon);
         cerrarTurno = envolver(new CerrarTurno(cajas, turnos, cierres, arqueos, auditoria, RELOJ));
+        cierresEnPausa = new CierreEnPausa(cierres);
+        cerrarTurnoEnPausa =
+                envolver(
+                        new CerrarTurno(
+                                cajas,
+                                turnos,
+                                cierresEnPausa,
+                                new ArqueoDeTurno(cierresEnPausa, buzon),
+                                auditoria,
+                                RELOJ));
         consulta = envolver(new ConsultaDeRecaudacion(recaudacion, arqueos));
 
         areaTributaria = crearArea(municipalidad, "A-36", "Unidad de Rentas");
@@ -703,6 +724,124 @@ class CierreDeCajaJdbcTest {
                     .isEqualTo(TipoDeMovimientoDeTurno.CIERRE);
         }
     }
+
+    /**
+     * #110 — Nada se cuela en un turno que se esta cerrando.
+     *
+     * <p>Desde `V2` el turno se lee sin {@code FOR UPDATE} —{@code kamayuk_app} ya no tiene UPDATE
+     * sobre {@code cierre_caja}— y {@code cierre_turno_secuencia_uq} solo ordena un cierre contra
+     * otro. Con READ COMMITTED, una cobranza que lee el turno mientras el cierre ya calculo su
+     * arqueo lo ve ABIERTO, emite y confirma; el cierre confirma despues un acta que no la cuenta.
+     *
+     * <p>Cada prueba reproduce esa carrera <b>sin depender del reloj</b>: el cierre de produccion
+     * se detiene entre el arqueo y el {@code INSERT} del acta ({@link CierreEnPausa}), el intruso
+     * entra mientras tanto, y solo se suelta el cierre cuando el intruso <b>termino o esta
+     * esperando un candado en la base</b> (lo dice {@code pg_locks}). Lo que se exige despues es lo
+     * unico que importa: <b>el acta dice lo que hay</b> —su arqueo congelado es el que se calcula
+     * ahora sobre las mismas filas— y el intruso fue rechazado por el turno cerrado.
+     */
+    @Nested
+    @DisplayName("#110 — Nada se cuela en un turno que se esta cerrando")
+    class DelCierreEnCurso {
+
+        @Test
+        @DisplayName(
+                "un cobro de tasa que llega durante el cierre espera, y encuentra el turno cerrado")
+        void unCobroDeTasaNoSeCuela() throws Exception {
+            String cajero = cajero("tasa-en-cierre");
+            cobrarLaTasa(cajero, "T-360", 1, FormaDePago.EFECTIVO);
+
+            Carrera carrera =
+                    carreraContraElCierre(
+                            cajero, () -> cobrarLaTasa(cajero, "T-360", 2, FormaDePago.EFECTIVO));
+
+            elActaDiceLoQueHay(carrera);
+            assertThat(carrera.intruso())
+                    .as("el cobro que llego durante el cierre no entra en un turno cerrado")
+                    .isInstanceOf(AbrirCaja.TurnoCerrado.class);
+        }
+
+        @Test
+        @DisplayName("un cobro de orden tampoco: ni recibo ni PAGO_REGISTRADO en un turno cerrado")
+        void unCobroDeOrdenNoSeCuela() throws Exception {
+            String cajero = cajero("orden-en-cierre");
+            cobrarLaOrden("D110-1", Dinero.de("80.00"), cajero, FormaDePago.EFECTIVO);
+            entregarLoPendiente(turnoDe("C-36", cajero));
+            long intrusa = sembrarOrden("D110-2", Dinero.de("45.00"));
+
+            Carrera carrera =
+                    carreraContraElCierre(
+                            cajero,
+                            () ->
+                                    cobrarOrdenes.cobrar(
+                                            new CobrarOrdenes.Cobranza(
+                                                    "C-36",
+                                                    cajero,
+                                                    List.of(intrusa),
+                                                    FormaDePago.EFECTIVO,
+                                                    HOY,
+                                                    null),
+                                            porQue()));
+
+            elActaDiceLoQueHay(carrera);
+            assertThat(carrera.intruso())
+                    .as("la orden que llego durante el cierre no se cobra en un turno cerrado")
+                    .isInstanceOf(AbrirCaja.TurnoCerrado.class);
+            assertThat(enTransaccion(() -> buzon.loQueImpideCerrar(carrera.turnoId())))
+                    .as("y ningun pago del turno cerrado queda por entregar")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName(
+                "una anulacion que llega durante el cierre espera, y encuentra el turno cerrado")
+        void unaAnulacionNoSeCuela() throws Exception {
+            String cajero = cajero("anulacion-en-cierre");
+            Recibo aAnular = cobrarLaTasa(cajero, "T-360", 1, FormaDePago.EFECTIVO);
+
+            Carrera carrera =
+                    carreraContraElCierre(
+                            cajero,
+                            () ->
+                                    anularRecibo.anular(
+                                            new AnularRecibo.Anulacion(
+                                                    aAnular.numero(),
+                                                    "cobrado por error",
+                                                    null,
+                                                    null),
+                                            porQue()));
+
+            elActaDiceLoQueHay(carrera);
+            assertThat(carrera.intruso())
+                    .as("el acta ya lo congelo como cobrado: anularlo despues la desmiente")
+                    .isInstanceOf(AnularRecibo.TurnoYaCerrado.class);
+        }
+
+        @Test
+        @DisplayName("el candado es de la municipalidad del turno: la vecina no puede tomarlo")
+        void laVecinaNoTomaElCandado() {
+            String cajero = cajero("candado-ajeno");
+            cobrarLaTasa(cajero, "T-360", 1, FormaDePago.EFECTIVO);
+            long turnoId = turnoDe("C-36", cajero);
+
+            assertThat(enTransaccion(() -> candadosConsultivosTrasBloquear(turnoId)))
+                    .as("con su municipalidad, bloquear toma exactamente un candado consultivo")
+                    .isEqualTo(1);
+            TenantContext.fijar(new MunicipalidadId(otraMunicipalidad));
+            try {
+                assertThat(desdeLaVecina(() -> candadosConsultivosTrasBloquear(turnoId)))
+                        .as(
+                                "desde la vecina el turno no existe, y no se toma nada: si no,"
+                                        + " podria dejar esperando a una ventanilla ajena con"
+                                        + " solo adivinar un numero")
+                        .isZero();
+            } finally {
+                TenantContext.fijar(new MunicipalidadId(municipalidad));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
 
     @Nested
     @DisplayName("AC 4 — El avance en vivo no contiende con la cobranza")
@@ -1334,6 +1473,199 @@ class CierreDeCajaJdbcTest {
                 owner.commit();
                 return id;
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // #110: la carrera entre el cierre y lo que llega mientras tanto
+
+    /**
+     * El resultado de una carrera: el cierre, el turno y lo que le paso al intruso.
+     *
+     * @param intruso lo que devolvio el intruso, o la excepcion con que termino
+     */
+    private record Carrera(long turnoId, CerrarTurno.Cerrado cierre, @Nullable Object intruso) {}
+
+    /**
+     * Cierra el turno de ese cajero con una pausa entre el arqueo y el {@code INSERT} del acta, y
+     * lanza al intruso durante la pausa.
+     *
+     * <p>El cierre se suelta en cuanto el intruso <b>termino</b> —sin candado comun, lo hace sin
+     * esperar a nadie— o esta <b>esperando un candado</b> en esta base —con el—. Ninguna de las dos
+     * condiciones es un plazo: es lo que la base dice que esta pasando, y por eso la prueba sale
+     * igual en una maquina lenta.
+     */
+    @SuppressWarnings("checkstyle:IllegalCatch")
+    private static Carrera carreraContraElCierre(
+            String cajero, java.util.concurrent.Callable<?> intruso) throws Exception {
+        long turnoId = turnoDe("C-36", cajero);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        CierreEnPausa.Pausa pausa = cierresEnPausa.armar();
+        try {
+            Future<CerrarTurno.Cerrado> cierre =
+                    hilos.submit(
+                            () ->
+                                    conContexto(
+                                            () ->
+                                                    cerrarTurnoEnPausa.cerrar(
+                                                            new CerrarTurno.Cierre(
+                                                                    "C-36", cajero, HOY, Map.of()),
+                                                            porQue())));
+            assertThat(pausa.llegada().await(30, TimeUnit.SECONDS))
+                    .as("el cierre tiene que haber calculado su arqueo antes de lanzar al intruso")
+                    .isTrue();
+
+            Future<@Nullable Object> intrusion =
+                    hilos.submit(
+                            () ->
+                                    conContexto(
+                                            () -> {
+                                                try {
+                                                    return intruso.call();
+                                                } catch (RuntimeException rechazo) {
+                                                    return rechazo;
+                                                }
+                                            }));
+
+            long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (!intrusion.isDone() && !hayAlguienEsperandoUnCandado()) {
+                assertThat(System.nanoTime())
+                        .as("el intruso ni termino ni espera un candado: algo se colgo")
+                        .isLessThan(limite);
+                Thread.sleep(10);
+            }
+
+            pausa.suelta().countDown();
+            CerrarTurno.Cerrado cerrado = cierre.get(30, TimeUnit.SECONDS);
+            return new Carrera(turnoId, cerrado, intrusion.get(30, TimeUnit.SECONDS));
+        } finally {
+            pausa.suelta().countDown();
+            cierresEnPausa.desarmar();
+            hilos.shutdownNow();
+        }
+    }
+
+    /**
+     * El acta congelada es el arqueo que se calcula AHORA sobre las filas del turno.
+     *
+     * <p>Es la definicion del defecto al reves: un recibo confirmado que el acta no cuenta, o una
+     * anulacion confirmada que el acta no resta, hace que las dos cifras discrepen.
+     */
+    private static void elActaDiceLoQueHay(Carrera carrera) {
+        ArqueoDelTurno congelado = carrera.cierre().cierre().arqueoCongelado();
+        ArqueoDelTurno ahora = enTransaccion(() -> arqueos.del(carrera.turnoId(), Map.of(), HOY));
+        assertThat(congelado.recibosEmitidos())
+                .as("los recibos que cuenta el acta son los que tiene el turno")
+                .isEqualTo(ahora.recibosEmitidos());
+        assertThat(congelado.recibosAnulados())
+                .as("y las anulaciones que resta, las que tiene")
+                .isEqualTo(ahora.recibosAnulados());
+        assertThat(congelado.neto())
+                .as("un acta firmada sin un dinero que esta en el cajon (o con uno que ya salio)")
+                .isEqualTo(ahora.neto());
+    }
+
+    /**
+     * Si alguna sesion de ESTA base espera un candado que otra tiene.
+     *
+     * <p>{@code pg_locks} es de todo el servidor, y el servidor de pruebas puede ser compartido:
+     * por eso se acota a la base actual. Cualquier candado vale —de fila, de transaccion o
+     * consultivo—, para que la prueba no sepa cual es el que pone el arreglo.
+     */
+    private static boolean hayAlguienEsperandoUnCandado() {
+        Boolean hay =
+                jdbc.sql(
+                                "SELECT EXISTS (SELECT 1 FROM pg_locks l"
+                                        + " JOIN pg_database d ON d.oid = l.database"
+                                        + " WHERE NOT l.granted AND d.datname = current_database())")
+                        .query(Boolean.class)
+                        .single();
+        return Boolean.TRUE.equals(hay);
+    }
+
+    /**
+     * Llama a {@code bloquear} dentro de la transaccion en curso y cuenta los candados consultivos
+     * que tiene esta sesion. Exige ademas que devuelva el turno si y solo si tomo el candado.
+     */
+    private static long candadosConsultivosTrasBloquear(long turnoId) {
+        boolean visto = turnos.bloquear(turnoId).isPresent();
+        Long cuantos =
+                jdbc.sql(
+                                "SELECT count(*) FROM pg_locks"
+                                        + " WHERE locktype = 'advisory' AND granted"
+                                        + " AND pid = pg_backend_pid()")
+                        .query(Long.class)
+                        .single();
+        long tomados = java.util.Objects.requireNonNull(cuantos);
+        assertThat(visto)
+                .as("bloquear devuelve el turno si y solo si lo ve")
+                .isEqualTo(tomados > 0);
+        return tomados;
+    }
+
+    /** Ejecuta en otro hilo con el contexto de la municipalidad y del cajero, y lo limpia. */
+    private static <T> T conContexto(java.util.concurrent.Callable<T> accion) throws Exception {
+        TenantContext.fijar(new MunicipalidadId(municipalidad));
+        OrigenContext.fijar(new Origen("cajero.prueba", null, null));
+        try {
+            return accion.call();
+        } finally {
+            TenantContext.limpiar();
+            OrigenContext.limpiar();
+        }
+    }
+
+    /**
+     * El repositorio de cierres de verdad, con una pausa armable justo antes de registrar un
+     * CIERRE. Delega todo lo demas: lo que se prueba es {@link CerrarTurno} de produccion.
+     */
+    private static final class CierreEnPausa implements CierreDeTurnoRepository {
+
+        /** La pausa armada: el cierre avisa al llegar y espera a que lo suelten. */
+        record Pausa(CountDownLatch llegada, CountDownLatch suelta) {}
+
+        private final CierreDeTurnoRepository real;
+        private volatile @Nullable Pausa armada;
+
+        CierreEnPausa(CierreDeTurnoRepository real) {
+            this.real = real;
+        }
+
+        Pausa armar() {
+            Pausa pausa = new Pausa(new CountDownLatch(1), new CountDownLatch(1));
+            armada = pausa;
+            return pausa;
+        }
+
+        void desarmar() {
+            armada = null;
+        }
+
+        @Override
+        public CierreDeTurno registrar(CierreDeTurno movimiento) {
+            Pausa pausa = armada;
+            if (pausa != null && movimiento.tipo() == TipoDeMovimientoDeTurno.CIERRE) {
+                pausa.llegada().countDown();
+                try {
+                    if (!pausa.suelta().await(30, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Nadie solto el cierre en 30 segundos");
+                    }
+                } catch (InterruptedException interrumpido) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrumpido);
+                }
+            }
+            return real.registrar(movimiento);
+        }
+
+        @Override
+        public List<CierreDeTurno> deTurno(long turnoId) {
+            return real.deTurno(turnoId);
+        }
+
+        @Override
+        public List<kamayuk.caja.nucleo.dominio.ReciboDelTurno> recibosDelTurno(long turnoId) {
+            return real.recibosDelTurno(turnoId);
         }
     }
 }

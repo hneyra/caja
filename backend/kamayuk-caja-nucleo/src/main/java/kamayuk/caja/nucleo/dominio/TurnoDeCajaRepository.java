@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import kamayuk.caja.dominio.Observacion;
 
-/** Los turnos de caja: la apertura y su lectura. */
+/** Los turnos de caja: la apertura, su lectura y su candado (#110). */
 public interface TurnoDeCajaRepository {
 
     /**
@@ -23,15 +23,14 @@ public interface TurnoDeCajaRepository {
             long cajaId, String cajero, LocalDate fecha, Instant apertura, Observacion observacion);
 
     /**
-     * El turno de ese cajero, en esa caja y ese dia, <b>bloqueado</b> hasta el fin de la
-     * transaccion. Lo devuelve tal como este, abierto o cerrado.
+     * El turno de ese cajero, en esa caja y ese dia, <b>sin bloquear</b>. Lo devuelve tal como
+     * este, abierto o cerrado.
      *
-     * <p>El bloqueo es lo que serializa la ventanilla (#33). Una caja es un cajero y una cola: dos
-     * cobranzas de la misma caja tienen que ordenarse, y ordenarlas en el motor —con {@code SELECT
-     * ... FOR UPDATE} sobre esta fila— es lo que hace que la comprobacion de idempotencia que viene
-     * despues pueda leer lo que la peticion anterior ya escribio. Sin el, el doble clic del cajero
-     * produce dos recibos y la unica defensa seria el indice unico, que ademas de rechazar
-     * <b>aborta</b> la transaccion entera.
+     * <p>Hasta P5D llevaba {@code FOR UPDATE} y era lo que serializaba la ventanilla (#33). Desde
+     * `V2` no puede: {@code kamayuk_app} ya no tiene UPDATE sobre {@code cierre_caja}, y un {@code
+     * FOR UPDATE} daria {@code permission denied}. Quien vaya a escribir contra el turno —cobrar,
+     * anular, cerrar— lo lee aqui para saber cual es y despues toma su candado con {@link
+     * #bloquear}; el estado que decide es el que devuelve aquel, no este (#110).
      *
      * <p>Devuelve el turno cerrado en vez de vacio a proposito: quien pregunta necesita distinguir
      * «este cajero no ha abierto hoy» de «este cajero ya cerro», y las dos respuestas llevan a
@@ -61,13 +60,38 @@ public interface TurnoDeCajaRepository {
     List<TurnoConSuCaja> delCajeroEn(String cajero, LocalDate fecha);
 
     /**
-     * El turno con ese identificador, <b>sin bloquear</b>.
+     * El turno con ese identificador, <b>sin bloquear</b>: para leerlo, no para escribir contra el.
      *
-     * <p>Lo necesita la anulacion (#34): parte del recibo, y el recibo apunta a su turno por
-     * identificador —no por (caja, cajero, fecha)—. Se lee sin bloquear a proposito: lo que la
-     * anulacion serializa es el recibo, y eso lo hace {@code recibo_movimiento_anulacion_uq}, no un
-     * candado sobre la apertura. Bloquear el turno aqui pondria a esperar a toda la ventanilla por
-     * una anulacion que ni siquiera toca su recaudacion hasta que se registre.
+     * <p>Hasta #110 lo usaba tambien la anulacion, y ese era el defecto: leia el turno ABIERTO
+     * mientras un cierre ya habia congelado su arqueo, anulaba, y el acta firmada seguia contando
+     * como cobrado un recibo que ya no lo estaba. La anulacion usa ahora {@link #bloquear}.
      */
     Optional<TurnoDeCaja> porId(long id);
+
+    /**
+     * Toma el candado del turno hasta el fin de la transaccion y lo devuelve leido <b>despues</b>
+     * de tenerlo, con su estado de ese momento (#110).
+     *
+     * <p>Es el punto de serializacion de todo lo que escribe contra un turno: cobrar una orden,
+     * cobrar una tasa, anular un recibo y cerrar o reversar el cierre. Sin el, con READ COMMITTED,
+     * un cobro que lee el turno ABIERTO mientras el cierre ya calculo su arqueo emite y confirma, y
+     * el cierre firma despues un acta sin ese dinero. {@code cierre_turno_secuencia_uq} no lo
+     * evita: ordena un cierre contra otro, no un cobro contra un cierre.
+     *
+     * <p>No es un {@code FOR UPDATE}, porque {@code kamayuk_app} no tiene UPDATE sobre {@code
+     * cierre_caja} desde `V2` ni lo va a recuperar: es un candado consultivo de transaccion, que se
+     * suelta solo con el {@code COMMIT} o el {@code ROLLBACK} —nunca uno de sesion, que como {@code
+     * SET SESSION} sobreviviria a la conexion devuelta al pool (regla 3)—.
+     *
+     * <p><b>Se toma antes que cualquier otro candado de la transaccion</b> —antes del {@code FOR
+     * UPDATE} de las ordenes y del correlativo del recibo—, y cada transaccion toma uno solo. Con
+     * ese orden no hay ciclo posible: quien lo tiene puede esperar una fila, pero nadie que tenga
+     * una fila esta esperando un turno.
+     *
+     * <p>La municipalidad no entra (regla 2): si el turno no es de la municipalidad del {@code SET
+     * LOCAL}, RLS lo esconde, no se toma ningun candado y la respuesta es vacia.
+     *
+     * @return el turno leido con el candado puesto, o vacio si no existe para esta municipalidad
+     */
+    Optional<TurnoDeCaja> bloquear(long turnoId);
 }

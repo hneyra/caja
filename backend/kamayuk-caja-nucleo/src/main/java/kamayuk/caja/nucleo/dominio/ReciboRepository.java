@@ -28,10 +28,10 @@ public interface ReciboRepository {
     /**
      * El recibo que se emitio con esa clave de idempotencia, si ya existe.
      *
-     * <p>Se consulta con el turno de la caja ya bloqueado: por si sola una lectura no garantiza
-     * nada —dos peticiones simultaneas no verian nada las dos—, y por eso la garantia final sigue
-     * siendo {@code recibo_idempotencia_uq}. Esta consulta es lo que convierte un reenvio en una
-     * respuesta correcta en vez de en un error.
+     * <p>Se consulta con el candado del turno ya puesto (#110): por si sola una lectura no
+     * garantiza nada —dos peticiones simultaneas no verian nada las dos—, y por eso la garantia
+     * final sigue siendo {@code recibo_idempotencia_uq}. Esta consulta es lo que convierte un
+     * reenvio en una respuesta correcta en vez de en un error.
      */
     Optional<Recibo> porClaveDeIdempotencia(String clave);
 
