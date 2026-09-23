@@ -747,6 +747,63 @@ class ReciboJdbcTest {
         }
 
         @Test
+        @DisplayName("#112 — el rango es de dias de Lima: las 19:30 son del dia, las 00:30 no")
+        void elRangoEsDeDiasDeLima() {
+            // `desde`/`hasta` se pasaban como `LocalDateTime`, y un `timestamptz` comparado con
+            // un `timestamp` lo resuelve la zona de la SESION, que pgjdbc copia de la JVM al
+            // conectar. Por eso la prueba FIJA esa zona en UTC —la del contenedor— mientras
+            // dura: sin esto, el codigo viejo pasaba verde en una JVM que ya estuviera en Lima,
+            // y el rojo dependia de la maquina. `DriverManagerDataSource` abre una conexion
+            // por transaccion, asi que todas las de aqui nacen con la sesion en UTC. El recibo
+            // de las 19:30 de Lima (00:30Z del dia siguiente) caia fuera de su dia, y el de las
+            // 00:30 de Lima (05:30Z) caia dentro del anterior.
+            java.util.TimeZone zonaDeLaJvm = java.util.TimeZone.getDefault();
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+            try {
+                elRangoEsDeDiasDeLimaConLaSesionEnUtc();
+            } finally {
+                java.util.TimeZone.setDefault(zonaDeLaJvm);
+            }
+        }
+
+        private void elRangoEsDeDiasDeLimaConLaSesionEnUtc() {
+            assertThat(jdbc.sql("SELECT current_setting('TimeZone')").query(String.class).single())
+                    .as("la premisa: la sesion esta en UTC, como en el contenedor")
+                    .isEqualTo("UTC");
+            Recibo deLaNoche =
+                    cobrarA(
+                            sembrarOrden("LST-NOCHE", Dinero.de("41.00")),
+                            Instant.parse("2026-03-17T00:30:00Z"),
+                            "cajero.lima");
+            Recibo deLaMadrugada =
+                    cobrarA(
+                            sembrarOrden("LST-MADRUGADA", Dinero.de("42.00")),
+                            Instant.parse("2026-03-17T05:30:00Z"),
+                            "cajero.lima");
+
+            assertThat(
+                            numerosDe(
+                                    listar(
+                                            new CriterioDeRecibos(
+                                                    null, null, "cajero.lima", PAGO, PAGO, null))))
+                    .as(
+                            "el 16 de Lima va hasta las 05:00Z del 17: entra el de las 19:30, y solo el")
+                    .containsExactly(deLaNoche.numero().impreso());
+            assertThat(
+                            numerosDe(
+                                    listar(
+                                            new CriterioDeRecibos(
+                                                    null,
+                                                    null,
+                                                    "cajero.lima",
+                                                    PAGO.plusDays(1),
+                                                    PAGO.plusDays(1),
+                                                    null))))
+                    .as("y el 17 de Lima empieza a las 05:00Z: el de las 00:30 de Lima es suyo")
+                    .containsExactly(deLaMadrugada.numero().impreso());
+        }
+
+        @Test
         @DisplayName("el estado se DERIVA del movimiento de anulacion, y filtra por el")
         void elEstadoSeDerivaYFiltra() {
             Recibo anulado =
