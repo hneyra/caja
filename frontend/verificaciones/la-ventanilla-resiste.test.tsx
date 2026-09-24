@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,6 +12,20 @@ import {
 import { MUNICIPALIDAD_MEDIDA, SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import { AVANCE_MEDIDO, DUPLICADO_MEDIDO, RECIBOS_MEDIDOS } from '../src/datos/tesoreriaMedida.ts';
 import { ACTO_DE_ANULACION } from '../src/pantallas/arbol.ts';
+
+/**
+ * `salir()` de verdad manda el navegador al emisor, y jsdom no navega. Se sustituye SOLO esa: lo
+ * que se mide es que el borrador ya no esta cuando se la llama, y el doble apunta que habia en la
+ * pestana en ese instante.
+ */
+const alSalir = vi.hoisted(() => ({ borradorQueQuedaba: undefined as string | null | undefined, veces: 0 }));
+vi.mock('../src/api/identidad.ts', async (original) => ({
+  ...(await original<typeof import('../src/api/identidad.ts')>()),
+  salir: () => {
+    alSalir.veces += 1;
+    alSalir.borradorQueQuedaba = sessionStorage.getItem('kamayuk.caja.borrador-de-la-anulacion');
+  },
+}));
 
 /**
  * **La ventanilla sobrevive a un dato malformado y a un token caducado** (#117).
@@ -30,7 +44,9 @@ import { ACTO_DE_ANULACION } from '../src/pantallas/arbol.ts';
  *   · **Un 401 en la anulacion dice que la sesion caduco y que hay que volver a entrar**, y lo
  *     escrito en el acto se encuentra al volver a abrirlo sobre el mismo recibo, aunque la
  *     aplicacion se haya montado de nuevo —que es lo que pasa al volver del emisor—.
- *   · **El borrador se va cuando deja de servir**: al anular con exito y al cerrar el acto.
+ *   · **El borrador se va cuando deja de servir**: al anular con exito, al cerrar el acto —salvo
+ *     si lo que se cierra es el rechazo de un 401, que es justo cuando hay que conservarlo— y al
+ *     cerrar la sesion. Y es de UNA cuenta: otra que entre en la misma pestana no lo ve.
  */
 
 beforeAll(() => {
@@ -60,6 +76,8 @@ beforeEach(() => {
   avance = AVANCE_MEDIDO;
   alAnular = 201;
   escrituras = 0;
+  alSalir.veces = 0;
+  alSalir.borradorQueQuedaba = undefined;
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>((entrada, opciones) => {
@@ -178,6 +196,7 @@ describe('un 401 a mitad del acto no pierde el borrador', () => {
     });
     expect(fallo.textContent).toMatch(/La sesión caducó/);
     expect(fallo.textContent).toMatch(/Vuelva a entrar/);
+    expect(fallo.textContent).toMatch(/seguirá ahí/);
     expect(fallo.textContent).not.toMatch(/No se pudo anular el cobro/);
   });
 
@@ -240,5 +259,97 @@ describe('un 401 a mitad del acto no pierde el borrador', () => {
     expect(sessionStorage.getItem(CLAVE_DEL_BORRADOR)).toBeNull();
     await abrirElActo(persona);
     expect((screen.getByLabelText(/Motivo/) as HTMLTextAreaElement).value).toBe('');
+  });
+});
+
+describe('el borrador es de la cuenta que lo escribio, y no sobrevive a su sesion', () => {
+  const elBoton = () => document.querySelector(`[data-accion="abre:${ACTO_DE_ANULACION}"]`) as HTMLElement | null;
+  const elActo = () => document.querySelector(`[data-acto="${ACTO_DE_ANULACION}"]`) as HTMLElement | null;
+  const APERTURA = `${ACTO_DE_ANULACION}|${JSON.stringify({ numeroDelRecibo: EL_RECIBO })}`;
+  const ESCRITO = { valores: { motivo: 'Lo escribio otro' }, observacion: 'De otro turno', intentado: false };
+
+  async function abrirElActo(persona: ReturnType<typeof userEvent.setup>) {
+    await waitFor(() => {
+      expect(elBoton()?.getAttribute('aria-disabled')).toBeNull();
+    });
+    await persona.click(elBoton() as HTMLElement);
+    await waitFor(() => {
+      expect(elActo()).not.toBeNull();
+    });
+  }
+
+  it('EL CENTINELA: el borrador de la MISMA cuenta si se restaura', { timeout: 30_000 }, async () => {
+    sessionStorage.setItem(CLAVE_DEL_BORRADOR, JSON.stringify({ cuenta: 'administrador', actos: { [APERTURA]: ESCRITO } }));
+    const persona = userEvent.setup();
+    await abrir(`duplicado-recibo/${EL_RECIBO}`);
+    await abrirElActo(persona);
+    await waitFor(() => {
+      expect((screen.getByLabelText(/Motivo/) as HTMLTextAreaElement).value).toBe('Lo escribio otro');
+    });
+  });
+
+  it('el de OTRA cuenta no se ofrece, y se borra de la pestana', { timeout: 30_000 }, async () => {
+    sessionStorage.setItem(CLAVE_DEL_BORRADOR, JSON.stringify({ cuenta: 'otro.cajero', actos: { [APERTURA]: ESCRITO } }));
+    const persona = userEvent.setup();
+    await abrir(`duplicado-recibo/${EL_RECIBO}`);
+    await abrirElActo(persona);
+    await waitFor(() => {
+      expect(sessionStorage.getItem(CLAVE_DEL_BORRADOR)).toBeNull();
+    });
+    expect((screen.getByLabelText(/Motivo/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/Observación/) as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('cerrar la sesion borra el borrador ANTES de irse al emisor', { timeout: 30_000 }, async () => {
+    const persona = userEvent.setup();
+    await abrir(`duplicado-recibo/${EL_RECIBO}`);
+    await abrirElActo(persona);
+    await persona.type(screen.getByLabelText(/Motivo/), 'A medio escribir');
+    await waitFor(() => {
+      expect(sessionStorage.getItem(CLAVE_DEL_BORRADOR) ?? '').toContain('A medio escribir');
+    });
+
+    // Con el teclado y `fireEvent`, no con `userEvent.click`: el clic de `userEvent` sobre el
+    // disparador del menu tarda mas de veinte segundos en jsdom (medido), y la tecla lo abre igual.
+    const disparador = document.querySelector('[data-slot="abrir-la-sesion"]') as HTMLElement;
+    disparador.focus();
+    fireEvent.keyDown(disparador, { key: 'Enter' });
+    // Por el rol en el DOM y no con `findByRole`: sobre la aplicacion entera, calcular los nombres
+    // accesibles de todo el arbol tarda decenas de segundos con la suite en paralelo.
+    const cerrar = await waitFor(() => {
+      const opcion = [...document.querySelectorAll('[role="menuitem"]')].find((o) => o.textContent === 'Cerrar sesion');
+      expect(opcion).toBeDefined();
+      return opcion as HTMLElement;
+    });
+    fireEvent.click(cerrar);
+
+    expect(alSalir.veces).toBe(1);
+    expect(alSalir.borradorQueQuedaba, 'cuando se llama a salir(), ya no hay borrador').toBeNull();
+  });
+
+  it('cerrar el acto despues de un 401 NO es cancelarlo: lo escrito sigue al reabrir', { timeout: 30_000 }, async () => {
+    alAnular = 401;
+    const persona = userEvent.setup();
+    await abrir(`duplicado-recibo/${EL_RECIBO}`);
+    await abrirElActo(persona);
+    await persona.type(screen.getByLabelText(/Motivo/), 'Cobro duplicado');
+    await persona.type(screen.getByLabelText(/Observación/), 'A pedido de tesoreria');
+    const primario = elActo()?.querySelector('button[type="submit"]') as HTMLElement;
+    await waitFor(() => {
+      expect(primario.getAttribute('aria-disabled')).toBeNull();
+    });
+    await persona.click(primario);
+    await persona.click(await screen.findByRole('button', { name: /confirmar/i }));
+    await waitFor(() => {
+      expect(document.querySelector(`[data-fallo-de="${ACTO_DE_ANULACION}"]`)).not.toBeNull();
+    });
+
+    await persona.click(screen.getByRole('button', { name: /cerrar/i }));
+    await waitFor(() => {
+      expect(elActo()).toBeNull();
+    });
+    expect(sessionStorage.getItem(CLAVE_DEL_BORRADOR) ?? '').toContain('Cobro duplicado');
+    await abrirElActo(persona);
+    expect((screen.getByLabelText(/Motivo/) as HTMLTextAreaElement).value).toBe('Cobro duplicado');
   });
 });

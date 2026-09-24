@@ -37,8 +37,15 @@ import { ACTO_DE_ANULACION } from '../pantallas/arbol.ts';
  *
  * <h2>Cuando se borra</h2>
  *
- * Al anular con exito y al cerrar el acto —que es cancelarlo—. Lo hace `useLaAnulacion.ts`, que es
- * quien sabe cuando pasa cada cosa.
+ * Al anular con exito y al cerrar el acto —que es cancelarlo—, salvo que lo que se cierre sea el
+ * rechazo de un 401: entonces cerrar y recargar es justo lo que se le pide a quien mira, y el borrador
+ * tiene que seguir ahi. Lo decide `useLaAnulacion.ts`, que es quien sabe cuando pasa cada cosa. Y al
+ * cerrar la sesion, desde `aplicacion.tsx`.
+ *
+ * <h2>Y es de UNA cuenta</h2>
+ *
+ * Se guarda con el `cuenta` de `GET /seguridad/sesion`, y sólo se le devuelve a esa: otra cuenta que
+ * entre en la misma pestana lo encuentra borrado. Nunca el token: la cuenta llega como argumento.
  */
 
 /**
@@ -80,14 +87,28 @@ function soloLaAnulacion(borradores: Borradores): Borradores {
   );
 }
 
-/** Los borradores guardados en esta pestana, o ninguno si no hay, no se puede leer o no se entiende. */
-export function leerLosBorradores(): Borradores {
+/**
+ * Los borradores que **esta cuenta** guardo en esta pestana, o ninguno si no hay, no se puede leer o
+ * no se entiende.
+ *
+ * **Los de otra cuenta no se devuelven, y se borran** (#117, revision): en una PC que tres turnos
+ * comparten, quien entra despues en la misma pestana no puede encontrarse el memorando y la
+ * observacion del anterior. La cuenta es el `cuenta` de `GET /seguridad/sesion` —lo que la barra
+ * ensena—, nunca el token.
+ */
+export function leerLosBorradores(cuenta: string): Borradores {
   try {
     const crudo = sessionStorage.getItem(CLAVE_DEL_BORRADOR);
     if (crudo === null) return {};
     const leido: unknown = JSON.parse(crudo);
     if (typeof leido !== 'object' || leido === null) return {};
-    const validos = Object.entries(leido).filter((entrada): entrada is [string, TecleadoDeUnActo] =>
+    const { cuenta: suya, actos } = leido as Record<string, unknown>;
+    if (suya !== cuenta) {
+      olvidarLosBorradores();
+      return {};
+    }
+    if (typeof actos !== 'object' || actos === null) return {};
+    const validos = Object.entries(actos).filter((entrada): entrada is [string, TecleadoDeUnActo] =>
       esTecleado(entrada[1]),
     );
     return soloLaAnulacion(Object.fromEntries(validos));
@@ -96,13 +117,25 @@ export function leerLosBorradores(): Borradores {
   }
 }
 
-/** Guarda los de la anulacion; sin ninguno, quita la clave. Nunca lanza. */
-export function guardarLosBorradores(borradores: Borradores): void {
+/** Guarda los de la anulacion, con la cuenta que los escribio; sin ninguno, quita la clave. Nunca lanza. */
+export function guardarLosBorradores(cuenta: string, borradores: Borradores): void {
   try {
     const suyos = soloLaAnulacion(borradores);
     if (Object.keys(suyos).length === 0) sessionStorage.removeItem(CLAVE_DEL_BORRADOR);
-    else sessionStorage.setItem(CLAVE_DEL_BORRADOR, JSON.stringify(suyos));
+    else sessionStorage.setItem(CLAVE_DEL_BORRADOR, JSON.stringify({ cuenta, actos: suyos }));
   } catch {
     // Sin almacenamiento no hay borrador: la ventanilla sigue como antes de #117.
+  }
+}
+
+/**
+ * Quita todo borrador de la pestana. Lo llama `aplicacion.tsx` **antes** de `salir()`: cerrar la
+ * sesion es dejar el puesto, y lo que se deja no puede quedar escrito para el siguiente.
+ */
+export function olvidarLosBorradores(): void {
+  try {
+    sessionStorage.removeItem(CLAVE_DEL_BORRADOR);
+  } catch {
+    // Nada que olvidar si no se puede tocar.
   }
 }

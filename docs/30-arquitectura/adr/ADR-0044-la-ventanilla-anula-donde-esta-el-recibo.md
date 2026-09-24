@@ -81,6 +81,35 @@ opciones del catálogo necesitan por igual, y que sin esto obliga a otorgar la o
 
 El `?formato=` **no** entra: reimprimir un papel no es parte de anular, y exige `IMPRESION`.
 
+### 4 · Lo tecleado sobrevive a un 401, guardado en la pestaña — y no es una segunda escritura
+
+El token dura quince minutos y esta interfaz no lo renueva (la renovación silenciosa de
+`@kamayuk/sesion` sigue pendiente). Un 401 a mitad del acto no puede perder motivo, quién autoriza,
+el memorando y la observación: volver a entrar es una página nueva, y sin nada que lo retenga la
+vuelta borra el formulario. Por eso, desde #117, `datos/borradorDeLaAnulacion.ts` copia lo tecleado
+a `sessionStorage`, bajo la clave `kamayuk.caja.borrador-de-la-anulacion`.
+
+**Qué guarda.** Exactamente lo que la persona escribió en los campos del acto — nunca lo que el
+backend contestó, nunca el token ni nada que se le parezca. Se guarda con la cuenta de
+`GET /seguridad/sesion` y sólo se devuelve a esa misma cuenta: en una PC de ventanilla que varios
+turnos comparten, el borrador de otra cuenta se descarta en vez de ofrecerse a quien entra después.
+
+**Dónde.** `sessionStorage`, no el almacenamiento que persiste: es de esta pestaña y este turno.
+Sobrevive a la ida y vuelta al emisor —que es la misma pestaña— y muere con ella.
+
+**Cuándo se borra.** Al anular con éxito, al cerrar el acto —que es cancelarlo— y al cerrar la
+sesión, antes de irse al emisor. La única excepción es cerrar el acto que sigue a un rechazo 401:
+ahí cerrar no es cancelar, es el paso que el propio remedio pide —cerrar, recargar, volver a
+entrar—, y el borrador tiene que seguir ahí para encontrarse al volver.
+
+**Por qué no es una segunda escritura.** No manda nada a ningún backend, no representa un estado del
+recibo ni de la sesión, y desaparece sola con la pestaña o con la cuenta que la dejó. La única
+escritura de esta ventanilla sigue siendo el `POST` de la sección 2, y `verificaciones/solo-lee.test.ts`
+lo sigue vigilando sobre `src/` entero sin una excepción nueva. El borrador es memoria del
+formulario, no un segundo camino hacia el backend, y `verificaciones/camino-a-la-api.test.ts`
+mantiene la lista exacta de lo que ese único archivo puede importar — para que no gane, ni por
+accidente, un camino hacia la puerta o hacia el cliente que sí escribe.
+
 ## Lo que ve quien sólo puede anular
 
 Es la pregunta que #100 exigía contestar por escrito, y la respuesta no es «una pantalla vacía».

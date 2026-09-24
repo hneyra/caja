@@ -102,11 +102,12 @@ const LITERALES = [
   'El sistema de caja no contestó a la anulación.',
   // Las dos del 401 a mitad de la anulacion (#117): que paso y como seguir, sin perder lo escrito.
   'La sesión caducó antes de anular el cobro',
-  'Vuelva a entrar: recargue la página y, cuando la ventanilla abra, abra otra vez la anulación sobre este mismo recibo. Lo escrito se conserva en esta pestaña.',
+  'Vuelva a entrar: cierre este formulario y recargue la página. Lo escrito queda guardado en esta pestaña para su cuenta: al volver a entrar, abra otra vez la anulación sobre este mismo recibo y seguirá ahí.',
   // Las tres de la red de cada pantalla (#117): lo que se dice cuando una hoja revienta al dibujarse.
   'Esta pantalla no se pudo dibujar',
   'El resto de la ventanilla sigue en pie: puede elegir otra opción del menú. Si vuelve a pasar, avise a soporte con el nombre de esta pantalla y lo que dice abajo.',
   'Volver a dibujarla',
+  'Volver a la lista, sin nada elegido',
 ] as const;
 
 /** Lo que el plural tiene que decir, que es lo unico que no puede ser su clave. */

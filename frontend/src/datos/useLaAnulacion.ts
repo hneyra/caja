@@ -22,6 +22,7 @@ import {
 import { aperturaDeLaAnulacion, guardarLosBorradores, leerLosBorradores } from './borradorDeLaAnulacion.ts';
 import { anularElCobro, loQuePuedeLaSesion } from './laAnulacion.ts';
 import { usePermisosDeLaSesion } from './useCatalogoPermitido.ts';
+import { useCuentaQueEscribe } from './useCuentaDeLaSesion.ts';
 
 /**
  * **La costura del acto que anula** (#100, ADR-0044): quien lo atiende, que sabe la pantalla de la
@@ -92,7 +93,7 @@ function remedioDelRechazo(estado: number | null, t: (clave: string) => string):
   // escrito espera en esta pestana (#117).
   if (estado === 401) {
     return t(
-      'Vuelva a entrar: recargue la página y, cuando la ventanilla abra, abra otra vez la anulación sobre este mismo recibo. Lo escrito se conserva en esta pestaña.',
+      'Vuelva a entrar: cierre este formulario y recargue la página. Lo escrito queda guardado en esta pestaña para su cuenta: al volver a entrar, abra otra vez la anulación sobre este mismo recibo y seguirá ahí.',
     );
   }
   if (estado === 403) {
@@ -137,17 +138,33 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
   const [fallo, setFallo] = useState<EstadoDeUnaLectura | null>(null);
   const puede = loQuePuedeLaSesion(permisos);
   const conActos = clave === 'duplicado-recibo';
-  // Lo tecleado en los actos de la hoja. Nace de lo que la pestana guardaba: es lo que hace que,
-  // al volver del emisor, el acto se abra con lo escrito (#117).
+  // Quien escribe: el borrador se guarda con su cuenta y solo a ella se le devuelve (#117).
+  const cuenta = useCuentaQueEscribe();
+  // Lo tecleado en los actos de la hoja. Nace de lo que la pestana guardaba para ESTA cuenta: es lo
+  // que hace que, al volver del emisor, el acto se abra con lo escrito (#117).
   const [tecleado, setTecleado] = useState<LoTecleado>(() => ({
     campos: {},
-    actos: conActos ? leerLosBorradores() : {},
+    actos: conActos && cuenta !== null ? leerLosBorradores(cuenta) : {},
   }));
+  // La cuenta cuyo borrador ya se leyo. Mientras no coincida con la de la sesion no se guarda nada:
+  // guardar antes de leer escribiria un borrador vacio encima del que habia.
+  const [leidoPara, setLeidoPara] = useState<string | null>(conActos ? cuenta : null);
+  if (conActos && cuenta !== null && leidoPara !== cuenta) {
+    // Durante el render, y no en un efecto: asi el primer guardado ya ve lo leido.
+    setLeidoPara(cuenta);
+    const guardados = leerLosBorradores(cuenta);
+    setTecleado((antes) => ({ ...antes, actos: { ...guardados, ...antes.actos } }));
+  }
   useEffect(() => {
-    if (conActos) guardarLosBorradores(tecleado.actos);
-  }, [conActos, tecleado.actos]);
+    if (conActos && cuenta !== null && leidoPara === cuenta) guardarLosBorradores(cuenta, tecleado.actos);
+  }, [conActos, cuenta, leidoPara, tecleado.actos]);
   /** Los parametros del acto de anular abierto, para saber que borrador se cancela al cerrarlo. */
   const abierto = useRef<Readonly<Record<string, string>> | null>(null);
+  /**
+   * El ultimo envio lo rechazo un 401 (#117, revision). Entonces cerrar el acto NO es cancelarlo: lo
+   * que se le pide a quien mira es cerrar, recargar y volver a entrar, y el borrador tiene que seguir.
+   */
+  const rechazadoPorLaSesion = useRef(false);
   const olvidar = (parametros: Readonly<Record<string, string>>): void => {
     const apertura = aperturaDeLaAnulacion(parametros);
     setTecleado((antes) => {
@@ -163,6 +180,7 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
     // hoja: es el recibo que se esta mirando, y no uno tecleado.
     const numero = envio.parametros[NUMERO_DEL_RECIBO] ?? '';
     setFallo(null);
+    rechazadoPorLaSesion.current = false;
     try {
       await anularElCobro(numero, {
         motivo: String(envio.valores['motivo'] ?? ''),
@@ -176,6 +194,7 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
       });
     } catch (error) {
       setFallo(falloDeLaAnulacion(error, t));
+      rechazadoPorLaSesion.current = error instanceof ErrorDeLaApi && error.estado === 401;
       // Se relanza: la pieza distingue «enviado» de «rechazado» por si la promesa se rompio, y
       // tragarla aqui dejaria el acto diciendo que el cobro quedo anulado cuando no lo esta.
       throw error;
@@ -204,11 +223,12 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
         : hoja,
     alAbrirActo: (claveDelActo, parametros) => {
       if (claveDelActo === null) {
-        if (abierto.current !== null) olvidar(abierto.current);
+        if (abierto.current !== null && !rechazadoPorLaSesion.current) olvidar(abierto.current);
         abierto.current = null;
         return;
       }
       abierto.current = claveDelActo === ACTO_DE_ANULACION ? (parametros ?? {}) : null;
+      rechazadoPorLaSesion.current = false;
     },
     conLaSesion: (datos) => {
       const nombrados = new Map<string, DatoConNombre>([

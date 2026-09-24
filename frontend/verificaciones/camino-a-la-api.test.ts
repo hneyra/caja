@@ -339,14 +339,23 @@ describe('el token no toca el almacenamiento del navegador, y el fetch vive en u
     expect(tocan).toEqual([BORRADOR]);
   });
 
-  it('y ese archivo no guarda nada de la sesion: ni `localStorage`, ni la puerta, ni el token', () => {
+  /**
+   * **Lo que ese archivo importa, en una lista EXACTA** (#117, revision).
+   *
+   * Dos y ninguno mas: el tipo de lo tecleado de `@kamayuk/ui` y la clave del acto de `arbol.ts`.
+   * Ni la puerta, ni el cliente, ni `@kamayuk/sesion`: la cuenta con que se guarda el borrador le
+   * llega como argumento desde `useLaAnulacion.ts`, que la lee de `GET /seguridad/sesion`, y asi este
+   * archivo no tiene como alcanzar el token aunque quisiera. Una prohibicion suelta deja pasar lo
+   * que no se le ocurrio a nadie; una lista exacta, no.
+   */
+  it('y ese archivo importa EXACTAMENTE lo suyo, y no nombra el almacenamiento que persiste', () => {
     const fuente = readFileSync(join(FRONTEND, BORRADOR), 'utf8');
+    const importa = [...fuente.matchAll(/^\s*import\s[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]).sort();
+    expect(importa).toEqual(['../pantallas/arbol.ts', '@kamayuk/ui']);
     // `sessionStorage` y no `localStorage`: el borrador es de la pestana y muere con ella. En una PC
     // que tres turnos comparten, uno persistente le dejaria al siguiente la anulacion del anterior.
     expect(fuente).not.toMatch(/\blocalStorage\b/);
-    // No importa la puerta ni el cliente: lo que guarda es lo tecleado, no lo que da la sesion.
-    expect(fuente).not.toMatch(/from\s+'[^']*api\/(identidad|cliente)(\.ts)?'/);
-    expect(fuente).not.toMatch(/\btoken\s*\(/);
+    expect(fuente).not.toMatch(/\bimport\s*\(/);
   });
 
   it('y su clave lleva el prefijo de esta interfaz, y no se parece a una credencial', async () => {

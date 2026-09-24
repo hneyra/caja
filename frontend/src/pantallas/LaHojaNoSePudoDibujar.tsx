@@ -21,6 +21,9 @@ import { useTranslation } from 'react-i18next';
  *
  * <h2>Por que una por pantalla, y no una en la raiz</h2>
  *
+ * Y se reinicia con la ruta de la hoja (`reinicio`), no solo con el destino: si lo que rompe es el
+ * recibo elegido, elegir otro —o volver a la hoja sin nada elegido, que la red ofrece— la dibuja.
+ *
  * Una en la raiz cambiaria el «Unexpected Application Error!» por otra pagina en blanco con mejor
  * letra: el menu se iria igual. Por pantalla, lo que se cae es la hoja, y el carril sigue para
  * elegir otra. `aplicacion.tsx` la monta con `key` por destino, asi que cambiar de hoja empieza
@@ -36,6 +39,13 @@ import { useTranslation } from 'react-i18next';
  */
 interface Props {
   readonly children: ReactNode;
+  /**
+   * Lo que, al cambiar, vuelve a intentar el dibujo (#117, revision): la ruta de la hoja. Un recibo
+   * elegido que rompe la hoja no la deja rota para siempre: elegir otro la dibuja.
+   */
+  readonly reinicio?: string;
+  /** Vuelve a la hoja sin nada elegido. Solo cuando hay algo elegido: es de donde se elige otro. */
+  readonly alQuitarLoElegido?: () => void;
 }
 
 interface Estado {
@@ -54,6 +64,10 @@ export class LaHojaNoSePudoDibujar extends Component<Props, Estado> {
     console.error('Una pantalla de la ventanilla no se pudo dibujar', error, info.componentStack);
   }
 
+  override componentDidUpdate(anteriores: Props): void {
+    if (this.state.error !== null && anteriores.reinicio !== this.props.reinicio) this.setState({ error: null });
+  }
+
   override render(): ReactNode {
     if (this.state.error === null) return this.props.children;
     return (
@@ -62,12 +76,21 @@ export class LaHojaNoSePudoDibujar extends Component<Props, Estado> {
         alReintentar={() => {
           this.setState({ error: null });
         }}
+        {...(this.props.alQuitarLoElegido === undefined ? {} : { alQuitarLoElegido: this.props.alQuitarLoElegido })}
       />
     );
   }
 }
 
-function AvisoDeLaHojaRota({ error, alReintentar }: { readonly error: Error; readonly alReintentar: () => void }) {
+function AvisoDeLaHojaRota({
+  error,
+  alReintentar,
+  alQuitarLoElegido,
+}: {
+  readonly error: Error;
+  readonly alReintentar: () => void;
+  readonly alQuitarLoElegido?: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div data-hoja-rota="" className="p-[15px]">
@@ -78,7 +101,12 @@ function AvisoDeLaHojaRota({ error, alReintentar }: { readonly error: Error; rea
           )}
         </p>
         <p className="mt-[6px] mb-0 break-words font-mono text-[12.5px]">{error.message}</p>
-        <div className="mt-[10px]">
+        <div className="mt-[10px] flex flex-wrap gap-[8px]">
+          {alQuitarLoElegido === undefined ? null : (
+            <Boton type="button" tamano="menudo" onClick={alQuitarLoElegido}>
+              {t('Volver a la lista, sin nada elegido')}
+            </Boton>
+          )}
           <Boton type="button" tamano="menudo" onClick={alReintentar}>
             {t('Volver a dibujarla')}
           </Boton>

@@ -9,7 +9,7 @@ import {
   PERMISOS_MEDIDOS,
 } from '../src/datos/seguridadMedida.ts';
 import { MUNICIPALIDAD_MEDIDA, SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
-import { AVANCE_MEDIDO, DISTRIBUCION_MEDIDA } from '../src/datos/tesoreriaMedida.ts';
+import { AVANCE_MEDIDO, DISTRIBUCION_MEDIDA, DUPLICADO_MEDIDO, RECIBOS_MEDIDOS } from '../src/datos/tesoreriaMedida.ts';
 
 /**
  * **La red de cada pantalla: lo que lance al dibujarse se queda en ella** (#117).
@@ -24,12 +24,16 @@ import { AVANCE_MEDIDO, DISTRIBUCION_MEDIDA } from '../src/datos/tesoreriaMedida
  * hoja deja la siguiente dibujada como siempre.
  */
 
+const RECIBO_QUE_ROMPE = vi.hoisted(() => '001-999999');
+
 vi.mock('../src/pantallas/PantallaDelSistema.tsx', async (original) => {
   const real = await original<typeof import('../src/pantallas/PantallaDelSistema.tsx')>();
   return {
     ...real,
     PantallaDelSistema: (props: Parameters<typeof real.PantallaDelSistema>[0]) => {
       if (props.definicion.instruccion.includes('por concepto')) throw new Error('El interprete tropezo con esta hoja');
+      // Y el recibo elegido que la rompe: la hoja sin nada elegido se dibuja bien.
+      if (props.hoja?.ruta.sujeto === RECIBO_QUE_ROMPE) throw new Error('El interprete tropezo con este recibo');
       return real.PantallaDelSistema(props);
     },
   };
@@ -68,6 +72,8 @@ beforeEach(() => {
       if (url.includes('/seguridad/sesion')) return json(SESION_MEDIDA);
       if (url.includes('/recaudacion/avance')) return json(AVANCE_MEDIDO);
       if (url.includes('/recaudacion/por-area')) return json(DISTRIBUCION_MEDIDA);
+      if (url.includes('/duplicado')) return json(DUPLICADO_MEDIDO);
+      if (url.includes('/recibos')) return json(RECIBOS_MEDIDOS);
       return Promise.resolve(new Response('{}', { status: 404 }));
     }),
   );
@@ -103,6 +109,49 @@ describe('una hoja que revienta al dibujarse no tumba la raiz', () => {
         expect(screen.getByRole('heading', { level: 1, name: 'Recaudación por área' })).toBeTruthy();
       });
       expect(screen.queryByText(/Esta pantalla no se pudo dibujar/)).toBeNull();
+    } finally {
+      consola.mockRestore();
+    }
+  });
+
+  /**
+   * **Lo elegido tambien reinicia la red** (#117, revision). La `key` de la red es el destino, asi
+   * que un recibo que rompe la hoja la dejaba rota aunque se eligiera otro: «Volver a dibujarla»
+   * volvia a lanzar con el mismo recibo. La red se reinicia con la ruta de la hoja, y ofrece volver a
+   * la hoja sin nada elegido, que es de donde se elige otro.
+   */
+  it('un recibo elegido que rompe la hoja no la deja rota: se vuelve a la lista y se dibuja', { timeout: 30_000 }, async () => {
+    const consola = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      window.location.hash = `#/duplicado-recibo/${RECIBO_QUE_ROMPE}`;
+      render(<Aplicacion />);
+      expect(await screen.findByText(/El interprete tropezo con este recibo/, {}, { timeout: 5_000 })).toBeTruthy();
+
+      const persona = userEvent.setup();
+      await persona.click(screen.getByRole('button', { name: /Volver a la lista/ }));
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 1, name: 'Duplicado de recibo' })).toBeTruthy();
+      });
+      expect(screen.queryByText(/Esta pantalla no se pudo dibujar/)).toBeNull();
+      expect(window.location.hash).toBe('#/duplicado-recibo');
+    } finally {
+      consola.mockRestore();
+    }
+  });
+
+  it('y cambiar la ruta por fuera —otro recibo en la direccion— tambien la reinicia', { timeout: 30_000 }, async () => {
+    const consola = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      window.location.hash = `#/duplicado-recibo/${RECIBO_QUE_ROMPE}`;
+      render(<Aplicacion />);
+      expect(await screen.findByText(/El interprete tropezo con este recibo/, {}, { timeout: 5_000 })).toBeTruthy();
+
+      window.location.hash = '#/duplicado-recibo/001-000123';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await waitFor(() => {
+        expect(screen.queryByText(/Esta pantalla no se pudo dibujar/)).toBeNull();
+      });
+      expect(screen.getByRole('heading', { level: 1, name: 'Duplicado de recibo' })).toBeTruthy();
     } finally {
       consola.mockRestore();
     }

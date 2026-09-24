@@ -15,6 +15,7 @@ import type { ClaveDeHoja } from './pantallas/arbol.ts';
 import { pantallaDe } from './pantallas/definiciones/index.ts';
 import { useDatosDeLaHoja } from './datos/useDatosDeLaHoja.ts';
 import { useLaAnulacion } from './datos/useLaAnulacion.ts';
+import { olvidarLosBorradores } from './datos/borradorDeLaAnulacion.ts';
 import type { FallaDeLaPuerta } from './api/identidad.ts';
 import { abrirLaCuenta, salir } from './api/identidad.ts';
 import { fallaDeLaPuerta } from './arranque.ts';
@@ -158,6 +159,34 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
 }
 
 /**
+ * **El cuerpo de una pantalla dentro de su red** (#117).
+ *
+ * La red se reinicia con **la ruta de la hoja**, y no solo con el destino: si lo que rompe el dibujo
+ * es el recibo elegido, «Volver a dibujarla» volveria a lanzar con el mismo, y con la `key` por
+ * destino la hoja se quedaba rota aunque se eligiera otro. Con la ruta, elegir otro —o volver atras
+ * en el navegador— la dibuja de nuevo; y si hay algo elegido, la red ofrece volver a la hoja sin
+ * nada elegido, que es de donde se elige otro. La ruta se lee aqui y no en la red, que no sabe de
+ * `@kamayuk/shell`.
+ */
+function CuerpoConSuRed({ clave }: { readonly clave: ClaveDeHoja }) {
+  const hoja = useHoja();
+  return (
+    <LaHojaNoSePudoDibujar
+      reinicio={JSON.stringify(hoja.ruta)}
+      {...(hoja.ruta.sujeto === null
+        ? {}
+        : {
+            alQuitarLoElegido: () => {
+              hoja.moverLaRuta({ sujeto: null });
+            },
+          })}
+    >
+      <CuerpoDeLaPantalla clave={clave} />
+    </LaHojaNoSePudoDibujar>
+  );
+}
+
+/**
  * El armazon y lo que lo alimenta.
  *
  * Va **dentro** del proveedor y no fuera, y no es un detalle de orden: `useCatalogoPermitido` es un
@@ -246,7 +275,16 @@ function ArmazonDelSistema() {
               setPreferencias(true);
             },
           },
-          { rotulo: t('Cerrar sesion'), peligrosa: true, al: () => void salir() },
+          {
+            rotulo: t('Cerrar sesion'),
+            peligrosa: true,
+            al: () => {
+              // Primero el borrador de la anulacion (#117): cerrar la sesion es dejar el puesto, y
+              // en una PC compartida el siguiente no puede encontrarse lo que este dejo escrito.
+              olvidarLosBorradores();
+              salir();
+            },
+          },
         ]}
         acciones={ACCIONES}
         // Cuando no hay arbol, el pie del carril dice POR QUE: sin eso, «pidiendo», «fallo» y «esta
@@ -263,11 +301,7 @@ function ArmazonDelSistema() {
         }
         // Cada pantalla con su red (#117): lo que lance al dibujarse se queda en ella, y el carril
         // sigue para elegir otra. La `key` por destino hace que cambiar de hoja empiece limpio.
-        pantalla={(hoja) => (
-          <LaHojaNoSePudoDibujar key={hoja.destino.clave}>
-            <CuerpoDeLaPantalla clave={hoja.destino.clave as ClaveDeHoja} />
-          </LaHojaNoSePudoDibujar>
-        )}
+        pantalla={(hoja) => <CuerpoConSuRed key={hoja.destino.clave} clave={hoja.destino.clave as ClaveDeHoja} />}
       />
       <MandoDeTema
         abierto={preferencias}
