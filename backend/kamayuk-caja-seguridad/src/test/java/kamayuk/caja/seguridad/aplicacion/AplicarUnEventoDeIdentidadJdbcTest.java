@@ -620,6 +620,99 @@ class AplicarUnEventoDeIdentidadJdbcTest {
 
         @Test
         @DisplayName(
+                "ronda 2 de #111: renombrar una CUENTA sobre una fila que ya tiene esa cuenta SE"
+                        + " APLICA sin la clave nueva, y avisa al responsable")
+        void unRenombradoDeCuentaQueChocaSeAplicaSinLaClaveYAvisa() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'cchoqueR2', 'La cuenta que ya estaba')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(200, "USUARIO_DADO_DE_ALTA", usuario(900, "origenR2", true)));
+            EventoDeIdentidadRecibido renombrado =
+                    evento(201, "USUARIO_MODIFICADO", usuario(900, "cchoqueR2", false));
+            int avisosAntes = alertaQueAnota.choques.size();
+
+            assertThat(aplicador.aplicar(renombrado))
+                    .as(
+                            "[un choque no puede impedir que una fila se cierre: el evento SE"
+                                    + " aplica y se acusa, no se aparta]")
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT cuenta || '|' || habilitado FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND"
+                                            + " identidad_sujeto_id = 900"))
+                    .as(
+                            "[la fila del id conserva su cuenta vieja, «origenR2», pero SI queda"
+                                    + " inhabilitada: todo lo demas se escribio]")
+                    .isEqualTo("origenR2|false");
+            assertThat(contar(municipalidadA, "usuario", "cuenta = 'cchoqueR2' AND habilitado"))
+                    .as("la fila con la que chocaba no se toca")
+                    .isEqualTo(1);
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "identidad_evento_aplicado",
+                                    "evento_id = '" + renombrado.eventoId() + "'"))
+                    .as("se acusa, como cualquier evento aplicado")
+                    .isEqualTo(1);
+            assertThat(alertaQueAnota.choques).hasSize(avisosAntes + 1);
+            assertThat(alertaQueAnota.choques.get(avisosAntes))
+                    .contains("«cchoqueR2»")
+                    .contains("900")
+                    .contains("«origenR2»");
+        }
+
+        @Test
+        @DisplayName(
+                "ronda 2 de #111: un renombrado de CUENTA que choca se aplica igual, y una"
+                        + " inhabilitacion posterior SI llega a la fila del id: el comprobador"
+                        + " niega")
+        void unRenombradoDeCuentaQueChocaNoImpideUnaInhabilitacionPosterior() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(210, "USUARIO_DADO_DE_ALTA", usuario(910, "origenR3", true)));
+            aplicador.aplicar(evento(211, "PERMISO_FIJADO", permisoDeUsuario(910, "origenR3")));
+            // Otro sujeto real, ya dueño de la cuenta con la que el 910 va a chocar.
+            aplicador.aplicar(evento(212, "USUARIO_DADO_DE_ALTA", usuario(911, "destinoR3", true)));
+            assertThat(autoriza("origenR3"))
+                    .as("antes del choque la excepcion concede: si no, la prueba no mide nada")
+                    .isTrue();
+
+            // El renombrado de 910 a "destinoR3" choca (911 ya la tiene): se aplica igual,
+            // conservando "origenR3", y sigue concediendo.
+            aplicador.aplicar(evento(213, "USUARIO_MODIFICADO", usuario(910, "destinoR3", true)));
+            assertThat(autoriza("origenR3"))
+                    .as("[el choque no deshabilita nada por si solo: sigue habilitado]")
+                    .isTrue();
+
+            // La inhabilitacion posterior del MISMO sujeto (910) sigue chocando con "destinoR3",
+            // y aun asi TIENE que llegar a la fila: es el punto que la revision independiente
+            // encontro sin cubrir —mutar la linea de la CUENTA (alerta dentro de `usuario()`)
+            // dejaba esta clase entera en verde—.
+            aplicador.aplicar(evento(214, "USUARIO_MODIFICADO", usuario(910, "destinoR3", false)));
+
+            assertThat(contar(municipalidadA, "usuario", "identidad_sujeto_id = 910"))
+                    .as("sigue siendo UNA sola fila: nunca se duplico")
+                    .isEqualTo(1);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT cuenta || '|' || habilitado FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND"
+                                            + " identidad_sujeto_id = 910"))
+                    .isEqualTo("origenR3|false");
+            assertThat(autoriza("origenR3"))
+                    .as(
+                            "[la fila del id quedo inhabilitada pese al choque, y el comprobador de"
+                                    + " produccion niega]")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName(
                 "ronda 1 de #111: una afiliacion adopta el grupo y la cuenta huerfanos por su clave"
                         + " natural, sin esperar al alta/modificacion del propio sujeto")
         void unaAfiliacionAdoptaPorSuClaveNatural() throws SQLException {
@@ -842,6 +935,37 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                     .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
                     .hasMessageContaining("cuenta");
         }
+
+        @Test
+        @DisplayName(
+                "ronda 2 de #111: el sobre y el cuerpo tienen que decir el mismo sujeto, o no se"
+                        + " aplica nunca")
+        void elSobreYElCuerpoNoCoinciden() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            // Construido a mano, sin pasar por `evento()`: el sobre dice 999 y el cuerpo, 53.
+            EventoDeIdentidadRecibido descuadrado =
+                    new EventoDeIdentidadRecibido(
+                            UUID.randomUUID(),
+                            53,
+                            "USUARIO_DADO_DE_ALTA",
+                            999L,
+                            usuario(53, "descuadradaR2", true),
+                            HUELLA,
+                            AHORA);
+
+            assertThatThrownBy(() -> aplicador.aplicar(descuadrado))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("999")
+                    .hasMessageContaining("53");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "identidad_evento_aplicado",
+                                    "evento_id = '" + descuadrado.eventoId() + "'"))
+                    .as("no se acusa: nada se escribio a medias")
+                    .isZero();
+            assertThat(contar(municipalidadA, "usuario", "cuenta = 'descuadradaR2'")).isZero();
+        }
     }
 
     @Nested
@@ -904,7 +1028,41 @@ class AplicarUnEventoDeIdentidadJdbcTest {
 
     private static EventoDeIdentidadRecibido evento(long secuencia, String tipo, String cuerpo) {
         return new EventoDeIdentidadRecibido(
-                UUID.randomUUID(), secuencia, tipo, 1L, cuerpo, HUELLA, AHORA);
+                UUID.randomUUID(),
+                secuencia,
+                tipo,
+                sujetoIdDelCuerpo(tipo, cuerpo),
+                cuerpo,
+                HUELLA,
+                AHORA);
+    }
+
+    /**
+     * El sobre trae el MISMO id que el cuerpo (ronda 2 de #111, {@code
+     * exigirQueElSobreCoincidaConElCuerpo}): se deriva de el, campo a campo como {@code
+     * HechoDeIdentidad} lo compone, para que estas pruebas no tengan que mantener el mismo numero
+     * en dos sitios. Si el cuerpo no trae el campo que le toca —a proposito, en las pruebas de
+     * cuerpos invalidos— se usa 1: no importa cual sea, porque el aplicador falla antes de llegar a
+     * mirar el sobre.
+     */
+    private static long sujetoIdDelCuerpo(String tipo, String cuerpo) {
+        String campo =
+                switch (tipo) {
+                    case "USUARIO_DADO_DE_ALTA", "USUARIO_MODIFICADO" -> "usuarioId";
+                    case "GRUPO_DADO_DE_ALTA",
+                            "GRUPO_MODIFICADO",
+                            "MIEMBRO_AFILIADO",
+                            "MIEMBRO_DESAFILIADO" ->
+                            "grupoId";
+                    case "PERMISO_FIJADO" -> "sujetoId";
+                    default -> null;
+                };
+        if (campo == null) {
+            return 1L;
+        }
+        java.util.regex.Matcher coincidencia =
+                java.util.regex.Pattern.compile("\"" + campo + "\":(-?\\d+)").matcher(cuerpo);
+        return coincidencia.find() ? Long.parseLong(coincidencia.group(1)) : 1L;
     }
 
     private static String permiso(String sistema, String grupo, boolean lecturaYRegistro) {
@@ -958,6 +1116,12 @@ class AplicarUnEventoDeIdentidadJdbcTest {
 
     private static String permisoDeGrupo(long grupoId, String grupo) {
         return permiso("caja", grupo, true).replace("\"sujetoId\":4", "\"sujetoId\":" + grupoId);
+    }
+
+    private static String permisoDeUsuario(long usuarioId, String cuenta) {
+        return permiso("caja", cuenta, true)
+                .replace("\"sujeto\":\"GRUPO\"", "\"sujeto\":\"USUARIO\"")
+                .replace("\"sujetoId\":4", "\"sujetoId\":" + usuarioId);
     }
 
     private static void ejecutarComoAdmin(String sql) throws SQLException {

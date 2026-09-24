@@ -48,7 +48,10 @@ import tools.jackson.databind.json.JsonMapper;
  * y la vieja se quedaba habilitada con sus miembros y sus permisos. Lo que no cambia con un
  * renombrado es el {@code id} de la fila alli, y el cuerpo lo trae ({@code usuarioId}, {@code
  * grupoId}, y en el permiso {@code sujetoId}: {@code HechoDeIdentidad} lo escribe en el cuerpo y en
- * el sobre con el mismo valor). Se lee del cuerpo, igual que las claves naturales.
+ * el sobre con el mismo valor). Se lee del cuerpo, igual que las claves naturales, y desde la ronda
+ * 2 de #111 se CONTRASTA con el sobre antes de hacer nada: si no coinciden, {@link
+ * #exigirQueElSobreCoincidaConElCuerpo} lo aparta nombrando los dos numeros, en vez de confiar a
+ * ciegas en que sean iguales.
  *
  * <p>Asi que un alta o una modificacion casan primero por ese id —y si la fila lo lleva, se le
  * escribe la clave nueva: es el renombrado— y, si ninguna fila lo lleva, por la clave natural
@@ -62,9 +65,13 @@ import tools.jackson.databind.json.JsonMapper;
  * que encuentran por su clave natural no lleva sujeto —no hace falta esperar al evento del propio
  * usuario o grupo—: ver {@code casarParaNombrar}. (Las filas que el defecto <b>anterior</b> a #111
  * ya dejo huerfanas y habilitadas en una base desplegada no las toca ninguna adopcion, porque ya NO
- * reciben eventos: es <a href="https://github.com/hneyra/caja/issues/125">#125</a>, sin resolver
- * aqui). El acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por
- * su cuenta.
+ * reciben eventos; y una fila de antes de V5 cuya PRIMERA modificacion tras la migracion sea
+ * precisamente un renombrado tampoco se adopta —se busca por la clave que el evento trae, la NUEVA,
+ * y la huerfana todavia tiene la vieja— asi que se inserta una fila nueva y la huerfana queda
+ * intacta, un duplicado distinto del de un choque, porque aqui no hay ni un aviso que lo delate.
+ * Las dos son <a href="https://github.com/hneyra/caja/issues/125">#125</a>, sin resolver aqui). El
+ * acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por su
+ * cuenta.
  *
  * <p>Un choque —la clave nueva ya es de otra fila— tiene dos desenlaces distintos segun de que lado
  * este la fila que cambia: ver {@code casarParaEscribir} y {@code casarParaNombrar}, y la tabla de
@@ -165,6 +172,7 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                             + " buzon, y esta copia no lo aplica a ciegas");
         }
         JsonNode cuerpo = leer(evento);
+        exigirQueElSobreCoincidaConElCuerpo(evento, tipo, cuerpo);
 
         if (!marcarComoAplicado(evento)) {
             return Aplicacion.YA_APLICADO;
@@ -645,6 +653,44 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                             + " no es JSON: "
                             + ilegible.getOriginalMessage(),
                     ilegible);
+        }
+    }
+
+    /**
+     * El sujeto del sobre ({@code evento.sujetoId()}) y el id del cuerpo tienen que ser el mismo
+     * numero (ronda 2 de #111): {@code HechoDeIdentidad} los pone con el mismo valor —{@code
+     * usuarioId} para un usuario, {@code grupoId} para un grupo o una afiliacion (el sujeto de una
+     * afiliacion es el GRUPO, no el usuario: es la misma eleccion que hace la auditoria de
+     * `identidad`), y el {@code sujetoId} del propio cuerpo para un permiso, que ya es el id del
+     * grupo o del usuario segun el tipo de sujeto—. Hasta aqui esta copia leia el id SOLO del
+     * cuerpo y confiaba en que el sobre dijera lo mismo, sin comprobarlo. Si algun dia no coincide
+     * —un transporte que reordena campos, un cambio de contrato a medias— esta copia no decide cual
+     * de los dos vale: se aparta con {@link NoSePuedeAplicar}, nombrando los dos numeros.
+     */
+    private static void exigirQueElSobreCoincidaConElCuerpo(
+            EventoDeIdentidadRecibido evento, TipoDeEventoDeIdentidad tipo, JsonNode cuerpo) {
+        String campo =
+                switch (tipo) {
+                    case USUARIO_DADO_DE_ALTA, USUARIO_MODIFICADO -> "usuarioId";
+                    case GRUPO_DADO_DE_ALTA,
+                            GRUPO_MODIFICADO,
+                            MIEMBRO_AFILIADO,
+                            MIEMBRO_DESAFILIADO ->
+                            "grupoId";
+                    case PERMISO_FIJADO -> "sujetoId";
+                };
+        long delCuerpo = exigirId(cuerpo, campo);
+        if (evento.sujetoId() != delCuerpo) {
+            throw new NoSePuedeAplicar(
+                    "El sobre del evento "
+                            + evento.eventoId()
+                            + " dice que el sujeto es "
+                            + evento.sujetoId()
+                            + ", y su cuerpo dice «"
+                            + campo
+                            + "»="
+                            + delCuerpo
+                            + ": no coinciden, y esta copia no decide cual de los dos vale");
         }
     }
 

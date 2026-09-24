@@ -316,7 +316,34 @@ class ConsumirEventosDeIdentidadJdbcTest {
 
     private static EventoDeIdentidadRecibido evento(long secuencia, String tipo, String cuerpo) {
         return new EventoDeIdentidadRecibido(
-                UUID.randomUUID(), secuencia, tipo, 1L, cuerpo, HUELLA, AHORA);
+                UUID.randomUUID(),
+                secuencia,
+                tipo,
+                sujetoIdDelCuerpo(tipo, cuerpo),
+                cuerpo,
+                HUELLA,
+                AHORA);
+    }
+
+    /** El sobre trae el MISMO id que el cuerpo (ronda 2 de #111): se deriva de el. */
+    private static long sujetoIdDelCuerpo(String tipo, String cuerpo) {
+        String campo =
+                switch (tipo) {
+                    case "USUARIO_DADO_DE_ALTA", "USUARIO_MODIFICADO" -> "usuarioId";
+                    case "GRUPO_DADO_DE_ALTA",
+                            "GRUPO_MODIFICADO",
+                            "MIEMBRO_AFILIADO",
+                            "MIEMBRO_DESAFILIADO" ->
+                            "grupoId";
+                    case "PERMISO_FIJADO" -> "sujetoId";
+                    default -> null;
+                };
+        if (campo == null) {
+            return 1L;
+        }
+        java.util.regex.Matcher coincidencia =
+                java.util.regex.Pattern.compile("\"" + campo + "\":(-?\\d+)").matcher(cuerpo);
+        return coincidencia.find() ? Long.parseLong(coincidencia.group(1)) : 1L;
     }
 
     private static String permiso(String sistema) {
