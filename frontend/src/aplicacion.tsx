@@ -9,11 +9,13 @@ import { MandoDeTema } from './preferencias/MandoDeTema.tsx';
 import { useCatalogoPermitido } from './datos/useCatalogoPermitido.ts';
 import { useCuentaDeLaSesion } from './datos/useCuentaDeLaSesion.ts';
 import { traducirCatalogo } from './catalogo.ts';
+import { LaHojaNoSePudoDibujar } from './pantallas/LaHojaNoSePudoDibujar.tsx';
 import { PantallaDelSistema } from './pantallas/PantallaDelSistema.tsx';
 import type { ClaveDeHoja } from './pantallas/arbol.ts';
 import { pantallaDe } from './pantallas/definiciones/index.ts';
 import { useDatosDeLaHoja } from './datos/useDatosDeLaHoja.ts';
 import { useLaAnulacion } from './datos/useLaAnulacion.ts';
+import { olvidarLosBorradores } from './datos/borradorDeLaAnulacion.ts';
 import type { FallaDeLaPuerta } from './api/identidad.ts';
 import { abrirLaCuenta, salir } from './api/identidad.ts';
 import { fallaDeLaPuerta } from './arranque.ts';
@@ -75,8 +77,9 @@ import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
  *   el tema aqui se lo cambiaria a las otras tres.
  *
  * **Quien guarda es la libreria, no este archivo**, y eso es lo que hace que siga siendo cierto que
- * un solo archivo de produccion de este repositorio toca el almacenamiento del navegador: la
- * puerta. Lo comprueba `verificaciones/camino-a-la-api.test.ts`.
+ * un solo archivo de produccion de este repositorio toca el almacenamiento del navegador: desde
+ * #117, el borrador del acto de anular (`datos/borradorDeLaAnulacion.ts`). Lo comprueba
+ * `verificaciones/camino-a-la-api.test.ts`.
  *
  * **Y el modo no se declara**, que es la tercera decision y va por omision: ausente significa «el
  * del equipo». Traer aqui un `claro` de fabrica congelaria en claro a quien tenga la maquina en
@@ -146,10 +149,40 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
     <PantallaDelSistema
       definicion={pantallaDe(clave)}
       datos={anulacion.conLaSesion(datos)}
-      hoja={hoja}
+      // Lo tecleado en el acto lo guarda la costura, y lo copia a la pestana (#117).
+      hoja={anulacion.conLaHoja(hoja)}
       navegacion={navegacion}
       actos={anulacion.actos}
+      alAbrirActo={anulacion.alAbrirActo}
     />
+  );
+}
+
+/**
+ * **El cuerpo de una pantalla dentro de su red** (#117).
+ *
+ * La red se reinicia con **la ruta de la hoja**, y no solo con el destino: si lo que rompe el dibujo
+ * es el recibo elegido, «Volver a dibujarla» volveria a lanzar con el mismo, y con la `key` por
+ * destino la hoja se quedaba rota aunque se eligiera otro. Con la ruta, elegir otro —o volver atras
+ * en el navegador— la dibuja de nuevo; y si hay algo elegido, la red ofrece volver a la hoja sin
+ * nada elegido, que es de donde se elige otro. La ruta se lee aqui y no en la red, que no sabe de
+ * `@kamayuk/shell`.
+ */
+function CuerpoConSuRed({ clave }: { readonly clave: ClaveDeHoja }) {
+  const hoja = useHoja();
+  return (
+    <LaHojaNoSePudoDibujar
+      reinicio={JSON.stringify(hoja.ruta)}
+      {...(hoja.ruta.sujeto === null
+        ? {}
+        : {
+            alQuitarLoElegido: () => {
+              hoja.moverLaRuta({ sujeto: null });
+            },
+          })}
+    >
+      <CuerpoDeLaPantalla clave={clave} />
+    </LaHojaNoSePudoDibujar>
   );
 }
 
@@ -242,7 +275,16 @@ function ArmazonDelSistema() {
               setPreferencias(true);
             },
           },
-          { rotulo: t('Cerrar sesion'), peligrosa: true, al: () => void salir() },
+          {
+            rotulo: t('Cerrar sesion'),
+            peligrosa: true,
+            al: () => {
+              // Primero el borrador de la anulacion (#117): cerrar la sesion es dejar el puesto, y
+              // en una PC compartida el siguiente no puede encontrarse lo que este dejo escrito.
+              olvidarLosBorradores();
+              salir();
+            },
+          },
         ]}
         acciones={ACCIONES}
         // Cuando no hay arbol, el pie del carril dice POR QUE: sin eso, «pidiendo», «fallo» y «esta
@@ -257,7 +299,9 @@ function ArmazonDelSistema() {
             ? t('La ventanilla de Tesorería: lo que esta cuenta puede abrir en esta caja.')
             : sesion.porQue
         }
-        pantalla={(hoja) => <CuerpoDeLaPantalla clave={hoja.destino.clave as ClaveDeHoja} />}
+        // Cada pantalla con su red (#117): lo que lance al dibujarse se queda en ella, y el carril
+        // sigue para elegir otra. La `key` por destino hace que cambiar de hoja empiece limpio.
+        pantalla={(hoja) => <CuerpoConSuRed key={hoja.destino.clave} clave={hoja.destino.clave as ClaveDeHoja} />}
       />
       <MandoDeTema
         abierto={preferencias}

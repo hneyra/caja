@@ -24,8 +24,9 @@ import { mapeosDelDirectorio } from './controladores.ts';
  *     repositorio.** `rentas` compara sus rutas con `docs/50-api/formas-de-la-api.json`; `caja` no
  *     lo tiene, y no le hace falta: el backend esta en el mismo arbol, y leer su `Api.RAIZ` y sus
  *     `Resource` es comparar contra lo que se despliega, no contra una foto de ello.
- *   · **Ni un archivo de `src/` toca el almacenamiento del navegador.** En `rentas` es uno, su
- *     puerta; aqui la puerta es la de `@kamayuk/sesion`, y lo que se guarda lo guarda la libreria.
+ *   · **Un solo archivo de `src/` toca el almacenamiento del navegador, y no es la puerta.** En
+ *     `rentas` es uno, su puerta; aqui la puerta es la de `@kamayuk/sesion`. Hasta #117 eran cero;
+ *     desde #117 es el borrador del acto de anular, en `sessionStorage` y sin nada de la sesion.
  *
  * Y lo de siempre, porque las tres cosas no dan sintoma al romperse: sin `server.proxy` Vite
  * contesta `index.html` con un 200 donde se espera JSON; con las raices desalineadas cada mitad
@@ -313,6 +314,9 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
   });
 });
 
+/** El unico archivo de `src/` que toca el almacenamiento del navegador (#117). */
+const BORRADOR = 'src/datos/borradorDeLaAnulacion.ts';
+
 describe('el token no toca el almacenamiento del navegador, y el fetch vive en un sitio', () => {
   it('la prohibicion sigue en la lista y sin excepcion', () => {
     const suya = PROHIBICIONES.find((p) => p.clave === 'token-en-almacenamiento');
@@ -320,13 +324,46 @@ describe('el token no toca el almacenamiento del navegador, y el fetch vive en u
     expect(suya?.salvo).toBeUndefined();
   });
 
-  it('NINGUN archivo de produccion de `src/` toca localStorage ni sessionStorage', () => {
-    // En `rentas` es uno, su puerta. Aqui la puerta es `@kamayuk/sesion`, y el tema lo guarda
-    // `@kamayuk/ui`: lo que este arbol escribe en el navegador es nada, y asi se queda.
+  /**
+   * **Un solo archivo de `src/` toca el almacenamiento, y es el borrador de la anulacion** (#117).
+   *
+   * Hasta #117 eran cero: la puerta es `@kamayuk/sesion` y el tema lo guarda `@kamayuk/ui`. El
+   * borrador del acto de anular es lo unico que esta interfaz guarda por su cuenta —para que un 401
+   * a mitad del acto no se lleve lo escrito al volver a entrar—, y la guarda sigue siendo una lista
+   * **exacta**: un segundo archivo sale en rojo con su ruta, igual que antes salia el primero.
+   */
+  it('UN solo archivo de produccion de `src/` toca el almacenamiento: el borrador de la anulacion', () => {
     const tocan = deProduccion.filter((ruta) =>
       /\b(localStorage|sessionStorage)\b/.test(readFileSync(join(FRONTEND, ruta), 'utf8')),
     );
-    expect(tocan).toEqual([]);
+    expect(tocan).toEqual([BORRADOR]);
+  });
+
+  /**
+   * **Lo que ese archivo importa, en una lista EXACTA** (#117, revision).
+   *
+   * Dos y ninguno mas: el tipo de lo tecleado de `@kamayuk/ui` y la clave del acto de `arbol.ts`.
+   * Ni la puerta, ni el cliente, ni `@kamayuk/sesion`: la cuenta con que se guarda el borrador le
+   * llega como argumento desde `useLaAnulacion.ts`, que la lee de `GET /seguridad/sesion`, y asi este
+   * archivo no tiene como alcanzar el token aunque quisiera. Una prohibicion suelta deja pasar lo
+   * que no se le ocurrio a nadie; una lista exacta, no.
+   */
+  it('y ese archivo importa EXACTAMENTE lo suyo, y no nombra el almacenamiento que persiste', () => {
+    const fuente = readFileSync(join(FRONTEND, BORRADOR), 'utf8');
+    const importa = [...fuente.matchAll(/^\s*import\s[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]).sort();
+    expect(importa).toEqual(['../pantallas/arbol.ts', '@kamayuk/ui']);
+    // `sessionStorage` y no `localStorage`: el borrador es de la pestana y muere con ella. En una PC
+    // que tres turnos comparten, uno persistente le dejaria al siguiente la anulacion del anterior.
+    expect(fuente).not.toMatch(/\blocalStorage\b/);
+    expect(fuente).not.toMatch(/\bimport\s*\(/);
+  });
+
+  it('y su clave lleva el prefijo de esta interfaz, y no se parece a una credencial', async () => {
+    const { CLAVE_DEL_BORRADOR } = await import('../src/datos/borradorDeLaAnulacion.ts');
+    expect(CLAVE_DEL_BORRADOR.startsWith('kamayuk.caja.')).toBe(true);
+    // La misma expresion que la prohibicion `token-en-almacenamiento`: la clave va en una constante,
+    // y el selector de ESLint solo ve literales, asi que aqui se mira el valor.
+    expect(CLAVE_DEL_BORRADOR).not.toMatch(/token|jwt|bearer|credencial|contrasena|acceso|sesion/i);
   });
 
   it('la prohibicion del fetch tiene UNA excepcion, y es `src/api/`', () => {

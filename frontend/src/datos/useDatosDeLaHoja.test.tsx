@@ -14,6 +14,7 @@ import {
 import { CONECTORES } from './conectores.ts';
 import {
   CIERRE_MEDIDO,
+  AVANCE_MEDIDO,
   CONCILIACION_MEDIDA,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
@@ -383,5 +384,51 @@ describe('«cierre-caja»: la conciliacion se pide con el dia elegido, y no ante
     await waitFor(() => {
       expect(pedidas).toContain('/conciliacion?fecha=2026-03-16');
     });
+  });
+});
+
+/**
+ * **Un dato malformado deja la hoja en fallo, y no revienta el render** (#117).
+ *
+ * `formatearImporte` lanza —a proposito, y nombrando el valor— con un importe que el backend no
+ * sirve. Hasta #117 el reparto corria en el render y ese lanzamiento desmontaba la raiz entera. Hoy
+ * corre en el `select` de la consulta: lo que lanza pasa a `isError`, y se dice con su frase.
+ */
+describe('un reparto que lanza deja SU lectura en fallo (#117)', () => {
+  it('la primera lectura: la hoja dice que llego algo que no sabe leer, y no pinta nada', async () => {
+    contesta({ ...AVANCE_MEDIDO, neto: { importe: '1.842,60', actualizadoA: '2026-03-15' } });
+    const { result } = renderHook(() => useDatosDeLaHoja('avance-recaudacion'), { wrapper: arnes() });
+    await waitFor(() => {
+      expect(result.current.ausencia.enElCampo).toBe('fallo');
+    });
+    expect(result.current.ausencia.explicacion).toMatch(/no sabe leer/);
+    expect(result.current.valores).toBeUndefined();
+  });
+
+  it('la segunda lectura: el recibo elegido dice que llego mal, y la lista sigue en pie', async () => {
+    const malformado = {
+      ...DUPLICADO_MEDIDO,
+      recibo: { ...DUPLICADO_MEDIDO.recibo, total: { importe: 'doce soles', actualizadoA: '2026-03-15' } },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>((entrada) =>
+        Promise.resolve(
+          new Response(JSON.stringify(String(entrada).includes('/duplicado') ? malformado : RECIBOS_MEDIDOS), {
+            status: 200,
+            headers: JSON_,
+          }),
+        ),
+      ),
+    );
+    const { result } = renderHook(
+      () => useDatosDeLaHoja('duplicado-recibo', { sujeto: '001-000123', parametros: {} }),
+      { wrapper: arnes() },
+    );
+    await waitFor(() => {
+      expect(result.current.ausencia.explicacion).toMatch(/no sabe leer/);
+    });
+    expect(result.current.tablas?.get(TABLA_DE_RECIBOS)?.filas).toHaveLength(2);
+    expect(result.current.ausenciaPorCampo?.get(coordenada(1, 6))).toBe('fallo');
   });
 });

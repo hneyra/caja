@@ -64,3 +64,19 @@ export function useCuentaDeLaSesion(): CuentaEnLaBarra {
   }
   return { nombre: t('Identificando la cuenta…'), iniciales: '…', nota };
 }
+
+/**
+ * **La cuenta de la sesion, por su nombre de usuario** (#117), o `null` mientras no se sabe.
+ *
+ * La misma consulta que la barra —`GET /seguridad/sesion`, misma clave, sin una segunda ida—, pero
+ * lo que devuelve es `cuenta` y no el nombre para dibujar: es con lo que se guarda el borrador de la
+ * anulacion, para devolverselo solo a quien lo escribio. Nunca el token.
+ */
+export function useCuentaQueEscribe(): string | null {
+  const sesion = useQuery({
+    queryKey: LLAVES.sesion,
+    queryFn: ({ signal }) => pedirUno<SesionDeLaVentanilla>(RUTAS.sesion, signal),
+    retry: false,
+  });
+  return sesion.data?.cuenta ?? null;
+}

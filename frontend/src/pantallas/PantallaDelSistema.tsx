@@ -43,6 +43,8 @@ export interface PantallaDelSistemaProps {
   readonly hoja?: HojaDelMarco;
   readonly navegacion?: NavegacionDeLaPantalla;
   readonly actos?: ManejadoresDeLosActos;
+  /** Se abrio o se cerro un acto (#117): la costura de la anulacion cancela su borrador al cerrarlo. */
+  readonly alAbrirActo?: (clave: string | null, parametros?: Readonly<Record<string, string>>) => void;
 }
 
 export function PantallaDelSistema({
@@ -52,6 +54,7 @@ export function PantallaDelSistema({
   hoja,
   navegacion,
   actos,
+  alAbrirActo,
 }: PantallaDelSistemaProps) {
   const { t } = useTranslation();
   const textos = useTextosDelInterprete();
@@ -66,6 +69,7 @@ export function PantallaDelSistema({
       {...(hoja === undefined ? {} : { hoja })}
       {...(navegacion === undefined ? {} : { navegacion })}
       {...(actos === undefined ? {} : { actos })}
+      {...(alAbrirActo === undefined ? {} : { alAbrirActo })}
     />
   );
 }
