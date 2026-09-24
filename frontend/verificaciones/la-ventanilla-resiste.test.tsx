@@ -300,7 +300,11 @@ describe('el borrador es de la cuenta que lo escribio, y no sobrevive a su sesio
     expect((screen.getByLabelText(/Observación/) as HTMLTextAreaElement).value).toBe('');
   });
 
-  it('cerrar la sesion borra el borrador ANTES de irse al emisor', { timeout: 30_000 }, async () => {
+  // 60s y no 30_000 como el resto: es la unica que abre el menu de sesion con teclado sobre la
+  // aplicacion entera, y eso ya tardaba 25-28s medido en solitario (ver el comentario de mas
+  // abajo); bajo `yarn verificar` completo, con la suite entera disputando cuatro nucleos, se
+  // midio pasar de los 30s y salir en rojo por tiempo y no por el aserto (#117, revision).
+  it('cerrar la sesion borra el borrador ANTES de irse al emisor', { timeout: 60_000 }, async () => {
     const persona = userEvent.setup();
     await abrir(`duplicado-recibo/${EL_RECIBO}`);
     await abrirElActo(persona);
