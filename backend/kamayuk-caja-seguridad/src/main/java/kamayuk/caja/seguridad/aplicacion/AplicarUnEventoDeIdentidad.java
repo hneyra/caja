@@ -10,6 +10,8 @@ import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.TipoDeEventoDeIdentidad;
 import org.jspecify.annotations.Nullable;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -21,6 +23,25 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Aplica UN evento del buzon de {@code identidad} a la copia local de la autorizacion (ADR-0039,
  * etapa 4), en su propia transaccion.
+ *
+ * <h2>Solo existe donde existe el consumidor (ronda 3 de #111)</h2>
+ *
+ * <p>{@code @Profile("batch")} y {@code @ConditionalOnProperty("kamayuk.identidad.url")}, las
+ * MISMAS dos condiciones que {@code ConfiguracionDelConsumidorDeIdentidad} —la unica que la usa— y
+ * que {@link kamayuk.caja.seguridad.infraestructura.AlertaDeIdentidadEnElRegistro} —la unica
+ * implementacion de {@link AlertaDeEventosSinAplicar} que esta clase recibe—. Hasta la ronda 1 de
+ * #111 esta clase no dependia de nada mas que {@code JdbcClient}, {@code JsonMapper} y {@code
+ * Clock}, y por eso un {@code @Service} sin perfil ni condicion —instanciado en CUALQUIER
+ * perfil— no habia dado problema nunca: sobraba en {@code web} y en {@code publicador}, pero
+ * sobraba <b>gratis</b>. Ganar la alerta como dependencia lo hizo dejar de ser gratis: en {@code
+ * web} y en {@code publicador} —y en {@code batch} SIN {@code kamayuk.identidad.url}— no hay
+ * ninguna fila de {@link AlertaDeEventosSinAplicar}, porque nadie mas la necesita alli, y el
+ * contexto entero fallaba al arrancar (`UnsatisfiedDependencyException`, cazado por
+ * `ArranqueDeLaAplicacionTest` — en CI, no en local: esa prueba corre contra PostgreSQL de verdad y
+ * no formaba parte de la ronda de arreglos anterior). La alternativa —una alerta que exista en
+ * todos los perfiles, con una implementacion muda donde no hay a quien avisar— se descarto: le
+ * daria un colaborador a una clase que en {@code web} y {@code publicador} no tiene ningun evento
+ * que aplicar, y esta caja no fabrica beans que no le sirven a nadie de ese proceso.
  *
  * <h2>Quien escribe usuario, grupo, miembro y permiso, y por que puede</h2>
  *
@@ -118,6 +139,8 @@ import tools.jackson.databind.json.JsonMapper;
  * es lo suyo: que evento entro y cuando ({@code identidad_evento_aplicado}).
  */
 @Service
+@Profile("batch")
+@ConditionalOnProperty("kamayuk.identidad.url")
 public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
 
     /** El sistema cuyos permisos rigen en esta copia. */
