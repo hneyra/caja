@@ -20,6 +20,24 @@ public interface AlertaDeEventosSinAplicar {
     void hayUnEventoSinAplicar(EventoDeIdentidadRecibido evento, String motivo, long apartados);
 
     /**
+     * Un renombrado que choco con la clave de OTRA fila y por eso se aplico SIN ella (ronda 1 de
+     * #111): un choque no puede impedir que una fila de esta copia se cierre, asi que la fila del
+     * {@code id} de {@code identidad} recibe todo lo que el evento trae —habilitado, vigencias,
+     * nombre, correo, descripcion— menos la clave, que conserva la que ya tenia; la fila con la que
+     * chocaba no se toca. El evento {@code aplica} igual y se acusa: no es un {@link
+     * #hayUnEventoSinAplicar}, porque nada se aparto.
+     *
+     * <p>Mientras el choque siga —la otra fila no suelte esa clave—, cada evento siguiente de este
+     * mismo sujeto va a volver a chocar y a avisar otra vez: es deliberado, porque es la unica
+     * senal de que la copia tiene dos filas que deberian ser una y de que alguien tiene que
+     * resolverlo a mano, moviendo miembros y permisos si corresponde.
+     *
+     * @param evento el que choco
+     * @param motivo la clave que se pidio y cual de las dos filas ya la tenia
+     */
+    void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo);
+
+    /**
      * Los que llevan POSPUESTOS mas de lo que se admite, una vez por corrida.
      *
      * <p>Un evento pospuesto no es un fallo —le falta su dependencia y la vuelta siguiente lo

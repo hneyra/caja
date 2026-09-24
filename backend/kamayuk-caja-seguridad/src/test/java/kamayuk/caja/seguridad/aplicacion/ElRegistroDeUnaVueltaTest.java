@@ -303,7 +303,8 @@ class ElRegistroDeUnaVueltaTest {
             super(
                     JdbcClient.create(new DriverManagerDataSource()),
                     tools.jackson.databind.json.JsonMapper.builder().build(),
-                    Clock.systemUTC());
+                    Clock.systemUTC(),
+                    new AlertaQueNuncaSeLlama());
         }
 
         @Override
@@ -317,6 +318,29 @@ class ElRegistroDeUnaVueltaTest {
         }
     }
 
+    /**
+     * Para los aplicadores de esta clase que sobrescriben {@code aplicar()} entero: nunca llegan a
+     * {@code usuario()}/{@code grupo()}, asi que esta alerta no se llama nunca.
+     */
+    private static final class AlertaQueNuncaSeLlama implements AlertaDeEventosSinAplicar {
+        @Override
+        public void hayUnEventoSinAplicar(
+                EventoDeIdentidadRecibido evento, String motivo, long apartados) {
+            throw new AssertionError("no deberia llamarse: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            throw new AssertionError("no deberia llamarse: " + motivo);
+        }
+
+        @Override
+        public void hayEventosPospuestos(
+                List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
+            throw new AssertionError("no deberia llamarse: " + pospuestos);
+        }
+    }
+
     /** Anota lo que se le pide avisar, sin componer prosa. */
     private static final class AlertaQueAnota implements AlertaDeEventosSinAplicar {
         private final List<List<EventoDeIdentidadRecibido>> listas = new ArrayList<>();
@@ -327,6 +351,11 @@ class ElRegistroDeUnaVueltaTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             throw new AssertionError("aqui no se aparta nada: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            throw new AssertionError("aqui ningun renombrado choca: " + motivo);
         }
 
         @Override

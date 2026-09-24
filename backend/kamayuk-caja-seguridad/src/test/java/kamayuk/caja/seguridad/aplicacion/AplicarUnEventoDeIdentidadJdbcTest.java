@@ -14,12 +14,15 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
+import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
 import org.junit.jupiter.api.AfterAll;
@@ -57,6 +60,7 @@ class AplicarUnEventoDeIdentidadJdbcTest {
     private static BaseDeDatosDePrueba base;
     private static TenantTransactionManager gestor;
     private static AplicarUnEventoDeIdentidad aplicador;
+    private static AlertaQueAnota alertaQueAnota;
     private static long municipalidadA;
     private static long municipalidadB;
 
@@ -73,12 +77,14 @@ class AplicarUnEventoDeIdentidadJdbcTest {
         pool.setUsername(BaseDeDatosDePrueba.APP);
         pool.setPassword(base.clave(BaseDeDatosDePrueba.APP));
         gestor = new TenantTransactionManager(pool);
+        alertaQueAnota = new AlertaQueAnota();
         aplicador =
                 envolver(
                         new AplicarUnEventoDeIdentidad(
                                 JdbcClient.create(pool),
                                 JsonMapper.builder().build(),
-                                Clock.fixed(AHORA, ZoneOffset.UTC)),
+                                Clock.fixed(AHORA, ZoneOffset.UTC),
+                                alertaQueAnota),
                         gestor);
     }
 
@@ -521,8 +527,9 @@ class AplicarUnEventoDeIdentidadJdbcTest {
 
         @Test
         @DisplayName(
-                "renombrar sobre una fila huerfana sin id que ya tiene ese nombre no se aplica nunca, y lo dice")
-        void renombrarSobreUnaHuerfanaNoSeAplica() throws SQLException {
+                "ronda 1 de #111: renombrar sobre una fila huerfana que ya tiene ese nombre SE"
+                        + " APLICA sin la clave nueva, y avisa al responsable")
+        void renombrarSobreUnaHuerfanaSeAplicaSinLaClaveYAvisa() throws SQLException {
             ejecutarComoAdmin(
                     "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
                             + municipalidadA
@@ -531,19 +538,195 @@ class AplicarUnEventoDeIdentidadJdbcTest {
             aplicador.aplicar(evento(150, "GRUPO_DADO_DE_ALTA", grupo(25, "Alfa", true)));
             EventoDeIdentidadRecibido renombrado =
                     evento(151, "GRUPO_MODIFICADO", grupo(25, "Beta", false));
+            int avisosAntes = alertaQueAnota.choques.size();
 
-            assertThatThrownBy(() -> aplicador.aplicar(renombrado))
-                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
-                    .hasMessageContaining("«Beta»")
-                    .hasMessageContaining("25");
+            assertThat(aplicador.aplicar(renombrado))
+                    .as(
+                            "[un choque no puede impedir que una fila se cierre: el evento SE"
+                                    + " aplica y se acusa, no se aparta]")
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT nombre || '|' || habilitado FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND"
+                                            + " identidad_sujeto_id = 25"))
+                    .as(
+                            "[la fila del id conserva su clave vieja, «Alfa», pero SI queda"
+                                    + " inhabilitada: todo lo demas se escribio]")
+                    .isEqualTo("Alfa|false");
+            assertThat(contar(municipalidadA, "grupo", "nombre = 'Beta' AND habilitado"))
+                    .as("la fila con la que chocaba no se toca")
+                    .isEqualTo(1);
             assertThat(
                             contar(
                                     municipalidadA,
                                     "identidad_evento_aplicado",
                                     "evento_id = '" + renombrado.eventoId() + "'"))
+                    .as("se acusa, como cualquier evento aplicado")
+                    .isEqualTo(1);
+            assertThat(alertaQueAnota.choques).hasSize(avisosAntes + 1);
+            assertThat(alertaQueAnota.choques.get(avisosAntes))
+                    .contains("«Beta»")
+                    .contains("25")
+                    .contains("«Alfa»");
+        }
+
+        @Test
+        @DisplayName(
+                "ronda 1 de #111: un renombrado que choca se aplica igual, y una inhabilitacion"
+                        + " posterior SI llega a la fila del id: el comprobador niega")
+        void unRenombradoQueChocaNoImpideUnaInhabilitacionPosterior() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(180, "GRUPO_DADO_DE_ALTA", grupo(60, "OrigenR1", true)));
+            aplicador.aplicar(evento(181, "USUARIO_DADO_DE_ALTA", usuario(70, "cajeroR1", true)));
+            aplicador.aplicar(
+                    evento(182, "MIEMBRO_AFILIADO", afiliacion(60, "OrigenR1", 70, "cajeroR1")));
+            aplicador.aplicar(evento(183, "PERMISO_FIJADO", permisoDeGrupo(60, "OrigenR1")));
+            // Otro sujeto real, ya dueño del nombre con el que el 60 va a chocar.
+            aplicador.aplicar(evento(184, "GRUPO_DADO_DE_ALTA", grupo(61, "DestinoR1", true)));
+            assertThat(autoriza("cajeroR1"))
+                    .as("antes del choque el grupo concede: si no, la prueba no mide nada")
+                    .isTrue();
+
+            // El renombrado de 60 a "DestinoR1" choca (61 ya lo tiene): se aplica igual,
+            // conservando "OrigenR1", y sigue concediendo.
+            aplicador.aplicar(evento(185, "GRUPO_MODIFICADO", grupo(60, "DestinoR1", true)));
+            assertThat(autoriza("cajeroR1"))
+                    .as("[el choque no deshabilita nada por si solo: sigue habilitado]")
+                    .isTrue();
+
+            // La inhabilitacion posterior del MISMO sujeto (60) sigue chocando con "DestinoR1",
+            // y aun asi TIENE que llegar a la fila: es el punto de la ronda 1.
+            aplicador.aplicar(evento(186, "GRUPO_MODIFICADO", grupo(60, "DestinoR1", false)));
+
+            assertThat(contar(municipalidadA, "grupo", "identidad_sujeto_id = 60"))
+                    .as("sigue siendo UNA sola fila: nunca se duplico")
+                    .isEqualTo(1);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT nombre || '|' || habilitado FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND"
+                                            + " identidad_sujeto_id = 60"))
+                    .isEqualTo("OrigenR1|false");
+            assertThat(autoriza("cajeroR1"))
+                    .as(
+                            "[la fila del id quedo inhabilitada pese al choque, y el comprobador de"
+                                    + " produccion niega]")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName(
+                "ronda 1 de #111: una afiliacion adopta el grupo y la cuenta huerfanos por su clave"
+                        + " natural, sin esperar al alta/modificacion del propio sujeto")
+        void unaAfiliacionAdoptaPorSuClaveNatural() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'GrupoHuerfanoR1', true)");
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'cuentaHuerfanaR1', 'Cuenta huerfana R1')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            aplicador.aplicar(
+                    evento(
+                            190,
+                            "MIEMBRO_AFILIADO",
+                            afiliacion(80, "GrupoHuerfanoR1", 90, "cuentaHuerfanaR1")));
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT identidad_sujeto_id FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND nombre ="
+                                            + " 'GrupoHuerfanoR1'"))
+                    .as("[la afiliacion adopto el grupo huerfano, sin esperar su propio evento]")
+                    .isEqualTo("80");
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT identidad_sujeto_id FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND cuenta ="
+                                            + " 'cuentaHuerfanaR1'"))
+                    .as("[y la afiliacion adopto la cuenta huerfana igual]")
+                    .isEqualTo("90");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "miembro",
+                                    "grupo_id = (SELECT id FROM grupo WHERE municipalidad_id = "
+                                            + municipalidadA
+                                            + " AND identidad_sujeto_id = 80) AND activo"))
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName(
+                "ronda 1 de #111: una afiliacion cuyo grupo ya es de OTRO sujeto no se aplica"
+                        + " nunca, y no se queda esperando para siempre")
+        void unaAfiliacionCuyoGrupoYaEsDeOtroSujetoNoSeAplica() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(195, "GRUPO_DADO_DE_ALTA", grupo(100, "GrupoAR1", true)));
+            aplicador.aplicar(evento(196, "USUARIO_DADO_DE_ALTA", usuario(110, "cuentaR1", true)));
+            EventoDeIdentidadRecibido afiliacionAjena =
+                    evento(197, "MIEMBRO_AFILIADO", afiliacion(101, "GrupoAR1", 110, "cuentaR1"));
+
+            assertThatThrownBy(() -> aplicador.aplicar(afiliacionAjena))
+                    .as(
+                            "[el sujeto 101 nunca va a encontrar «GrupoAR1» libre mientras el 100 lo"
+                                    + " tenga: TodaviaNo reintentaria para siempre]")
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«GrupoAR1»")
+                    .hasMessageContaining("101");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "identidad_evento_aplicado",
+                                    "evento_id = '" + afiliacionAjena.eventoId() + "'"))
                     .isZero();
-            assertThat(contar(municipalidadA, "grupo", "nombre = 'Alfa' AND habilitado"))
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "miembro",
+                                    "grupo_id = (SELECT id FROM grupo"
+                                            + " WHERE municipalidad_id = "
+                                            + municipalidadA
+                                            + " AND identidad_sujeto_id = 100)"))
                     .as("nada se escribio a medias")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("ronda 1 de #111: un permiso adopta el grupo huerfano por su clave natural")
+        void unPermisoAdoptaPorSuClaveNatural() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'GrupoPermisoHuerfanoR1', true)");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            aplicador.aplicar(
+                    evento(198, "PERMISO_FIJADO", permisoDeGrupo(120, "GrupoPermisoHuerfanoR1")));
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT identidad_sujeto_id FROM grupo WHERE"
+                                            + " municipalidad_id = {muni} AND nombre ="
+                                            + " 'GrupoPermisoHuerfanoR1'"))
+                    .isEqualTo("120");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "permiso",
+                                    "grupo_id = (SELECT id FROM grupo WHERE municipalidad_id = "
+                                            + municipalidadA
+                                            + " AND identidad_sujeto_id = 120)"))
                     .isEqualTo(1);
         }
 
@@ -781,6 +964,34 @@ class AplicarUnEventoDeIdentidadJdbcTest {
         try (Connection admin = base.conexionAdmin();
                 Statement sentencia = admin.createStatement()) {
             sentencia.execute(sql);
+        }
+    }
+
+    /**
+     * Anota los choques de renombrado (ronda 1 de #111): en esta clase nada se aparta ni se
+     * pospone, asi que esos dos metodos protestan si se llaman.
+     */
+    private static final class AlertaQueAnota implements AlertaDeEventosSinAplicar {
+        private final List<String> choques = new ArrayList<>();
+
+        @Override
+        public void hayUnEventoSinAplicar(
+                EventoDeIdentidadRecibido evento, String motivo, long apartados) {
+            throw new AssertionError(
+                    "esta clase aparta con `apartar()`, a mano y aparte: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            choques.add(motivo);
+        }
+
+        @Override
+        public void hayEventosPospuestos(
+                List<EventoDeIdentidadRecibido> pospuestos,
+                java.time.Instant ahora,
+                java.time.Duration umbral) {
+            throw new AssertionError("ningun evento de esta clase se pospone: " + pospuestos);
         }
     }
 

@@ -103,7 +103,7 @@ class ConsumirEventosDeIdentidadJdbcTest {
     void armar() {
         buzon = new BuzonDeMentira();
         alerta = new AlertaQueAnota();
-        consumidor = consumidorCon(aplicadorDeVerdad());
+        consumidor = consumidorCon(aplicadorDeVerdad(alerta));
         TenantContext.fijar(new MunicipalidadId(municipalidad));
     }
 
@@ -232,7 +232,8 @@ class ConsumirEventosDeIdentidadJdbcTest {
                                 new AplicarUnEventoDeIdentidad(
                                         jdbc,
                                         JsonMapper.builder().build(),
-                                        Clock.fixed(AHORA, ZoneOffset.UTC)) {
+                                        Clock.fixed(AHORA, ZoneOffset.UTC),
+                                        alerta) {
                                     @Override
                                     public Aplicacion aplicar(EventoDeIdentidadRecibido evento) {
                                         throw new QueryTimeoutException(
@@ -289,10 +290,13 @@ class ConsumirEventosDeIdentidadJdbcTest {
 
     // ------------------------------------------------------------------
 
-    private static AplicarUnEventoDeIdentidad aplicadorDeVerdad() {
+    private static AplicarUnEventoDeIdentidad aplicadorDeVerdad(AlertaDeEventosSinAplicar alerta) {
         return envolver(
                 new AplicarUnEventoDeIdentidad(
-                        jdbc, JsonMapper.builder().build(), Clock.fixed(AHORA, ZoneOffset.UTC)));
+                        jdbc,
+                        JsonMapper.builder().build(),
+                        Clock.fixed(AHORA, ZoneOffset.UTC),
+                        alerta));
     }
 
     private ConsumirEventosDeIdentidad consumidorCon(AplicarUnEventoDeIdentidad aplicador) {
@@ -404,6 +408,11 @@ class ConsumirEventosDeIdentidadJdbcTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             avisos.add(evento.tipoPublicado() + ": " + motivo + " apartados=" + apartados);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            avisos.add(evento.tipoPublicado() + " (choque): " + motivo);
         }
 
         @Override
