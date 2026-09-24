@@ -31,17 +31,17 @@ import tools.jackson.databind.json.JsonMapper;
  * que {@link kamayuk.caja.seguridad.infraestructura.AlertaDeIdentidadEnElRegistro} —la unica
  * implementacion de {@link AlertaDeEventosSinAplicar} que esta clase recibe—. Hasta la ronda 1 de
  * #111 esta clase no dependia de nada mas que {@code JdbcClient}, {@code JsonMapper} y {@code
- * Clock}, y por eso un {@code @Service} sin perfil ni condicion —instanciado en CUALQUIER
- * perfil— no habia dado problema nunca: sobraba en {@code web} y en {@code publicador}, pero
- * sobraba <b>gratis</b>. Ganar la alerta como dependencia lo hizo dejar de ser gratis: en {@code
- * web} y en {@code publicador} —y en {@code batch} SIN {@code kamayuk.identidad.url}— no hay
- * ninguna fila de {@link AlertaDeEventosSinAplicar}, porque nadie mas la necesita alli, y el
- * contexto entero fallaba al arrancar (`UnsatisfiedDependencyException`, cazado por
- * `ArranqueDeLaAplicacionTest` — en CI, no en local: esa prueba corre contra PostgreSQL de verdad y
- * no formaba parte de la ronda de arreglos anterior). La alternativa —una alerta que exista en
- * todos los perfiles, con una implementacion muda donde no hay a quien avisar— se descarto: le
- * daria un colaborador a una clase que en {@code web} y {@code publicador} no tiene ningun evento
- * que aplicar, y esta caja no fabrica beans que no le sirven a nadie de ese proceso.
+ * Clock}, y por eso un {@code @Service} sin perfil ni condicion —instanciado en CUALQUIER perfil—
+ * no habia dado problema nunca: sobraba en {@code web} y en {@code publicador}, pero sobraba
+ * <b>gratis</b>. Ganar la alerta como dependencia lo hizo dejar de ser gratis: en {@code web} y en
+ * {@code publicador} —y en {@code batch} SIN {@code kamayuk.identidad.url}— no hay ninguna fila de
+ * {@link AlertaDeEventosSinAplicar}, porque nadie mas la necesita alli, y el contexto entero
+ * fallaba al arrancar (`UnsatisfiedDependencyException`, cazado por `ArranqueDeLaAplicacionTest` —
+ * en CI, no en local: esa prueba corre contra PostgreSQL de verdad y no formaba parte de la ronda
+ * de arreglos anterior). La alternativa —una alerta que exista en todos los perfiles, con una
+ * implementacion muda donde no hay a quien avisar— se descarto: le daria un colaborador a una clase
+ * que en {@code web} y {@code publicador} no tiene ningun evento que aplicar, y esta caja no
+ * fabrica beans que no le sirven a nadie de ese proceso.
  *
  * <h2>Quien escribe usuario, grupo, miembro y permiso, y por que puede</h2>
  *
