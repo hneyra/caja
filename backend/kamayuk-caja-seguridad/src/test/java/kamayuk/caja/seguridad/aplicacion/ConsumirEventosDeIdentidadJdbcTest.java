@@ -103,7 +103,7 @@ class ConsumirEventosDeIdentidadJdbcTest {
     void armar() {
         buzon = new BuzonDeMentira();
         alerta = new AlertaQueAnota();
-        consumidor = consumidorCon(aplicadorDeVerdad());
+        consumidor = consumidorCon(aplicadorDeVerdad(alerta));
         TenantContext.fijar(new MunicipalidadId(municipalidad));
     }
 
@@ -232,7 +232,8 @@ class ConsumirEventosDeIdentidadJdbcTest {
                                 new AplicarUnEventoDeIdentidad(
                                         jdbc,
                                         JsonMapper.builder().build(),
-                                        Clock.fixed(AHORA, ZoneOffset.UTC)) {
+                                        Clock.fixed(AHORA, ZoneOffset.UTC),
+                                        alerta) {
                                     @Override
                                     public Aplicacion aplicar(EventoDeIdentidadRecibido evento) {
                                         throw new QueryTimeoutException(
@@ -289,10 +290,13 @@ class ConsumirEventosDeIdentidadJdbcTest {
 
     // ------------------------------------------------------------------
 
-    private static AplicarUnEventoDeIdentidad aplicadorDeVerdad() {
+    private static AplicarUnEventoDeIdentidad aplicadorDeVerdad(AlertaDeEventosSinAplicar alerta) {
         return envolver(
                 new AplicarUnEventoDeIdentidad(
-                        jdbc, JsonMapper.builder().build(), Clock.fixed(AHORA, ZoneOffset.UTC)));
+                        jdbc,
+                        JsonMapper.builder().build(),
+                        Clock.fixed(AHORA, ZoneOffset.UTC),
+                        alerta));
     }
 
     private ConsumirEventosDeIdentidad consumidorCon(AplicarUnEventoDeIdentidad aplicador) {
@@ -312,7 +316,34 @@ class ConsumirEventosDeIdentidadJdbcTest {
 
     private static EventoDeIdentidadRecibido evento(long secuencia, String tipo, String cuerpo) {
         return new EventoDeIdentidadRecibido(
-                UUID.randomUUID(), secuencia, tipo, 1L, cuerpo, HUELLA, AHORA);
+                UUID.randomUUID(),
+                secuencia,
+                tipo,
+                sujetoIdDelCuerpo(tipo, cuerpo),
+                cuerpo,
+                HUELLA,
+                AHORA);
+    }
+
+    /** El sobre trae el MISMO id que el cuerpo (ronda 2 de #111): se deriva de el. */
+    private static long sujetoIdDelCuerpo(String tipo, String cuerpo) {
+        String campo =
+                switch (tipo) {
+                    case "USUARIO_DADO_DE_ALTA", "USUARIO_MODIFICADO" -> "usuarioId";
+                    case "GRUPO_DADO_DE_ALTA",
+                            "GRUPO_MODIFICADO",
+                            "MIEMBRO_AFILIADO",
+                            "MIEMBRO_DESAFILIADO" ->
+                            "grupoId";
+                    case "PERMISO_FIJADO" -> "sujetoId";
+                    default -> null;
+                };
+        if (campo == null) {
+            return 1L;
+        }
+        java.util.regex.Matcher coincidencia =
+                java.util.regex.Pattern.compile("\"" + campo + "\":(-?\\d+)").matcher(cuerpo);
+        return coincidencia.find() ? Long.parseLong(coincidencia.group(1)) : 1L;
     }
 
     private static String permiso(String sistema) {
@@ -404,6 +435,11 @@ class ConsumirEventosDeIdentidadJdbcTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             avisos.add(evento.tipoPublicado() + ": " + motivo + " apartados=" + apartados);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            avisos.add(evento.tipoPublicado() + " (choque): " + motivo);
         }
 
         @Override

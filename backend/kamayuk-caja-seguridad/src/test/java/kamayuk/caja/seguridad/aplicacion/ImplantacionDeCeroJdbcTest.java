@@ -381,7 +381,8 @@ class ImplantacionDeCeroJdbcTest {
                             new AplicarUnEventoDeIdentidad(
                                     jdbc,
                                     JsonMapper.builder().build(),
-                                    Clock.fixed(AHORA, ZoneOffset.UTC)));
+                                    Clock.fixed(AHORA, ZoneOffset.UTC),
+                                    new AlertaQueCalla()));
             this.consumidor =
                     new CorrerElConsumidorDeIdentidad(
                             new ConsumirEventosDeIdentidad(
@@ -497,6 +498,11 @@ class ImplantacionDeCeroJdbcTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             throw new AssertionError("ningun evento de esta corriente se aparta: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            throw new AssertionError("ningun renombrado de esta corriente choca: " + motivo);
         }
 
         @Override

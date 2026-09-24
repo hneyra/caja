@@ -217,6 +217,29 @@ class CorrerElConsumidorDeIdentidadTest {
                 "kamayuk-caja-servicio-200105");
     }
 
+    /**
+     * Para los aplicadores de esta clase que sobrescriben {@code aplicar()} entero: nunca llegan a
+     * {@code usuario()}/{@code grupo()}, asi que esta alerta no se llama nunca.
+     */
+    private static final class AlertaQueNuncaSeLlama implements AlertaDeEventosSinAplicar {
+        @Override
+        public void hayUnEventoSinAplicar(
+                EventoDeIdentidadRecibido evento, String motivo, long apartados) {
+            throw new AssertionError("no deberia llamarse: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            throw new AssertionError("no deberia llamarse: " + motivo);
+        }
+
+        @Override
+        public void hayEventosPospuestos(
+                List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
+            throw new AssertionError("no deberia llamarse: " + pospuestos);
+        }
+    }
+
     /** Anota lo que se avisa, sin componer ninguna prosa. */
     private static final class AlertaQueAnota implements AlertaDeEventosSinAplicar {
         private final List<List<EventoDeIdentidadRecibido>> pospuestos = new ArrayList<>();
@@ -225,6 +248,11 @@ class CorrerElConsumidorDeIdentidadTest {
         public void hayUnEventoSinAplicar(
                 EventoDeIdentidadRecibido evento, String motivo, long apartados) {
             throw new AssertionError("un pospuesto no se aparta: " + motivo);
+        }
+
+        @Override
+        public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+            throw new AssertionError("ningun renombrado de esta corrida choca: " + motivo);
         }
 
         @Override
@@ -281,7 +309,8 @@ class CorrerElConsumidorDeIdentidadTest {
             super(
                     JdbcClient.create(new DriverManagerDataSource()),
                     tools.jackson.databind.json.JsonMapper.builder().build(),
-                    Clock.systemUTC());
+                    Clock.systemUTC(),
+                    new AlertaQueNuncaSeLlama());
         }
 
         @Override
@@ -347,7 +376,8 @@ class CorrerElConsumidorDeIdentidadTest {
             super(
                     JdbcClient.create(new DriverManagerDataSource()),
                     tools.jackson.databind.json.JsonMapper.builder().build(),
-                    java.time.Clock.systemUTC());
+                    java.time.Clock.systemUTC(),
+                    new AlertaQueNuncaSeLlama());
         }
 
         @Override

@@ -71,6 +71,24 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
     }
 
     @Override
+    public void hayUnChoqueDeRenombrado(EventoDeIdentidadRecibido evento, String motivo) {
+        REGISTRO.error(
+                "UN RENOMBRADO DE LA AUTORIZACION CHOCO CON OTRA FILA Y SE APLICO SIN LA CLAVE"
+                        + " NUEVA: el evento {} ({}, secuencia {}) de `identidad` puso al dia su"
+                        + " fila en esta copia —habilitado, vigencias y lo demas— pero le conservo"
+                        + " la clave anterior, para no dejar una inhabilitacion sin aplicar. Motivo:"
+                        + " {}. Hay dos filas que probablemente deberian ser una: hay que resolverlo"
+                        + " a mano y, si corresponde, mover sus miembros y sus permisos (ADR-0039"
+                        + " etapa 4, ADR-0026 §4). Responsable: {} <{}>",
+                evento.eventoId(),
+                evento.tipoPublicado(),
+                evento.secuencia(),
+                motivo,
+                responsable,
+                canal);
+    }
+
+    @Override
     public void hayEventosPospuestos(
             List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
         StringJoiner lista = new StringJoiner("; ");
