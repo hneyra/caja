@@ -1025,6 +1025,127 @@ class AplicarUnEventoDeIdentidadJdbcTest {
         }
     }
 
+    @Nested
+    @DisplayName("ronda 1 de #125: un ALTA nunca adopta una fila por su clave")
+    class UnAltaNoAdopta {
+
+        @Test
+        @DisplayName(
+                "un alta de cuenta cuya clave tiene una fila SIN sujeto no se aplica, y la huerfana"
+                        + " no gana sujeto ni se le da a nadie")
+        void unAltaDeCuentaConLaClaveDeUnaHuerfanaNoSeAplica() throws SQLException {
+            // La huerfana: «jperezR125» se renombro en identidad antes de #111 y aqui quedo la fila
+            // vieja, con sus permisos. Ahora alguien da de alta OTRO «jperezR125».
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'jperezR125', 'La huerfana')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    300,
+                                                    "USUARIO_DADO_DE_ALTA",
+                                                    usuario(960, "jperezR125", true))))
+                    .as(
+                            "[un alta es un sujeto NUEVO: adoptar la fila le heredaria al nuevo"
+                                    + " «jperezR125» los miembros y los permisos del anterior]")
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«jperezR125»")
+                    .hasMessageContaining("960")
+                    .hasMessageContaining("sin sujeto");
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || coalesce(max(identidad_sujeto_id)::text,"
+                                            + " 'sin sujeto') || '|' || max(nombre) FROM usuario"
+                                            + " WHERE municipalidad_id = {muni} AND cuenta ="
+                                            + " 'jperezR125'"))
+                    .as("la huerfana sigue sola, sin sujeto y sin tocar")
+                    .isEqualTo("1|sin sujeto|La huerfana");
+        }
+
+        @Test
+        @DisplayName("y lo mismo un alta de grupo sobre un grupo huerfano")
+        void unAltaDeGrupoConLaClaveDeUnHuerfanoNoSeAplica() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'CajerosR125', true)");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    301,
+                                                    "GRUPO_DADO_DE_ALTA",
+                                                    grupo(961, "CajerosR125", true))))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«CajerosR125»")
+                    .hasMessageContaining("961");
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || coalesce(max(identidad_sujeto_id)::text,"
+                                            + " 'sin sujeto') FROM grupo WHERE municipalidad_id ="
+                                            + " {muni} AND nombre = 'CajerosR125'"))
+                    .isEqualTo("1|sin sujeto");
+        }
+
+        @Test
+        @DisplayName("CONTRASTE: un alta con una clave que nadie tiene se inserta, con su sujeto")
+        void unAltaConClaveNuevaSeInserta() throws SQLException {
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            assertThat(
+                            aplicador.aplicar(
+                                    evento(
+                                            302,
+                                            "USUARIO_DADO_DE_ALTA",
+                                            usuario(962, "nuevaR125", true))))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || max(identidad_sujeto_id) FROM"
+                                            + " usuario WHERE municipalidad_id = {muni} AND cuenta"
+                                            + " = 'nuevaR125'"))
+                    .isEqualTo("1|962");
+        }
+
+        @Test
+        @DisplayName(
+                "CONTRASTE: un segundo alta del MISMO sujeto casa por su id —no adopta: ya es suyo—"
+                        + " y se aplica sobre la misma fila")
+        void unaReAltaDelMismoSujetoCasaPorId() throws SQLException {
+            // `identidad` hoy no la emite (registrarUsuario/registrarGrupo solo publican el alta
+            // con id nulo; habilitar de nuevo es un *_MODIFICADO), pero si algun dia lo hiciera,
+            // la regla nueva no puede romperla.
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(
+                    evento(303, "USUARIO_DADO_DE_ALTA", usuario(963, "realtaR125", true)));
+
+            assertThat(
+                            aplicador.aplicar(
+                                    evento(
+                                            304,
+                                            "USUARIO_DADO_DE_ALTA",
+                                            usuario(963, "realtaR125", false))))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || bool_or(habilitado) || '|' ||"
+                                            + " max(identidad_sujeto_id) FROM usuario WHERE"
+                                            + " municipalidad_id = {muni} AND cuenta ="
+                                            + " 'realtaR125'"))
+                    .isEqualTo("1|false|963");
+        }
+    }
+
     // ------------------------------------------------------------------
 
     private static EventoDeIdentidadRecibido evento(long secuencia, String tipo, String cuerpo) {

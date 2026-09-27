@@ -80,10 +80,11 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Asi que un alta o una modificacion casan primero por ese id —y si la fila lo lleva, se le
  * escribe la clave nueva: es el renombrado— y, si ninguna fila lo lleva, por la clave natural
- * <b>entre las filas que no llevan ninguno</b>, que se adoptan estampandoles el id: son las de
- * antes de V5, que no tienen de donde saber de que sujeto son. <b>No se rellenan desde una
- * migracion</b> —{@code V5} no sabe el id de {@code identidad} de una fila existente, y ademas un
- * {@code UPDATE} sobre una tabla de tenant desde el migrador muere bajo RLS (hallazgo 4 de {@code
+ * <b>entre las filas que no llevan ninguno</b>, que se adoptan estampandoles el id —salvo con un
+ * alta, que no adopta nunca: ver {@code casarParaEscribir}—: son las de antes de V5, que no tienen
+ * de donde saber de que sujeto son. <b>No se rellenan desde una migracion</b> —{@code V5} no sabe
+ * el id de {@code identidad} de una fila existente, y ademas un {@code UPDATE} sobre una tabla de
+ * tenant desde el migrador muere bajo RLS (hallazgo 4 de {@code
  * docs/40-datos/hallazgos-de-rls.md}): esta clase es el UNICO lugar donde una fila vieja puede
  * ganar su {@code identidad_sujeto_id}, y lo gana con el primer evento que la nombra, no antes. Una
  * afiliacion o un permiso casan igual y, desde la ronda 1 de #111, TAMBIEN adoptan cuando la fila
@@ -342,7 +343,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     private Aplicacion usuario(EventoDeIdentidadRecibido evento, JsonNode cuerpo) {
         long identidadId = exigirId(cuerpo, Sujeto.USUARIO.campoId);
         String cuenta = exigir(cuerpo, "cuenta");
-        Casamiento casamiento = casarParaEscribir(Sujeto.USUARIO, identidadId, cuenta);
+        Casamiento casamiento =
+                casarParaEscribir(Sujeto.USUARIO, identidadId, cuenta, esAlta(evento));
         String sql =
                 casamiento.local() == null
                         ? "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
@@ -376,7 +378,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     private Aplicacion grupo(EventoDeIdentidadRecibido evento, JsonNode cuerpo) {
         long identidadId = exigirId(cuerpo, Sujeto.GRUPO.campoId);
         String nombre = exigir(cuerpo, "nombre");
-        Casamiento casamiento = casarParaEscribir(Sujeto.GRUPO, identidadId, nombre);
+        Casamiento casamiento =
+                casarParaEscribir(Sujeto.GRUPO, identidadId, nombre, esAlta(evento));
         String sql =
                 casamiento.local() == null
                         ? "INSERT INTO grupo (municipalidad_id, identidad_sujeto_id, nombre,"
@@ -551,9 +554,21 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *       —eso es un renombrado, y se le escribe la clave nueva—, <b>salvo que esa clave nueva ya
      *       sea de otra fila</b>: ver el choque, abajo.
      *   <li>Si ninguna lo lleva, la que tiene esa clave natural <b>y ningun sujeto</b>: una fila de
-     *       antes de V5, que se adopta estampandole el id.
+     *       antes de V5, que se adopta estampandole el id — <b>solo si el evento es un {@code
+     *       *_MODIFICADO}</b>. Un {@code *_DADO_DE_ALTA} no adopta nunca (ronda 1 de #125): la fila
+     *       que ya esta en la copia ya tuvo su alta, asi que otra alta con su clave es OTRO sujeto
+     *       —el caso es «jperez» renombrado en {@code identidad} y un «jperez» nuevo dado de alta
+     *       despues: adoptar la huerfana le heredaria al nuevo los miembros y los permisos del
+     *       anterior—. Se aparta con {@link NoSePuedeAplicar}, nombrando la fila y el sujeto nuevo,
+     *       y el nuevo no recibe nada hasta que alguien lo resuelva: falla cerrado.
      *   <li>Si ninguna de las dos, es nueva.
      * </ol>
+     *
+     * <p>Un alta del MISMO sujeto que ya esta —una fila que ya lleva ese id— sigue casando en el
+     * paso 1, por id: no es una adopcion. {@code identidad} hoy no la emite ({@code
+     * registrarUsuario} y {@code registrarGrupo} solo publican el alta cuando el id es nulo, y
+     * volver a habilitar es un {@code *_MODIFICADO}; medido en {@code identidad@6c5e433}), pero si
+     * algun dia lo hiciera, se aplica sobre su fila.
      *
      * <p><b>El choque de un renombrado (ronda 1 de #111) NO se aparta.</b> Hasta aqui, que la clave
      * nueva ya fuera de otra fila —huerfana o de otro sujeto— era {@link NoSePuedeAplicar} entero:
@@ -572,7 +587,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      * ya es de OTRO sujeto en esta copia— sigue siendo {@link NoSePuedeAplicar} entero: aqui no hay
      * fila propia que actualizar reteniendo su clave, asi que no hay nada seguro que escribir.
      */
-    private Casamiento casarParaEscribir(Sujeto sujeto, long identidadId, String clave) {
+    private Casamiento casarParaEscribir(
+            Sujeto sujeto, long identidadId, String clave, boolean esAlta) {
         List<Candidata> candidatas =
                 jdbc().sql(
                                 "SELECT id, identidad_sujeto_id, "
@@ -638,9 +654,31 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                                 + ": a esta copia le falta el evento que lo renombro, y escribir"
                                 + " este sobre esa fila se la daria a otro");
             }
+            if (esAlta) {
+                throw new NoSePuedeAplicar(
+                        "`identidad` da de alta "
+                                + sujeto.articulado
+                                + " "
+                                + identidadId
+                                + " con el nombre «"
+                                + clave
+                                + "», y en esta copia ese nombre lo tiene la fila "
+                                + porClave.id()
+                                + " sin sujeto de `identidad`: una huerfana (de antes de V5, o la"
+                                + " que dejo un renombrado antes de #111) que ya tuvo su propia"
+                                + " alta. Un alta es un sujeto NUEVO, y adoptar esa fila le"
+                                + " heredaria sus miembros y sus permisos; no se aplica hasta"
+                                + " resolverlo a mano (#125)");
+            }
             return new Casamiento(porClave.id(), clave, null);
         }
         return new Casamiento(null, clave, null);
+    }
+
+    /** Si el evento es un alta, que nunca adopta por la clave (ronda 1 de #125). */
+    private static boolean esAlta(EventoDeIdentidadRecibido evento) {
+        return evento.tipo() == TipoDeEventoDeIdentidad.USUARIO_DADO_DE_ALTA
+                || evento.tipo() == TipoDeEventoDeIdentidad.GRUPO_DADO_DE_ALTA;
     }
 
     private static String deQuien(Candidata fila) {
