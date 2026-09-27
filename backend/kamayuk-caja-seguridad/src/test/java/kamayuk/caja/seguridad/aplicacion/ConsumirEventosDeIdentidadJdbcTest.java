@@ -3,6 +3,9 @@ package kamayuk.caja.seguridad.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -34,6 +37,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.QueryTimeoutException;
@@ -350,6 +354,66 @@ class ConsumirEventosDeIdentidadJdbcTest {
                                 + ", usuario «en.plazo» hasta "
                                 + PlazoDeAdopcion.concedeHasta(ultimoDia)
                                 + "; ya no conceden 2; hoy 2026-09-09");
+    }
+
+    @Test
+    @DisplayName(
+            "#125 ronda 2: el WARN de las que ya no conceden solo nombra las que cruzaron el plazo"
+                    + " HOY, y al dia siguiente ya no las repite")
+    void elWarnDeLasVencidasSoloElDiaQueCruzan() throws SQLException {
+        long otra = crearMunicipalidad("209905", "Municipalidad E");
+        LocalDate hoy = LocalDate.of(2026, 9, 9);
+        LocalDate ultimoDia = PlazoDeAdopcion.corte(hoy);
+        try (Connection admin = base.conexionAdmin();
+                PreparedStatement s =
+                        admin.prepareStatement(
+                                "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
+                                        + " nombre, habilitado, sin_sujeto_desde)"
+                                        + " VALUES (?, ?, ?, 'x', ?, ?)")) {
+            // Ayer concedia por ultima vez: hoy es el dia en que cruza.
+            insertarUsuario(s, otra, null, "cruza.hoy", true, ultimoDia.minusDays(1));
+            insertarUsuario(s, otra, null, "vencida.hace.dias", true, ultimoDia.minusDays(5));
+            insertarUsuario(s, otra, null, "sin.fecha.e", true, null);
+        }
+        TenantContext.fijar(new MunicipalidadId(otra));
+        ListAppender<ILoggingEvent> registro = new ListAppender<>();
+        registro.start();
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger)
+                        LoggerFactory.getLogger(ConsumirEventosDeIdentidad.class);
+        logger.addAppender(registro);
+        try {
+            consumidor.avisarDeLasFilasSinSujeto();
+        } finally {
+            logger.detachAppender(registro);
+        }
+
+        List<String> avisos =
+                registro.list.stream()
+                        .filter(linea -> linea.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .toList();
+        assertThat(avisos)
+                .as(
+                        "[una linea, con la que cruzo hoy y ninguna otra: repetir cada cinco minutos"
+                                + " y para siempre las que ya no conceden es el canal que grita en"
+                                + " lo corriente (#437)]")
+                .singleElement()
+                .asString()
+                .contains("«cruza.hoy»")
+                .doesNotContain("vencida.hace.dias")
+                .doesNotContain("sin.fecha.e");
+        assertThat(alerta.avisos)
+                .as("y ninguna concede, asi que el responsable no recibe nada")
+                .noneMatch(aviso -> aviso.startsWith("SIN SUJETO"));
+
+        AplicarUnEventoDeIdentidad aplicador = aplicadorDeVerdad(alerta);
+        assertThat(aplicador.filasSinSujeto(hoy.plusDays(1)).queDejaronDeConcederHoy())
+                .as("al dia siguiente, «cruza.hoy» ya no es de hoy: no se vuelve a nombrar")
+                .isEmpty();
+        assertThat(aplicador.filasSinSujeto(hoy).queDejaronDeConcederHoy())
+                .extracting(FilaSinSujeto::clave)
+                .containsExactly("cruza.hoy");
     }
 
     @Test

@@ -201,7 +201,8 @@ class CorrerElConsumidorDeIdentidadTest {
         FilaSinSujeto huerfana = new FilaSinSujeto("grupo", 5, "Cajeros", LocalDate.of(2026, 9, 3));
         AplicadorQuePospone aplicador =
                 new AplicadorQuePospone(
-                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(List.of(huerfana), 2));
+                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(
+                                List.of(huerfana), List.of(), 2));
 
         new CorrerElConsumidorDeIdentidad(
                         new ConsumirEventosDeIdentidad(
@@ -233,7 +234,7 @@ class CorrerElConsumidorDeIdentidadTest {
         AlertaQueAnota alerta = new AlertaQueAnota();
         AplicadorQuePospone aplicador =
                 new AplicadorQuePospone(
-                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(List.of(), 3));
+                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(List.of(), List.of(), 3));
 
         runnerCon(new BuzonDeMentira(1), alerta, aplicador).run(new DefaultApplicationArguments());
 
@@ -385,7 +386,7 @@ class CorrerElConsumidorDeIdentidadTest {
         private final List<LocalDate> diasConsultados = new ArrayList<>();
 
         AplicadorQuePospone() {
-            this(new FilasSinSujeto(List.of(), 0));
+            this(new FilasSinSujeto(List.of(), List.of(), 0));
         }
 
         AplicadorQuePospone(FilasSinSujeto filas) {
@@ -478,7 +479,7 @@ class CorrerElConsumidorDeIdentidadTest {
 
         @Override
         public FilasSinSujeto filasSinSujeto(LocalDate hoy) {
-            return new FilasSinSujeto(List.of(), 0);
+            return new FilasSinSujeto(List.of(), List.of(), 0);
         }
     }
 }

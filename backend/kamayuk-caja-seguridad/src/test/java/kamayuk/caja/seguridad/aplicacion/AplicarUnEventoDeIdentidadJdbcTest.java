@@ -1144,6 +1144,144 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                                             + " 'realtaR125'"))
                     .isEqualTo("1|false|963");
         }
+
+        // -------------------------------------------------------------- ronda 2 de #125
+
+        @Test
+        @DisplayName(
+                "ronda 2: apartada el alta, NINGUN evento siguiente del mismo sujeto —afiliacion,"
+                        + " permiso, modificacion— adopta la cuenta huerfana")
+        void elSujetoCuyaAltaSeApartoNoAdoptaConNingunOtroEvento() throws SQLException {
+            // «jperezR2» (el viejo) se renombro en identidad; aqui quedo su fila sin sujeto. Otro
+            // «jperezR2» (970) se da de alta: se aparta. Y detras llegan sus demas eventos.
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'jperezR2', 'La huerfana')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            aplicador.aplicar(evento(310, "GRUPO_DADO_DE_ALTA", grupo(972, "GrupoR2", true)));
+            apartarComoElConsumidor(
+                    evento(311, "USUARIO_DADO_DE_ALTA", usuario(970, "jperezR2", true)));
+
+            for (EventoDeIdentidadRecibido siguiente :
+                    List.of(
+                            evento(
+                                    312,
+                                    "MIEMBRO_AFILIADO",
+                                    afiliacion(972, "GrupoR2", 970, "jperezR2")),
+                            evento(313, "PERMISO_FIJADO", permisoDeUsuario(970, "jperezR2")),
+                            evento(314, "USUARIO_MODIFICADO", usuario(970, "jperezR2", true)))) {
+                assertThatThrownBy(() -> aplicador.aplicar(siguiente))
+                        .as(
+                                "[%s: el sujeto 970 ya paso por esta copia con su alta, asi que"
+                                        + " no es el dueno de una fila sin sujeto. Adoptarla le"
+                                        + " heredaria miembros y permisos del viejo y, con sujeto"
+                                        + " puesto, el plazo de #125 ya no le aplicaria]",
+                                siguiente.tipoPublicado())
+                        .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                        .hasMessageContaining("«jperezR2»")
+                        .hasMessageContaining("970");
+            }
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || coalesce(max(identidad_sujeto_id)::text,"
+                                            + " 'sin sujeto') FROM usuario WHERE municipalidad_id ="
+                                            + " {muni} AND cuenta = 'jperezR2'"))
+                    .isEqualTo("1|sin sujeto");
+            assertThat(
+                            contar(
+                                    municipalidadA,
+                                    "permiso",
+                                    "usuario_id IN (SELECT id FROM usuario WHERE cuenta ="
+                                            + " 'jperezR2')"))
+                    .as("y la huerfana no gano el permiso del nuevo")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("ronda 2: y lo mismo con un grupo: su modificacion y su permiso no adoptan")
+        void elGrupoCuyaAltaSeApartoNoAdopta() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO grupo (municipalidad_id, nombre, habilitado) VALUES ("
+                            + municipalidadA
+                            + ", 'CajerosR2', true)");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            apartarComoElConsumidor(
+                    evento(320, "GRUPO_DADO_DE_ALTA", grupo(973, "CajerosR2", true)));
+
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    321,
+                                                    "GRUPO_MODIFICADO",
+                                                    grupo(973, "CajerosR2", true))))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("«CajerosR2»");
+            assertThatThrownBy(
+                            () ->
+                                    aplicador.aplicar(
+                                            evento(
+                                                    322,
+                                                    "PERMISO_FIJADO",
+                                                    permisoDeGrupo(973, "CajerosR2"))))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class)
+                    .hasMessageContaining("973");
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT coalesce(max(identidad_sujeto_id)::text, 'sin sujeto')"
+                                            + " FROM grupo WHERE municipalidad_id = {muni} AND"
+                                            + " nombre = 'CajerosR2'"))
+                    .isEqualTo("sin sujeto");
+        }
+
+        @Test
+        @DisplayName(
+                "ronda 2 CONTRASTE: la fila de antes de V5 cuya alta SI se aplico aqui antes de V5"
+                        + " se sigue adoptando con su modificacion — el remedio de #111")
+        void laFilaDeAntesDeV5ConSuAltaAplicadaSeAdopta() throws SQLException {
+            // Antes de V5 el aplicador ya acusaba en identidad_evento_aplicado, pero creaba la fila
+            // SIN sujeto: el alta de todo dueno legitimo de una fila sin sujeto ESTA ahi.
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre) VALUES ("
+                            + municipalidadA
+                            + ", 'legitimaR2', 'De antes de V5')");
+            ejecutarComoAdmin(
+                    "INSERT INTO identidad_evento_aplicado (municipalidad_id, evento_id,"
+                            + " secuencia, tipo, sujeto_id, huella, aplicado_en) VALUES ("
+                            + municipalidadA
+                            + ", gen_random_uuid(), 9, 'USUARIO_DADO_DE_ALTA', 980, 'antes-de-v5',"
+                            + " now())");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            assertThat(
+                            aplicador.aplicar(
+                                    evento(
+                                            330,
+                                            "USUARIO_MODIFICADO",
+                                            usuario(980, "legitimaR2", true))))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || max(identidad_sujeto_id) FROM"
+                                            + " usuario WHERE municipalidad_id = {muni} AND cuenta"
+                                            + " = 'legitimaR2'"))
+                    .as(
+                            "[si el alta APLICADA contara como «ya paso por esta copia», el dueno"
+                                    + " legitimo de toda fila de antes de V5 quedaria sin poder"
+                                    + " adoptarla nunca]")
+                    .isEqualTo("1|980");
+        }
+
+        /** Lo que hace el consumidor con un NoSePuedeAplicar: apartarlo en su transaccion. */
+        private void apartarComoElConsumidor(EventoDeIdentidadRecibido alta) {
+            assertThatThrownBy(() -> aplicador.aplicar(alta))
+                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class);
+            aplicador.apartar(alta, "alta sobre una huerfana");
+        }
     }
 
     // ------------------------------------------------------------------

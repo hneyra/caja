@@ -232,6 +232,46 @@ class ElRegistroDeUnaVueltaTest {
                 suLogger.detachAppender(deLaAlerta);
             }
         }
+
+        @Test
+        @DisplayName(
+                "#125 ronda 2: el aviso de las filas sin sujeto pide comprobar que es el MISMO"
+                        + " sujeto, no solo la misma clave, y dice que hacer si no lo es")
+        void elAvisoDeLasFilasSinSujetoNoMandaTocarPorLaClave() {
+            ListAppender<ILoggingEvent> deLaAlerta = new ListAppender<>();
+            deLaAlerta.start();
+            ch.qos.logback.classic.Logger suLogger =
+                    (ch.qos.logback.classic.Logger)
+                            LoggerFactory.getLogger(AlertaDeIdentidadEnElRegistro.class);
+            suLogger.addAppender(deLaAlerta);
+            try {
+                new AlertaDeIdentidadEnElRegistro("Jefe de rentas", "jefe@example.pe")
+                        .hayFilasSinSujeto(
+                                List.of(
+                                        new FilaSinSujeto(
+                                                "usuario",
+                                                5,
+                                                "jperez",
+                                                java.time.LocalDate.of(2026, 9, 3))),
+                                2,
+                                java.time.LocalDate.of(2026, 9, 9));
+
+                assertThat(deLaAlerta.list).hasSize(1);
+                assertThat(deLaAlerta.list.getFirst().getFormattedMessage())
+                        .as(
+                                "[«si existe en identidad con esa clave, tocala alli» con la clave"
+                                        + " reasignada era la receta para que un sujeto nuevo"
+                                        + " heredara la fila del viejo]")
+                        .contains("usuario «jperez» (id 5 aqui)")
+                        .contains("concede hasta el 2026-09-10")
+                        .contains("MISMO sujeto")
+                        .contains("id de `identidad` y su fecha de alta")
+                        .contains("Si NO lo es")
+                        .doesNotContain("Si EXISTE en `identidad` con esa clave");
+            } finally {
+                suLogger.detachAppender(deLaAlerta);
+            }
+        }
     }
 
     // ------------------------------------------------------------------

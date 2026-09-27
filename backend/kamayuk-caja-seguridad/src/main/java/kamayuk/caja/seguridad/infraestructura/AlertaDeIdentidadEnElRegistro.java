@@ -141,12 +141,19 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                         + " TODAVIA CONCEDEN (hoy es {}): {}. Ningun evento las adopto desde V5, y"
                         + " desde aqui no se sabe si cada una es una cuenta o un grupo legitimo que"
                         + " espera su primer evento o una huerfana que el defecto de #111 dejo tras"
-                        + " un renombrado. Si EXISTE en `identidad` con esa clave, tocala alli"
-                        + " —cualquier modificacion, afiliacion o permiso que la nombre— y el evento"
-                        + " la adopta; si no existe, no hay nada que hacer: deja de conceder sola el"
-                        + " dia que se indica, a los {} dias de V6 (#125). Esta caja no la edita ni la"
-                        + " borra: su unico escritor es el consumidor del buzon (regla 12). Ademas hay"
-                        + " {} habilitada(s) sin sujeto que YA no conceden. Responsable: {} <{}>",
+                        + " un renombrado. NO basta con que en `identidad` exista esa misma clave:"
+                        + " puede haberse reasignado a otra persona o a otro grupo. Antes de tocar"
+                        + " nada, comprueba en `identidad` que es el MISMO sujeto —su id de"
+                        + " `identidad` y su fecha de alta anteriores a V5, y en su auditoria que"
+                        + " esa clave no se renombro ni se volvio a dar de alta—. Si lo es, cualquier"
+                        + " modificacion, afiliacion o permiso que lo nombre lo adopta aqui y vuelve"
+                        + " a conceder. Si NO lo es —la clave es de un sujeto nuevo—, no la toques"
+                        + " pensando en esta fila: la huerfana deja de conceder sola el dia que se"
+                        + " indica, a los {} dias de V6, y los eventos del sujeto nuevo que la"
+                        + " nombren se apartaran con su propio aviso hasta que alguien decida a mano"
+                        + " (#125). Esta caja no edita ni borra estas filas: su unico escritor es el"
+                        + " consumidor del buzon (regla 12). Ademas hay {} habilitada(s) sin sujeto"
+                        + " que YA no conceden. Responsable: {} <{}>",
                 queConceden.size(),
                 hoy,
                 lista,

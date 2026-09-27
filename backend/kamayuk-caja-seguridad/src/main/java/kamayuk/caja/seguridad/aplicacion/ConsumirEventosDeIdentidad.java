@@ -219,22 +219,34 @@ public class ConsumirEventosDeIdentidad {
      * configurado— daria de noche el dia siguiente, y el aviso diria «concede» de una fila que el
      * guardia ya niega.
      *
-     * <p>Las que ya no conceden van a una linea del registro y no al responsable: ya no son un
-     * riesgo, y avisar de ellas cada cinco minutos para siempre es el canal que grita en lo
-     * corriente (#437).
+     * <p><b>El ERROR al responsable se repite en cada corrida</b> mientras quede alguna que
+     * concede, como el de los pospuestos: es un riesgo vivo con fecha de fin —el plazo—, y callarlo
+     * entre corridas seria esconderlo. <b>Las que ya no conceden, no</b>: ya no son un riesgo, y
+     * hasta la ronda 2 una linea WARN las contaba en cada corrida, cada cinco minutos y sin fin,
+     * que es el canal que grita en lo corriente (#437). Ahora el WARN nombra solo las que dejaron
+     * de conceder HOY —su ultimo dia fue ayer—, asi que cada fila aparece un solo dia, calculado
+     * con el reloj inyectado; las demas solo entran como cuenta en el ERROR, si lo hay.
      *
      * @return cuantas se avisaron; cero, que es lo corriente en una base implantada despues de #111
      */
     public int avisarDeLasFilasSinSujeto() {
         LocalDate hoy = ZonaHoraria.diaDe(reloj.instant());
         AplicarUnEventoDeIdentidad.FilasSinSujeto filas = aplicador.filasSinSujeto(hoy);
-        if (filas.queYaNoConceden() > 0) {
+        if (!filas.queDejaronDeConcederHoy().isEmpty()) {
+            java.util.StringJoiner cuales = new java.util.StringJoiner(", ");
+            for (kamayuk.caja.seguridad.FilaSinSujeto fila : filas.queDejaronDeConcederHoy()) {
+                cuales.add(fila.tabla() + " «" + fila.clave() + "» (id " + fila.id() + " aqui)");
+            }
             log.warn(
-                    "{} fila(s) habilitada(s) de usuario o grupo sin sujeto de `identidad` ya NO"
-                            + " conceden: paso su plazo de {} dias desde V6, o no tienen fecha"
-                            + " (#125). Si alguna es legitima, se recupera tocandola en `identidad`",
-                    filas.queYaNoConceden(),
-                    kamayuk.caja.seguridad.dominio.PlazoDeAdopcion.DIAS);
+                    "HOY ({}) dejan de conceder {} fila(s) de usuario o grupo sin sujeto de"
+                            + " `identidad`, al cumplirse su plazo de {} dias desde V6 (#125): {}."
+                            + " No se vuelve a decir manana. Si alguna era legitima, se recupera"
+                            + " cuando `identidad` la toque, comprobando antes que es el MISMO"
+                            + " sujeto y no una clave reasignada",
+                    hoy,
+                    filas.queDejaronDeConcederHoy().size(),
+                    kamayuk.caja.seguridad.dominio.PlazoDeAdopcion.DIAS,
+                    cuales);
         }
         if (filas.queConceden().isEmpty()) {
             return 0;
