@@ -62,4 +62,12 @@ public record ReciboDelTurno(
     public boolean abonaEnElLibro() {
         return tipoDePago.abonaEnElLibro();
     }
+
+    /**
+     * Si produce un evento que hay que entregar al sistema que emitio la orden. Ver {@link
+     * TipoDePago#produceEvento}: <b>no es lo mismo</b> que {@link #abonaEnElLibro()} (#118).
+     */
+    public boolean produceEvento() {
+        return tipoDePago.produceEvento();
+    }
 }

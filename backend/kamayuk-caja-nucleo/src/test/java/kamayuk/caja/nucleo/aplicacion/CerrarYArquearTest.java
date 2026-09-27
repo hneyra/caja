@@ -97,6 +97,42 @@ class CerrarYArquearTest {
         }
 
         @Test
+        @DisplayName(
+                "una cuota inicial de convenio no abona en el libro, pero SI produce evento"
+                        + " (#118)")
+        void laCuotaInicialDeConvenioCuentaComoConEventoAunqueNoAbone() {
+            // PRECONVENIO no deja asiento en el libro (TipoDePago#abonaEnElLibro), pero el
+            // sistema que emitio la orden si tiene que enterarse de que la cuota se cobro para
+            // formalizar el convenio: produce evento igual que un cobro NORMAL. Antes de #118,
+            // el cuadre usaba abonaEnElLibro() para esta pregunta y la habria contado como
+            // "sinEvento" -como si nadie tuviera que avisarse-, que es el mismo error que
+            // ArqueoDelTurnoTest fija en el dominio.
+            CierresEnMemoria cierres =
+                    new CierresEnMemoria()
+                            .conRecibosDelTurno(TURNO, preconvenio(1, "150.00", "0.00"));
+            BuzonEnMemoria buzon = new BuzonEnMemoria();
+            buzon.encolar(evento(1L, EstadoDelEvento.ENTREGADO));
+
+            CerrarTurno.Cerrado cerrado =
+                    cerrarTurno(cierres, buzon)
+                            .cerrar(
+                                    new CerrarTurno.Cierre(
+                                            "C-01",
+                                            CAJERO,
+                                            HOY,
+                                            Map.of(FormaDePago.EFECTIVO, Dinero.de("150.00"))),
+                                    porQue());
+
+            assertThat(cerrado.cuadre().conEvento())
+                    .as(
+                            "la cuota inicial formaliza el convenio: el sistema que emitio la"
+                                    + " orden tiene que enterarse, aunque el libro no la trate"
+                                    + " como un abono (#35)")
+                    .isEqualTo(Dinero.de("150.00"));
+            assertThat(cerrado.cuadre().sinEvento()).isEqualTo(Dinero.CERO);
+        }
+
+        @Test
         @DisplayName("un descuadre de caja NO impide cerrar: es justo lo que hay que dejar escrito")
         void elDescuadreDeCajaSeGuarda() {
             CierresEnMemoria cierres =
@@ -338,6 +374,10 @@ class CerrarYArquearTest {
 
     private static ReciboDelTurno tasa(long numero, String total, String anulado) {
         return recibo(numero, TipoDePago.TASA, total, anulado);
+    }
+
+    private static ReciboDelTurno preconvenio(long numero, String total, String anulado) {
+        return recibo(numero, TipoDePago.PRECONVENIO, total, anulado);
     }
 
     private static ReciboDelTurno recibo(

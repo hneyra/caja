@@ -91,11 +91,15 @@ public class ArqueoDeTurno {
         Dinero conEvento = Dinero.CERO;
         Dinero sinEvento = Dinero.CERO;
         for (ReciboDelTurno recibo : recibos) {
-            // El NETO del recibo: cero si se anulo. Un recibo de caja de TASAS no produce
-            // evento —el concepto es de la propia caja, no hay a quien avisarle— y por eso
-            // cuadra solo contra el recibo. Meterlo en la comprobacion de entrega haria que
-            // todo turno que cobrara una tasa no pudiera cerrar nunca.
-            if (recibo.abonaEnElLibro()) {
+            // El NETO del recibo: cero si se anulo. La pregunta es "produjo un evento", NO
+            // "abona en el libro" (#118): son distintas y PRECONVENIO es donde difieren —no
+            // abona, pero SI avisa al sistema de origen (TipoDePago#produceEvento). Antes de
+            // #118 esta linea leia abonaEnElLibro(), que para una tasa da lo mismo respuesta
+            // pero para una cuota inicial de convenio la habria contado como "sin evento"
+            // pese a que si tiene destinatario. Hoy PRECONVENIO nunca se construye (#35), asi
+            // que el defecto era inalcanzable; ArqueoDelTurnoTest y CerrarYArquearTest fijan
+            // la distincion para que seguir siendolo no dependa de que nadie lo intente.
+            if (recibo.produceEvento()) {
                 conEvento = conEvento.mas(recibo.neto());
             } else {
                 sinEvento = sinEvento.mas(recibo.neto());

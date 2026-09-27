@@ -59,4 +59,32 @@ public enum TipoDePago {
     public boolean abonaEnElLibro() {
         return this != TASA && this != PRECONVENIO;
     }
+
+    /**
+     * Si un recibo de esta clase produce un evento de pago que hay que entregar al sistema que
+     * emitio la orden (ADR-0026 §3, #34). Es <b>la</b> definicion de «recibo que produce evento»
+     * (#118): antes de unificarse aqui, la misma pregunta se contestaba tres veces por separado —
+     * {@link kamayuk.caja.nucleo.aplicacion.AnularRecibo} con un {@code == TASA} escrito a mano,
+     * {@link kamayuk.caja.nucleo.aplicacion.CobrarOrdenes} por construccion, sin comprobar nada
+     * porque solo emite {@link #NORMAL}, y {@link
+     * kamayuk.caja.nucleo.aplicacion.ArqueoDeTurno#cuadrar} leyendo {@link #abonaEnElLibro()} como
+     * si dijera lo mismo—.
+     *
+     * <p><b>No es lo mismo que {@link #abonaEnElLibro()}, y {@link #PRECONVENIO} es donde
+     * difieren.</b> Para {@link #TASA} coinciden —un derecho de tramite no viene de ninguna orden,
+     * no hay sistema de origen a quien avisar, y tampoco deja asiento—. Pero la cuota inicial de un
+     * convenio {@link #PRECONVENIO} <b>no abona</b> (su efecto es el acogimiento entero, no un
+     * abono parcial; #35) y aun asi <b>si tiene que avisar</b>: el sistema que emitio la orden
+     * necesita saber que esa cuota se cobro para poder formalizar el convenio. Confundir las dos
+     * preguntas era exactamente el defecto que #118 midio en {@code ArqueoDeTurno#cuadrar}: usaba
+     * {@code abonaEnElLibro()} para decidir que «produjo un evento», y con un {@link #PRECONVENIO}
+     * —hoy inalcanzable, porque #35 nunca lo construye— lo habria contado como si nadie tuviera que
+     * enterarse.
+     *
+     * <p>Solo {@link #TASA} no produce evento: el concepto lo cobra la propia caja, nunca vino de
+     * una orden y no hay a quien avisarle (#33).
+     */
+    public boolean produceEvento() {
+        return this != TASA;
+    }
 }

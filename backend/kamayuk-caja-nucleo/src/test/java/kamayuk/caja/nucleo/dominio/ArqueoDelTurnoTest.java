@@ -224,6 +224,27 @@ class ArqueoDelTurnoTest {
         }
 
         @Test
+        @DisplayName(
+                "produceEvento() no es abonaEnElLibro(): PRECONVENIO no abona y SI avisa (#118)")
+        void produceEventoDifiereDeAbonaEnElLibroEnPreconvenio() {
+            // Solo una tasa no tiene a quien avisarle: el concepto lo cobra la propia caja y
+            // nunca vino de una orden.
+            assertThat(TipoDePago.TASA.produceEvento()).isFalse();
+            assertThat(TipoDePago.NORMAL.produceEvento()).isTrue();
+
+            // Y aqui es donde las dos preguntas se separan: la cuota inicial de un convenio NO
+            // abona en el libro (su efecto es el acogimiento entero, no un abono; #35) pero SI
+            // produce evento, porque el sistema que emitio la orden tiene que enterarse de que
+            // se cobro para poder formalizar el convenio. Antes de #118,
+            // ArqueoDeTurno#cuadrar leia abonaEnElLibro() para esta misma pregunta, y con un
+            // PRECONVENIO habria contado sin avisar lo que si avisa.
+            assertThat(TipoDePago.PRECONVENIO.abonaEnElLibro()).isFalse();
+            assertThat(TipoDePago.PRECONVENIO.produceEvento())
+                    .as("difiere de abonaEnElLibro(): no abona, pero el origen si se entera")
+                    .isTrue();
+        }
+
+        @Test
         @DisplayName("y el documento de origen de un recibo se compone en un solo sitio")
         void elDocumentoDeOrigen() {
             NumeroDeRecibo numero = new NumeroDeRecibo("001", 123);

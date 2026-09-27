@@ -185,7 +185,21 @@ public class CobrarOrdenes {
         long reciboId = Objects.requireNonNull(emitido.id(), "Un recibo emitido trae su id");
         ordenes.marcarPagadas(peticion.ordenes(), reciboId);
 
-        // 5. El buzon, EN LA MISMA TRANSACCION. Si la fila esta, el recibo esta.
+        // 5. El buzon, EN LA MISMA TRANSACCION. Si la fila esta, el recibo esta. Este caso de
+        // uso solo emite TipoDePago.NORMAL (arriba), y TipoDePago#produceEvento() (#118, la
+        // UNICA definicion de "recibo que produce evento") dice que ese tipo si produce: la
+        // comprobacion no protege contra un caso posible hoy, ata este sitio a esa definicion
+        // para que agregar aqui otro tipo de pago sin revisar el buzon salga con un mensaje y
+        // no en silencio.
+        if (!emitido.tipoDePago().produceEvento()) {
+            throw new IllegalStateException(
+                    "CobrarOrdenes emitio un recibo "
+                            + emitido.tipoDePago()
+                            + ", y TipoDePago#produceEvento() dice que ese tipo NO produce"
+                            + " evento: este caso de uso solo sabe emitir NORMAL, que si"
+                            + " produce. Revisar el buzon antes de admitir aqui otro tipo de"
+                            + " pago (#118)");
+        }
         UUID pagoId = UUID.randomUUID();
         EventoDePago evento =
                 buzon.encolar(

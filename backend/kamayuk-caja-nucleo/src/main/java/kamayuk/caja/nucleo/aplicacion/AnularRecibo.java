@@ -197,10 +197,12 @@ public class AnularRecibo {
     /**
      * Publica la anulacion al sistema que emitio las ordenes.
      *
-     * <p>Un recibo de caja de TASAS no produce evento y devuelve {@code null}: el concepto era de
-     * la propia caja, no hubo orden y no hay a quien avisarle. Mandarlo igualmente obligaria al
-     * receptor a decidir que «no encuentro ese pago» es normal, y entonces no podria distinguir un
-     * recibo de tasas de un pago que se perdio.
+     * <p>Un recibo cuyo {@link TipoDePago#produceEvento()} es falso no produce evento y devuelve
+     * {@code null} —hoy solo {@link TipoDePago#TASA}—: el concepto era de la propia caja, no hubo
+     * orden y no hay a quien avisarle. Mandarlo igualmente obligaria al receptor a decidir que «no
+     * encuentro ese pago» es normal, y entonces no podria distinguir un recibo de tasas de un pago
+     * que se perdio. Es la <b>unica</b> definicion de la pregunta (#118): antes se repetia, con
+     * otras palabras, en {@link kamayuk.caja.nucleo.aplicacion.ArqueoDeTurno#cuadrar}.
      *
      * <p>El {@code pagoOriginal} viaja dentro: el receptor reversa <b>los asientos de ese pago</b>,
      * y sin el identificador tendria que buscarlos por el numero del papel — que es texto y no una
@@ -208,7 +210,7 @@ public class AnularRecibo {
      */
     private @Nullable EventoDePago publicarLaAnulacion(
             Recibo recibo, MovimientoDeRecibo anulacion, LocalDate hoy, Dinero total) {
-        if (recibo.tipoDePago() == TipoDePago.TASA) {
+        if (!recibo.tipoDePago().produceEvento()) {
             return null;
         }
         long reciboId = Objects.requireNonNull(recibo.id());
