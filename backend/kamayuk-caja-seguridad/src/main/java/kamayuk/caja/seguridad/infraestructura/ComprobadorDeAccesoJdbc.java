@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import kamayuk.caja.autorizacion.ComprobadorDeAcceso;
 import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.persistencia.RepositorioJdbc;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,17 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>La vigencia se comprueba en los tres sitios (RF-123) —usuario, grupo y pertenencia—, porque
  * comprobar solo una deja abierta la puerta mas comoda: dar de baja al usuario y que siga entrando
  * por un grupo vigente.
+ *
+ * <h2>Y el sujeto de {@code identidad}, en el usuario y en el grupo (#125)</h2>
+ *
+ * <p>Una fila de {@code usuario} o de {@code grupo} sin {@code identidad_sujeto_id} no concede
+ * pasados {@link PlazoDeAdopcion#DIAS} dias desde su {@code sin_sujeto_desde} (V6), y sin esa fecha
+ * no concede nunca. Es la unica forma de cerrar una huerfana del defecto de #111 —la clave vieja de
+ * un renombrado, habilitada y con sus permisos— sin escribirla: su unico escritor es el aplicador
+ * del buzon (regla 12), y a ella ningun evento la va a volver a nombrar. El porque del plazo, y lo
+ * que cuesta, esta en {@link PlazoDeAdopcion}. La matriz de {@code LecturaDeLaCopiaLocalJdbc} lleva
+ * la misma condicion en los mismos dos sitios, y {@code LecturaDeLaCopiaLocalJdbcTest} lo mide par
+ * a par.
  *
  * <p>La consulta no filtra por municipalidad: lo hace la politica RLS con el contexto de la
  * transaccion (regla 2). Un usuario de otra municipalidad, sencillamente, no existe desde aqui.
@@ -71,6 +83,8 @@ public class ComprobadorDeAccesoJdbc extends RepositorioJdbc implements Comproba
                         + "      JOIN miembro m ON m.usuario_id = u.id AND m.activo"
                         + "      JOIN grupo g ON g.id = m.grupo_id"
                         + "                  AND g.habilitado"
+                        + "                  AND (g.identidad_sujeto_id IS NOT NULL"
+                        + "                       OR g.sin_sujeto_desde >= :corte)"
                         + "                  AND (g.vigencia_desde IS NULL OR g.vigencia_desde <= :fecha)"
                         + "                  AND (g.vigencia_hasta IS NULL OR g.vigencia_hasta >= :fecha)"
                         + "      JOIN permiso p ON p.grupo_id = g.id"
@@ -78,13 +92,15 @@ public class ComprobadorDeAccesoJdbc extends RepositorioJdbc implements Comproba
                         + "     WHERE u.cuenta = :usuario AND p."
                         + columna
                         + "  ), false)"
-                        // 3. Y por encima de todo: el usuario tiene que estar habilitado y
-                        //    vigente. Va al final para que se lea como lo que es, una
+                        // 3. Y por encima de todo: el usuario tiene que estar habilitado,
+                        //    vigente y ADOPTADO por un evento de `identidad` —o dentro del plazo
+                        //    para serlo (#125)—. Va al final para que se lea como lo que es, una
                         //    condicion que anula cualquier permiso.
                         + " AND EXISTS ("
                         + "   SELECT 1 FROM usuario u"
                         + "    WHERE u.cuenta = :usuario"
                         + "      AND u.habilitado"
+                        + "      AND (u.identidad_sujeto_id IS NOT NULL OR u.sin_sujeto_desde >= :corte)"
                         + "      AND (u.vigencia_desde IS NULL OR u.vigencia_desde <= :fecha)"
                         + "      AND (u.vigencia_hasta IS NULL OR u.vigencia_hasta >= :fecha))";
 
@@ -93,6 +109,7 @@ public class ComprobadorDeAccesoJdbc extends RepositorioJdbc implements Comproba
                         .param("usuario", usuario)
                         .param("acceso", acceso)
                         .param("fecha", fecha)
+                        .param("corte", PlazoDeAdopcion.primerInstanteQueConcede(fecha))
                         .query(Boolean.class)
                         .single());
     }

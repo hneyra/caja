@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import kamayuk.caja.seguridad.infraestructura.AlertaDeIdentidadEnElRegistro;
 import org.junit.jupiter.api.AfterEach;
@@ -339,6 +340,12 @@ class ElRegistroDeUnaVueltaTest {
                 List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
             throw new AssertionError("no deberia llamarse: " + pospuestos);
         }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, java.time.LocalDate hoy) {
+            throw new AssertionError("no deberia llamarse: " + queConceden);
+        }
     }
 
     /** Anota lo que se le pide avisar, sin componer prosa. */
@@ -364,6 +371,12 @@ class ElRegistroDeUnaVueltaTest {
             listas.add(List.copyOf(pospuestos));
             instantes.add(ahora);
             umbrales.add(umbral);
+        }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, java.time.LocalDate hoy) {
+            throw new AssertionError("aqui no se piden filas sin sujeto: " + queConceden);
         }
     }
 }

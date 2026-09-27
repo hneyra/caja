@@ -21,11 +21,13 @@ import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.Paginacion;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.dominio.Identidad;
 import kamayuk.caja.seguridad.dominio.Modulo;
 import kamayuk.caja.seguridad.dominio.Municipalidad;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -80,9 +82,26 @@ class LecturaDeLaCopiaLocalJdbcTest {
     private static final String FUTURO = "futuro";
     private static final String SIN_GRUPOS = "sin.grupos";
     private static final String NADIE = "nadie.de.aqui";
+    private static final String HUERFANA = "huerfana";
+    private static final String SIN_ADOPTAR = "sin.adoptar";
+    private static final String SIN_FECHA = "sin.fecha";
+
+    /** #125: el ultimo dia en que concede una fila sin sujeto, y el primero en que ya no. */
+    private static final LocalDate ULTIMO_DIA = PlazoDeAdopcion.corte(HOY);
+
+    private static final LocalDate VENCIDA = ULTIMO_DIA.minusDays(1);
 
     private static final List<String> CUENTAS =
-            List.of(JPEREZ, DESHABILITADO, VENCIDO, FUTURO, SIN_GRUPOS, NADIE);
+            List.of(
+                    JPEREZ,
+                    DESHABILITADO,
+                    VENCIDO,
+                    FUTURO,
+                    SIN_GRUPOS,
+                    NADIE,
+                    HUERFANA,
+                    SIN_ADOPTAR,
+                    SIN_FECHA);
 
     private static final String UBIGEO_A = "209921";
     private static final String UBIGEO_B = "209922";
@@ -102,6 +121,9 @@ class LecturaDeLaCopiaLocalJdbcTest {
     private static long tesoreriaDeA;
     private static long reportesDeA;
     private static long tesoreriaDeB;
+
+    /** El sujeto de `identidad` de cada fila sembrada CON el: uno distinto por fila. */
+    private static long siguienteSujeto = 1;
 
     @BeforeAll
     static void provisionar() throws SQLException, IOException {
@@ -178,10 +200,10 @@ class LecturaDeLaCopiaLocalJdbcTest {
 
         assertThat(preguntas)
                 .as(
-                        "el sujeto: 13 accesos en A y 2 en B, por 6 cuentas y 7 privilegios. Con"
+                        "el sujeto: 15 accesos en A y 2 en B, por 9 cuentas y 7 privilegios. Con"
                                 + " menos, la paridad se estaria afirmando sobre un escenario que no"
                                 + " es el que el javadoc describe")
-                .isEqualTo((13 + 2) * CUENTAS.size() * Privilegio.values().length);
+                .isEqualTo((15 + 2) * CUENTAS.size() * Privilegio.values().length);
         assertThat(concedidas)
                 .as(
                         "y el guardia concede algo y niega algo: sobre un escenario donde todo es"
@@ -287,6 +309,7 @@ class LecturaDeLaCopiaLocalJdbcTest {
                 .containsExactly(
                         "caja_tasas",
                         "caja_tributaria",
+                        "por_grupo_sin_adoptar",
                         "retirado_con_excepcion",
                         "todos",
                         "union_de_grupos",
@@ -313,6 +336,42 @@ class LecturaDeLaCopiaLocalJdbcTest {
         assertThat(en(municipalidadA, () -> concedeEspecial(JPEREZ, "retirado_con_excepcion")))
                 .as("medido contra el comprobador de produccion, no supuesto")
                 .isTrue();
+    }
+
+    @Test
+    @DisplayName(
+            "#125: la cuenta sin sujeto con el plazo vencido, o sin fecha, recibe una matriz"
+                    + " vacia; la que aun esta en plazo, la de su grupo")
+    void laCuentaSinSujetoComoElGuardia() {
+        assertThat(matrizEn(municipalidadA, HUERFANA))
+                .as(
+                        "[habilitada y en Cajeros: lo unico que la anula es que lleva mas de %d"
+                                + " dias sin sujeto de identidad]",
+                        PlazoDeAdopcion.DIAS)
+                .isEmpty();
+        assertThat(matrizEn(municipalidadA, SIN_FECHA)).isEmpty();
+        assertThat(matrizEn(municipalidadA, SIN_ADOPTAR))
+                .as("[el ultimo dia de su plazo concede como cualquier miembro de Cajeros]")
+                .containsEntry(
+                        "caja_tributaria", EnumSet.of(Privilegio.LECTURA, Privilegio.IMPRESION))
+                .containsEntry("todos", EnumSet.allOf(Privilegio.class));
+        assertThat(en(municipalidadA, () -> concedeLectura(HUERFANA, "caja_tributaria")))
+                .as("medido contra el comprobador de produccion, no supuesto")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName(
+            "#125: el grupo sin sujeto con el plazo vencido no concede; el que aun esta en plazo, si")
+    void elGrupoSinSujetoComoElGuardia() {
+        Map<String, Set<Privilegio>> matriz = matrizEn(municipalidadA, JPEREZ);
+
+        assertThat(matriz)
+                .as(
+                        "[el «Cajeros» viejo de un renombrado antes de #111: habilitado, con jperez"
+                                + " dentro y concediendo, hasta que pasa su plazo]")
+                .doesNotContainKey("por_grupo_huerfano");
+        assertThat(matriz.get("por_grupo_sin_adoptar")).containsExactly(Privilegio.LECTURA);
     }
 
     // ------------------------------------------------------------------ el aislamiento
@@ -377,7 +436,7 @@ class LecturaDeLaCopiaLocalJdbcTest {
         assertThat(
                         en(municipalidadA, () -> lectura.accesos(Paginacion.de(0, 200, "codigo")))
                                 .totalElementos())
-                .isEqualTo(13);
+                .isEqualTo(15);
         assertThat(
                         en(municipalidadB, () -> lectura.accesos(Paginacion.de(0, 200, "codigo")))
                                 .contenido()
@@ -420,6 +479,10 @@ class LecturaDeLaCopiaLocalJdbcTest {
                                     }
                                     return concedidos;
                                 }));
+    }
+
+    private static boolean concedeLectura(String cuenta, String codigo) {
+        return comprobador.autoriza(cuenta, codigo, Privilegio.LECTURA, HOY);
     }
 
     private static boolean concedeEspecial(String cuenta, String codigo) {
@@ -477,6 +540,8 @@ class LecturaDeLaCopiaLocalJdbcTest {
         long todos = acceso(m, reportesDeA, "todos", true);
         acceso(m, reportesDeA, "sin_permiso", true);
         long union = acceso(m, reportesDeA, "union_de_grupos", true);
+        long porGrupoHuerfano = acceso(m, tesoreriaDeA, "por_grupo_huerfano", true);
+        long porGrupoSinAdoptar = acceso(m, tesoreriaDeA, "por_grupo_sin_adoptar", true);
 
         long cajeros = grupo(m, "Cajeros", true, null, null);
         long caducado = grupo(m, "Caducado", true, null, AYER);
@@ -484,9 +549,19 @@ class LecturaDeLaCopiaLocalJdbcTest {
         long deshabilitado = grupo(m, "Deshabilitado", false, null, null);
         long deBaja = grupo(m, "Con la pertenencia de baja", true, null, null);
         long soloHoy = grupo(m, "Vigente solo hoy", true, HOY, HOY);
+        long grupoHuerfano = grupoSinSujeto(m, "Cajeros viejo", VENCIDA);
+        long grupoSinAdoptar = grupoSinSujeto(m, "Sin adoptar", ULTIMO_DIA);
 
         jperezDeA = usuario(m, JPEREZ, "Juana Perez Chero", true, null, null);
-        for (long g : List.of(cajeros, caducado, futuro, deshabilitado, soloHoy)) {
+        for (long g :
+                List.of(
+                        cajeros,
+                        caducado,
+                        futuro,
+                        deshabilitado,
+                        soloHoy,
+                        grupoHuerfano,
+                        grupoSinAdoptar)) {
             miembro(m, g, jperezDeA, true);
         }
         miembro(m, deBaja, jperezDeA, false);
@@ -498,6 +573,9 @@ class LecturaDeLaCopiaLocalJdbcTest {
         miembro(m, cajeros, usuario(m, VENCIDO, "Usuario vencido", true, null, AYER), true);
         miembro(m, cajeros, usuario(m, FUTURO, "Usuario futuro", true, MANANA, null), true);
         usuario(m, SIN_GRUPOS, "Usuario sin grupos", true, null, null);
+        miembro(m, cajeros, usuarioSinSujeto(m, HUERFANA, VENCIDA), true);
+        miembro(m, cajeros, usuarioSinSujeto(m, SIN_ADOPTAR, ULTIMO_DIA), true);
+        miembro(m, cajeros, usuarioSinSujeto(m, SIN_FECHA, null), true);
 
         permisoDeGrupo(m, cajaTributaria, cajeros, Privilegio.LECTURA, Privilegio.IMPRESION);
         permisoDeGrupo(m, cajaTasas, cajeros, Privilegio.LECTURA);
@@ -515,6 +593,8 @@ class LecturaDeLaCopiaLocalJdbcTest {
         permisoDeGrupo(m, todos, soloHoy, Privilegio.LECTURA);
         permisoDeGrupo(m, union, cajeros, Privilegio.LECTURA);
         permisoDeGrupo(m, union, soloHoy, Privilegio.MODIFICACION);
+        permisoDeGrupo(m, porGrupoHuerfano, grupoHuerfano, Privilegio.LECTURA);
+        permisoDeGrupo(m, porGrupoSinAdoptar, grupoSinAdoptar, Privilegio.LECTURA);
     }
 
     /** La municipalidad B: la MISMA cuenta y los mismos dos codigos, con otros privilegios. */
@@ -554,7 +634,8 @@ class LecturaDeLaCopiaLocalJdbcTest {
         return insertar(
                 m,
                 "grupo",
-                "nombre, habilitado, vigencia_desde, vigencia_hasta",
+                "identidad_sujeto_id, nombre, habilitado, vigencia_desde, vigencia_hasta",
+                siguienteSujeto++,
                 nombre,
                 habilitado,
                 desde,
@@ -572,12 +653,35 @@ class LecturaDeLaCopiaLocalJdbcTest {
         return insertar(
                 m,
                 "usuario",
-                "cuenta, nombre, habilitado, vigencia_desde, vigencia_hasta",
+                "identidad_sujeto_id, cuenta, nombre, habilitado, vigencia_desde, vigencia_hasta",
+                siguienteSujeto++,
                 cuenta,
                 nombre,
                 habilitado,
                 desde,
                 hasta);
+    }
+
+    /** #125: un grupo habilitado y vigente SIN sujeto de identidad, con la fecha de V6 dada. */
+    private static long grupoSinSujeto(long m, String nombre, LocalDate desde) throws SQLException {
+        return insertar(m, "grupo", "nombre, sin_sujeto_desde", nombre, enLima(desde));
+    }
+
+    /** #125: una cuenta habilitada y vigente SIN sujeto; {@code desde} nulo es «sin fecha». */
+    private static long usuarioSinSujeto(long m, String cuenta, @Nullable LocalDate desde)
+            throws SQLException {
+        return insertar(
+                m,
+                "usuario",
+                "cuenta, nombre, sin_sujeto_desde",
+                cuenta,
+                "Sin sujeto",
+                desde == null ? null : enLima(desde));
+    }
+
+    /** El comienzo del dia en Lima, que es con lo que el guardia corta el plazo. */
+    private static java.time.OffsetDateTime enLima(LocalDate dia) {
+        return ZonaHoraria.comienzoDelDia(dia).atOffset(java.time.ZoneOffset.UTC);
     }
 
     private static void miembro(long m, long grupo, long usuario, boolean activo)

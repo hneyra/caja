@@ -2,10 +2,13 @@ package kamayuk.caja.seguridad.infraestructura;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.StringJoiner;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -113,6 +116,42 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                 pospuestos.size(),
                 enMinutos(umbral),
                 lista,
+                responsable,
+                canal);
+    }
+
+    @Override
+    public void hayFilasSinSujeto(
+            List<FilaSinSujeto> queConceden, long queYaNoConceden, LocalDate hoy) {
+        StringJoiner lista = new StringJoiner("; ");
+        for (FilaSinSujeto fila : queConceden) {
+            lista.add(
+                    fila.tabla()
+                            + " «"
+                            + fila.clave()
+                            + "» (id "
+                            + fila.id()
+                            + " aqui), sin sujeto desde "
+                            + fila.desde()
+                            + ", concede hasta el "
+                            + fila.concedeHasta());
+        }
+        REGISTRO.error(
+                "LA COPIA LOCAL DE LA AUTORIZACION TIENE {} FILA(S) SIN SUJETO DE `identidad` QUE"
+                        + " TODAVIA CONCEDEN (hoy es {}): {}. Ningun evento las adopto desde V5, y"
+                        + " desde aqui no se sabe si cada una es una cuenta o un grupo legitimo que"
+                        + " espera su primer evento o una huerfana que el defecto de #111 dejo tras"
+                        + " un renombrado. Si EXISTE en `identidad` con esa clave, tocala alli"
+                        + " —cualquier modificacion, afiliacion o permiso que la nombre— y el evento"
+                        + " la adopta; si no existe, no hay nada que hacer: deja de conceder sola el"
+                        + " dia que se indica, a los {} dias de V6 (#125). Esta caja no la edita ni la"
+                        + " borra: su unico escritor es el consumidor del buzon (regla 12). Ademas hay"
+                        + " {} habilitada(s) sin sujeto que YA no conceden. Responsable: {} <{}>",
+                queConceden.size(),
+                hoy,
+                lista,
+                PlazoDeAdopcion.DIAS,
+                queYaNoConceden,
                 responsable,
                 canal);
     }

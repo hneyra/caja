@@ -3,10 +3,12 @@ package kamayuk.caja.seguridad.aplicacion;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
@@ -199,6 +201,46 @@ public class ConsumirEventosDeIdentidad {
         }
         alerta.hayEventosPospuestos(List.copyOf(viejos), ahora, EDAD_QUE_SE_AVISA);
         return viejos.size();
+    }
+
+    /**
+     * El aviso de las filas sin sujeto de {@code identidad} que todavia conceden, <b>una vez por
+     * corrida</b> (#125). Lo llama el runner al final, junto al de los pospuestos.
+     *
+     * <p>Una fila sin sujeto no es un fallo de la corrida —ningun evento que esta corrida pudiera
+     * aplicar la arregla—, asi que no falla ni cambia el codigo de salida. Lo que este metodo evita
+     * es que una huerfana de #111 conceda durante su plazo sin que lo sepa nadie, y que una cuenta
+     * legitima que espera su primer evento pierda el acceso sin que nadie lo viera venir: el aviso
+     * dice cual es cada una y el dia en que deja de conceder (ver {@link
+     * kamayuk.caja.seguridad.dominio.PlazoDeAdopcion}).
+     *
+     * <p>El dia es el de Lima ({@link ZonaHoraria#diaDe}), el mismo con que el guardia corta: el
+     * bean del reloj esta en esa zona, pero un {@code Clock} en UTC —el de las pruebas, o uno mal
+     * configurado— daria de noche el dia siguiente, y el aviso diria «concede» de una fila que el
+     * guardia ya niega.
+     *
+     * <p>Las que ya no conceden van a una linea del registro y no al responsable: ya no son un
+     * riesgo, y avisar de ellas cada cinco minutos para siempre es el canal que grita en lo
+     * corriente (#437).
+     *
+     * @return cuantas se avisaron; cero, que es lo corriente en una base implantada despues de #111
+     */
+    public int avisarDeLasFilasSinSujeto() {
+        LocalDate hoy = ZonaHoraria.diaDe(reloj.instant());
+        AplicarUnEventoDeIdentidad.FilasSinSujeto filas = aplicador.filasSinSujeto(hoy);
+        if (filas.queYaNoConceden() > 0) {
+            log.warn(
+                    "{} fila(s) habilitada(s) de usuario o grupo sin sujeto de `identidad` ya NO"
+                            + " conceden: paso su plazo de {} dias desde V6, o no tienen fecha"
+                            + " (#125). Si alguna es legitima, se recupera tocandola en `identidad`",
+                    filas.queYaNoConceden(),
+                    kamayuk.caja.seguridad.dominio.PlazoDeAdopcion.DIAS);
+        }
+        if (filas.queConceden().isEmpty()) {
+            return 0;
+        }
+        alerta.hayFilasSinSujeto(filas.queConceden(), filas.queYaNoConceden(), hoy);
+        return filas.queConceden().size();
     }
 
     private static String motivoDe(RuntimeException noSePudo) {

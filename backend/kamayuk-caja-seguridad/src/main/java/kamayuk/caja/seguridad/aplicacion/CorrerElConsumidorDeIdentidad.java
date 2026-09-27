@@ -58,9 +58,14 @@ import org.springframework.stereotype.Component;
  * un `Job` fallido cada cinco minutos. Lo que no puede seguir pasando es que no se entere nadie
  * (hallazgo H7 de la medida de AC-5/AC-6).
  *
- * <p>El aviso va DENTRO del {@code try} y despues del bucle, asi que una corrida que muere porque
- * {@code identidad} no contesta no lo manda: ahi lo que hay que mirar es otra cosa, y el rojo de la
- * corrida ya lo dice.
+ * <p>Y detras, las filas sin sujeto de {@code identidad} que todavia conceden (#125): tambien una
+ * vez por corrida, tampoco un fallo de la corrida. Son las de antes de V5 que ningun evento adopto
+ * —legitimas que esperan o huerfanas de #111—, y el aviso dice el dia en que cada una deja de
+ * conceder.
+ *
+ * <p>Los dos avisos van DENTRO del {@code try} y despues del bucle, asi que una corrida que muere
+ * porque {@code identidad} no contesta no los manda: ahi lo que hay que mirar es otra cosa, y el
+ * rojo de la corrida ya lo dice.
  */
 @Component
 @Profile("batch")
@@ -156,6 +161,7 @@ public class CorrerElConsumidorDeIdentidad implements ApplicationRunner {
                         VUELTAS_MAXIMAS);
             }
             consumidor.avisarDeLosPospuestosQueLlevanDemasiado(pospuestos.values());
+            consumidor.avisarDeLasFilasSinSujeto();
         } finally {
             anterior.ifPresentOrElse(TenantContext::fijar, TenantContext::limpiar);
         }

@@ -61,4 +61,25 @@ public interface AlertaDeEventosSinAplicar {
             java.util.List<EventoDeIdentidadRecibido> pospuestos,
             java.time.Instant ahora,
             java.time.Duration umbral);
+
+    /**
+     * Las filas de {@code usuario} y {@code grupo} SIN sujeto de {@code identidad} que todavia
+     * conceden, una vez por corrida (#125).
+     *
+     * <p>No hay evento detras: son filas de antes de V5 que ninguno adopto. Desde aqui no se sabe
+     * si cada una es una cuenta legitima que espera su primer evento o una huerfana que no lo
+     * recibira nunca (ver {@link kamayuk.caja.seguridad.dominio.PlazoDeAdopcion}), asi que el aviso
+     * dice lo que hay que hacer en los dos casos: si existe en {@code identidad}, tocarla alli —la
+     * adopta el evento—; si no, nada: deja de conceder sola el dia que dice. Las que YA no conceden
+     * no se listan: no son un riesgo, y listarlas cada cinco minutos para siempre seria el canal
+     * que grita en lo corriente (#437). Van en cuenta, para que el aviso diga cuantas hay.
+     *
+     * @param queConceden las que conceden hoy, ordenadas por tabla y clave; nunca vacia
+     * @param queYaNoConceden cuantas habilitadas sin sujeto ya pasaron su plazo o no tienen fecha
+     * @param hoy el dia de Lima contra el que se midio el plazo, el mismo que usa el guardia
+     */
+    void hayFilasSinSujeto(
+            java.util.List<FilaSinSujeto> queConceden,
+            long queYaNoConceden,
+            java.time.LocalDate hoy);
 }

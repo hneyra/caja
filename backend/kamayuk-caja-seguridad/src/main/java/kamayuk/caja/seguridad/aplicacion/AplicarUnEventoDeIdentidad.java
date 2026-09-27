@@ -2,13 +2,17 @@ package kamayuk.caja.seguridad.aplicacion;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import kamayuk.caja.autorizacion.Privilegio;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.persistencia.RepositorioJdbc;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.TipoDeEventoDeIdentidad;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -89,10 +93,14 @@ import tools.jackson.databind.json.JsonMapper;
  * reciben eventos; y una fila de antes de V5 cuya PRIMERA modificacion tras la migracion sea
  * precisamente un renombrado tampoco se adopta —se busca por la clave que el evento trae, la NUEVA,
  * y la huerfana todavia tiene la vieja— asi que se inserta una fila nueva y la huerfana queda
- * intacta, un duplicado distinto del de un choque, porque aqui no hay ni un aviso que lo delate.
- * Las dos son <a href="https://github.com/hneyra/caja/issues/125">#125</a>, sin resolver aqui). El
- * acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por su
- * cuenta.
+ * intacta, un duplicado distinto del de un choque. Las dos son <a
+ * href="https://github.com/hneyra/caja/issues/125">#125</a>, y se cierran SIN escribirlas: el
+ * guardia deja de conceder por una fila sin sujeto pasado {@link PlazoDeAdopcion#DIAS} dias desde
+ * {@code sin_sujeto_desde} (V6), y mientras tanto {@link #filasSinSujeto} las lista para que el
+ * consumidor avise al responsable en cada corrida. Esta clase sigue siendo el unico escritor: la
+ * forma de «arreglar» una fila legitima es que {@code identidad} la toque y su evento la adopte
+ * aqui.) El acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por
+ * su cuenta.
  *
  * <p>Un choque —la clave nueva ya es de otra fila— tiene dos desenlaces distintos segun de que lado
  * este la fila que cambia: ver {@code casarParaEscribir} y {@code casarParaNombrar}, y la tabla de
@@ -243,6 +251,69 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
         return jdbc().sql("SELECT count(*) FROM identidad_evento_muerto")
                 .query(Long.class)
                 .single();
+    }
+
+    /**
+     * Las filas de {@code usuario} y {@code grupo} sin sujeto de {@code identidad}, partidas por si
+     * todavia conceden el dia {@code hoy} (#125). Solo lee, y solo las habilitadas: una fila
+     * deshabilitada no concede con sujeto ni sin el.
+     *
+     * <p>Vive aqui, junto a {@link #apartados()}, porque es la otra mitad de lo que esta copia no
+     * consiguio aplicar: un apartado es un evento que no entro; una fila sin sujeto, una fila a la
+     * que ningun evento llego. La condicion de «todavia concede» es la del guardia, letra por
+     * letra: {@code sin_sujeto_desde >=} {@link PlazoDeAdopcion#primerInstanteQueConcede}. El dia
+     * que se publica es el de Lima de ese instante.
+     */
+    @Transactional(readOnly = true)
+    public FilasSinSujeto filasSinSujeto(LocalDate hoy) {
+        OffsetDateTime corte = PlazoDeAdopcion.primerInstanteQueConcede(hoy);
+        List<FilaSinSujeto> queConceden =
+                jdbc().sql(
+                                "SELECT 'usuario' AS tabla, id, cuenta AS clave, sin_sujeto_desde"
+                                        + " FROM usuario WHERE identidad_sujeto_id IS NULL"
+                                        + " AND habilitado AND sin_sujeto_desde >= :corte"
+                                        + " UNION ALL"
+                                        + " SELECT 'grupo', id, nombre, sin_sujeto_desde"
+                                        + " FROM grupo WHERE identidad_sujeto_id IS NULL"
+                                        + " AND habilitado AND sin_sujeto_desde >= :corte"
+                                        + " ORDER BY tabla, clave")
+                        .param("corte", corte)
+                        .query(
+                                (fila, n) ->
+                                        new FilaSinSujeto(
+                                                fila.getString("tabla"),
+                                                fila.getLong("id"),
+                                                fila.getString("clave"),
+                                                ZonaHoraria.diaDe(
+                                                        fila.getObject(
+                                                                        "sin_sujeto_desde",
+                                                                        OffsetDateTime.class)
+                                                                .toInstant())))
+                        .list();
+        long queYaNoConceden =
+                jdbc().sql(
+                                "SELECT (SELECT count(*) FROM usuario WHERE identidad_sujeto_id"
+                                        + " IS NULL AND habilitado AND (sin_sujeto_desde IS NULL"
+                                        + " OR sin_sujeto_desde < :corte))"
+                                        + " + (SELECT count(*) FROM grupo WHERE identidad_sujeto_id"
+                                        + " IS NULL AND habilitado AND (sin_sujeto_desde IS NULL"
+                                        + " OR sin_sujeto_desde < :corte))")
+                        .param("corte", corte)
+                        .query(Long.class)
+                        .single();
+        return new FilasSinSujeto(queConceden, queYaNoConceden);
+    }
+
+    /**
+     * Las filas sin sujeto de una municipalidad, partidas por si todavia conceden (#125).
+     *
+     * @param queConceden las que conceden hoy, por tabla y clave
+     * @param queYaNoConceden cuantas habilitadas ya no
+     */
+    public record FilasSinSujeto(List<FilaSinSujeto> queConceden, long queYaNoConceden) {
+        public FilasSinSujeto {
+            queConceden = List.copyOf(queConceden);
+        }
     }
 
     // ------------------------------------------------------------------

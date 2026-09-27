@@ -19,6 +19,7 @@ import kamayuk.caja.seguridad.dominio.Identidad;
 import kamayuk.caja.seguridad.dominio.LecturaDeLaCopiaLocal;
 import kamayuk.caja.seguridad.dominio.Modulo;
 import kamayuk.caja.seguridad.dominio.Municipalidad;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -48,9 +49,10 @@ import org.springframework.stereotype.Repository;
  *       cuenta y ese acceso, su columna decide, otorgue o niegue. Las siete columnas son {@code NOT
  *       NULL}, asi que un {@code NULL} aqui solo puede significar «no hay excepcion».
  *   <li><b>Si no la hay, la union de sus grupos</b> ({@code gx}): {@code bool_or} sobre los grupos
- *       habilitados y vigentes a la fecha, con la pertenencia activa.
- *   <li><b>Y por encima de todo</b>, el {@code EXISTS} del usuario habilitado y vigente, que anula
- *       la matriz entera.
+ *       habilitados, vigentes a la fecha y con sujeto de {@code identidad} —o en su {@link
+ *       PlazoDeAdopcion plazo} para tenerlo (#125)—, con la pertenencia activa.
+ *   <li><b>Y por encima de todo</b>, el {@code EXISTS} del usuario habilitado, vigente y con sujeto
+ *       (o en plazo), que anula la matriz entera.
  * </ol>
  *
  * <p><b>La diferencia con {@code rentas}, medida y a proposito:</b> el comprobador de esta caja
@@ -151,16 +153,20 @@ public class LecturaDeLaCopiaLocalJdbc extends RepositorioJdbc implements Lectur
                         + "     JOIN miembro m ON m.usuario_id = u.id AND m.activo"
                         + "     JOIN grupo g ON g.id = m.grupo_id"
                         + "                 AND g.habilitado"
+                        + "                 AND (g.identidad_sujeto_id IS NOT NULL"
+                        + "                      OR g.sin_sujeto_desde >= :corte)"
                         + "                 AND (g.vigencia_desde IS NULL OR g.vigencia_desde <= :fecha)"
                         + "                 AND (g.vigencia_hasta IS NULL OR g.vigencia_hasta >= :fecha)"
                         + "     JOIN permiso p ON p.grupo_id = g.id"
                         + "    WHERE u.cuenta = :cuenta AND p.acceso_id = a.id AND a.activo"
                         + " ) gx ON true"
-                        // 3. Y por encima de todo: el usuario habilitado y vigente.
+                        // 3. Y por encima de todo: el usuario habilitado, vigente y adoptado (o
+                        //    en plazo para serlo, #125), como el comprobador.
                         + " WHERE EXISTS ("
                         + "   SELECT 1 FROM usuario u"
                         + "    WHERE u.cuenta = :cuenta"
                         + "      AND u.habilitado"
+                        + "      AND (u.identidad_sujeto_id IS NOT NULL OR u.sin_sujeto_desde >= :corte)"
                         + "      AND (u.vigencia_desde IS NULL OR u.vigencia_desde <= :fecha)"
                         + "      AND (u.vigencia_hasta IS NULL OR u.vigencia_hasta >= :fecha))"
                         + " ORDER BY a.codigo";
@@ -181,7 +187,11 @@ public class LecturaDeLaCopiaLocalJdbc extends RepositorioJdbc implements Lectur
                         matriz.put(fila.getString("codigo"), otorgados);
                     }
                 };
-        jdbc().sql(sql).param("cuenta", cuenta).param("fecha", fecha).query(porFila);
+        jdbc().sql(sql)
+                .param("cuenta", cuenta)
+                .param("fecha", fecha)
+                .param("corte", PlazoDeAdopcion.primerInstanteQueConcede(fecha))
+                .query(porFila);
         return matriz;
     }
 

@@ -24,6 +24,7 @@ import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -1156,6 +1157,12 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                 java.time.Instant ahora,
                 java.time.Duration umbral) {
             throw new AssertionError("ningun evento de esta clase se pospone: " + pospuestos);
+        }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, java.time.LocalDate hoy) {
+            throw new AssertionError("el aplicador no avisa de filas sin sujeto: " + queConceden);
         }
     }
 
