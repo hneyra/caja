@@ -91,14 +91,17 @@ public class ArqueoDeTurno {
         Dinero conEvento = Dinero.CERO;
         Dinero sinEvento = Dinero.CERO;
         for (ReciboDelTurno recibo : recibos) {
-            // El NETO del recibo: cero si se anulo. La pregunta es "produjo un evento", NO
-            // "abona en el libro" (#118): son distintas y PRECONVENIO es donde difieren —no
-            // abona, pero SI avisa al sistema de origen (TipoDePago#produceEvento). Antes de
-            // #118 esta linea leia abonaEnElLibro(), que para una tasa da lo mismo respuesta
-            // pero para una cuota inicial de convenio la habria contado como "sin evento"
-            // pese a que si tiene destinatario. Hoy PRECONVENIO nunca se construye (#35), asi
-            // que el defecto era inalcanzable; ArqueoDelTurnoTest y CerrarYArquearTest fijan
-            // la distincion para que seguir siendolo no dependa de que nadie lo intente.
+            // El NETO del recibo: cero si se anulo. La pregunta es "produjo un evento"
+            // (TipoDePago#produceEvento, #118), y solo NORMAL la cumple: es lo unico que
+            // CobrarOrdenes encola. Antes de #118 esta linea leia abonaEnElLibro() —un metodo
+            // distinto, del cierre contra el libro (#36), retirado por quedarse sin llamador—,
+            // que para A_CUENTA y CUOTA_CONVENIO daba TRUE. Un turno con un recibo heredado de
+            // esos dos tipos (de antes del buzon, #35, V2) pasa entonces de contarse como "con
+            // evento" a contarse como "sin evento": el total del arqueo NO cambia —el neto se
+            // suma igual a un lado o al otro—, y es lo correcto, porque ninguno de los dos tiene
+            // una fila en pago_evento que entregar. PRECONVENIO seguia "sin evento" antes y
+            // sigue "sin evento" ahora: no cambia. ArqueoDelTurnoTest y CerrarYArquearTest fijan
+            // los cinco valores de TipoDePago contra esta pregunta.
             if (recibo.produceEvento()) {
                 conEvento = conEvento.mas(recibo.neto());
             } else {

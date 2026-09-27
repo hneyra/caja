@@ -160,9 +160,11 @@ de base ya aplicada, por una ganancia que nadie puede nombrar todavía.
 - **`RecaudacionDeTributo` sigue respondiendo por sistema de origen**, y el nombre del campo no
   cambia: renombrarlo sin renombrar la columna del esquema exigiría una migración nueva que no
   compra nada hasta D-17.
-- **La ADR no bloquea nada de lo que ya funciona**: `CobrarOrdenes`, `CobrarTasa`, `AnularRecibo` y
-  el arqueo siguen exactamente igual; lo único nuevo es la regla de arquitectura de la sección
-  siguiente, que vigila hacia adelante y no toca ninguna clase existente.
+- **La ADR no bloquea nada de lo que ya funciona**: `CobrarOrdenes`, `CobrarTasa` y `AnularRecibo`
+  cobran, emiten y anulan exactamente igual. **El arqueo de un turno con datos heredados sí
+  cambia** —ver la sección siguiente—, y es una corrección, no una regresión: un recibo `A_CUENTA` o
+  `CUOTA_CONVENIO` deja de contarse como si tuviera un evento pendiente de entregar cuando nunca lo
+  tuvo.
 
 ## Una sola definición de «recibo que produce evento»
 
@@ -175,35 +177,76 @@ al sistema de origen?» se contestaba tres veces, por separado:
 3. `ArqueoDeTurno.cuadrar` — usaba `recibo.abonaEnElLibro()` como si dijera lo mismo que «produjo
    un evento», para partir lo recaudado entre `conEvento` y `sinEvento`.
 
-**Medido si difieren de verdad: sí, y `PRECONVENIO` es donde se ve.** `abonaEnElLibro()` es falso
-para `TASA` y para `PRECONVENIO` (la cuota inicial formaliza el convenio entero; no es un abono
-parcial, #35). Pero un recibo `PRECONVENIO` **sí** tiene sistema de origen y **sí** necesita avisarle
-que se cobró para que ese sistema formalice el convenio — sólo `TASA` no tiene a quién avisar,
-porque el concepto lo cobra la propia caja y nunca vino de una orden. `AnularRecibo` ya lo tenía
-bien (comparaba contra `TASA`, no contra `abonaEnElLibro()`); `ArqueoDeTurno.cuadrar` no: usaba
-`abonaEnElLibro()`, así que un recibo `PRECONVENIO` —hoy inalcanzable, porque ningún caso de uso lo
-construye (#35)— habría caído en `sinEvento`, como si nadie tuviera que enterarse, cuando sí hay un
-destinatario. Es un defecto latente, no uno que un recibo real haya disparado nunca.
+**La primera versión de este ADR decía que `PRECONVENIO` era donde `abonaEnElLibro()` y «produce
+evento» diferían de verdad —que la cuota inicial no abona pero sí avisa, «para formalizar el
+convenio»—. Es falsa, y la revisión independiente la contrastó contra el código y contra `rentas`,
+no contra el nombre del valor:**
 
-**La unificación**: `TipoDePago.produceEvento()` (`this != TASA`) es ahora la única definición.
-`AnularRecibo.publicarLaAnulacion` la usa en vez de su comparación a mano. `ArqueoDeTurno.cuadrar`
-la usa en vez de `abonaEnElLibro()`, cerrando el defecto latente. `CobrarOrdenes` —que sólo emite
-`NORMAL` y nunca necesitó comprobar nada— gana una comprobación explícita contra la misma
-definición antes de encolar, para que agregar ahí un tipo de pago nuevo sin revisar el buzón salga
-con un mensaje y no en silencio; hoy esa comprobación nunca se dispara, porque `NORMAL.produceEvento()`
-es verdadero.
+- El comentario de la columna `recibo.tipo_pago` en `V2__ordenes_de_cobro_y_outbox.sql` dice, con
+  esas letras: «`A_CUENTA`, `PRECONVENIO` y `CUOTA_CONVENIO` ya no los puede escribir NADIE: son
+  conceptos de `rentas`, y la cuota inicial de un convenio se cobra "como cualquier otra orden"».
+- [ADR-0026 §5](https://github.com/hneyra/rentas/blob/main/docs/30-arquitectura/adr/ADR-0026-el-camino-del-dinero.md)
+  —de `rentas`, sobre el camino del dinero— lo confirma: «la ventanilla no cambia: Caja cobra la
+  cuota del convenio como cualquier otra orden», es decir como `NORMAL`.
+- Y en el código: `CobrarOrdenes` (línea 178) sólo emite `NORMAL`; `CobrarTasa` (línea 150) sólo
+  emite `TASA`. Ningún camino actual escribe `A_CUENTA`, `PRECONVENIO` ni `CUOTA_CONVENIO`, así que
+  ninguno de los tres encoló jamás un evento — ni antes del buzón, porque el buzón no existía, ni
+  después, porque nadie los construye.
+
+**La definición correcta, medida y no supuesta: `produceEvento()` es `this == NORMAL`.** Es lo
+único que el código de hoy encola. `TASA` no produce evento por lo de siempre —el concepto lo cobra
+la propia caja y nunca vino de una orden (#33)—, y `A_CUENTA`, `PRECONVENIO` y `CUOTA_CONVENIO`
+tampoco, porque son **legado de antes del buzón** (`sgtm`, previo a P5D): ninguna fila con esos tres
+valores tiene un evento en `pago_evento`, porque esa tabla no existía cuando se escribieron.
+
+**El defecto real, y qué cambia para un turno con datos heredados.** `ArqueoDeTurno.cuadrar` usaba
+`abonaEnElLibro()` —`this != TASA && this != PRECONVENIO`— para decidir `conEvento`/`sinEvento`.
+Eso da `TRUE` para `A_CUENTA` y `CUOTA_CONVENIO`. Con `produceEvento()`, un turno que incluya un
+recibo heredado de esos dos tipos —o del cierre ya firmado que `GET /turnos/{id}/cierre`
+(`EstadoDelCierreController`) sigue devolviendo— pasa de contarlo como `conEvento` a contarlo como
+`sinEvento`. `PRECONVENIO` seguía `sinEvento` antes (`abonaEnElLibro()` ya daba `false` para él) y
+sigue `sinEvento` ahora: no cambia. **El total no cambia en ningún caso** —`Cuadre.total()` es la
+suma de las dos mitades, y el neto del recibo se suma igual a un lado o al otro—; lo único que
+cambia es a qué mitad va. Y es lo correcto: ninguno de los tres tiene una fila en el buzón que
+entregar, así que contarlos contra `conEvento` afirmaba un destinatario que no existe.
+
+**La unificación**: `TipoDePago.produceEvento()` (`this == NORMAL`) es ahora la única definición.
+`AnularRecibo.publicarLaAnulacion` la usa en vez de su comparación a mano —y con ella, anular un
+recibo heredado tampoco publica nada; es además **hoy inalcanzable de otra forma**, porque
+`AnularRecibo.anular` exige que el turno sea el de hoy (`FueraDelDiaDePago`), y un recibo heredado
+es siempre de antes de la migración—. `ArqueoDeTurno.cuadrar` la usa en vez de `abonaEnElLibro()`,
+que se retira del código —`TipoDePago.abonaEnElLibro()` y `ReciboDelTurno.abonaEnElLibro()` no
+tenían más llamador en `src/main`—. `CobrarOrdenes`, que sólo emite `NORMAL`, no necesita ninguna
+comprobación: `NORMAL` es exactamente y únicamente el valor que `produceEvento()` acepta.
 
 ## Regla de arquitectura
 
-**Ninguna clase nueva de `kamayuk.caja.nucleo.dominio` puede depender de un tipo tributario de
-`kamayuk-caja-dominio-compartido`.** Hoy el único tipo así importado en ese paquete es
-`kamayuk.caja.dominio.Ejercicio`, y sólo lo usa `LineaDeRecibo`. La regla vive en
-`FronteraTributariaDelDominioTest` (`kamayuk-caja-aplicacion`, junto a `ArquitecturaTest`), con una
-lista blanca explícita de las tres clases que este ADR declara legado —`LineaDeRecibo`,
-`TipoDePago`, `RecaudacionDeTributo`— y su propia clase de muestra que la viola, en
-`kamayuk-caja-aplicacion/src/test/java/kamayuk/caja/verificaciones/muestras/`, siguiendo el patrón
-de `ReglasDeArquitecturaMuerdenTest` (comprobado que muerde: ver la fila de este issue en
-`docs/agent/HISTORY.md`).
+**Ninguna clase nueva de `kamayuk.caja.nucleo.dominio` puede depender de un tipo de
+`kamayuk.caja.dominio` (`kamayuk-caja-dominio-compartido`) que no sea uno de los dos genéricos que
+este contexto ya usa.** La primera versión de esta regla vigilaba sólo `Ejercicio` por nombre, y una
+regla así no impide nada nuevo: una clase que sumara `Alicuota`, `CodigoContribuyente` o `Placa`
+—tipos tributarios/catastrales de `dominio-compartido` que este contexto no usa— pasaría en verde,
+porque la lista no los nombraba.
+
+**La versión de esta ronda falla cerrado.** En vez de enumerar cada tipo prohibido, enumera los DOS
+tipos permitidos —medidos con `grep` sobre `kamayuk.caja.nucleo.dominio` entero: `Dinero` (todo
+importe) y `Observacion` (la regla 10) son los únicos que ese paquete usa hoy fuera de
+`Ejercicio`— y prohíbe todo el resto de `kamayuk.caja.dominio` por omisión. Un tipo tributario nuevo
+que ese paquete gane mañana queda vigilado sin tocar la regla.
+
+La lista blanca **por clase** baja a una sola: `LineaDeRecibo`, la única que depende de un tipo
+fuera de los dos genéricos (`Ejercicio`). `TipoDePago` y `RecaudacionDeTributo` —que este ADR
+también declara legado— no están en esa lista porque no la necesitan: ninguna de las dos depende de
+un tipo tributario, cargan el concepto en un enum y en un `String`. Siguen declaradas como legado
+aquí, en la Decisión; la lista de la regla es sólo lo que la dependencia de TIPOS obliga a eximir.
+
+La regla vive en `FronteraTributariaDelDominioTest` (`kamayuk-caja-aplicacion`, junto a
+`ArquitecturaTest`), con su propia clase de muestra que la viola,
+`kamayuk-caja-aplicacion/src/test/java/kamayuk/caja/verificaciones/muestras/ConceptoTributarioNuevoDeMuestra.java`
+—declara a propósito un campo `Alicuota`, **no** `Ejercicio`, para probar que la regla prohíbe por
+omisión y no por una lista que alguien tendría que acordarse de ampliar—, siguiendo el patrón de
+`ReglasDeArquitecturaMuerdenTest` (comprobado que muerde, contra la muestra y contra producción real:
+ver la fila de este issue en `docs/agent/HISTORY.md`).
 
 Es una regla **local** a este repositorio, no una regla compartida en `comun-verificaciones`: las
 otras cuatro caras del producto no heredan un recibo del monolito con esta forma, así que la regla
@@ -244,7 +287,9 @@ esta versión ya hace.
   dice cuándo reconsiderarlo; no dice qué cobra la caja el día que exista un puesto de mercado.
 - **No migra `recibo_detalle`, ni agrega una migración nueva.** El esquema queda exactamente como
   estaba.
-- **No cambia el comportamiento de ningún caso de uso.** `CobrarOrdenes`, `CobrarTasa` y
-  `AnularRecibo` cobran, emiten y anulan exactamente igual que antes; lo único que cambia es dónde
-  vive la pregunta «¿este recibo produce evento?» y que `ArqueoDeTurno.cuadrar` deja de tener un
-  defecto latente sobre un tipo de pago que hoy no se puede construir.
+- **No cambia el comportamiento de ningún caso de uso que cobra o anula.** `CobrarOrdenes`,
+  `CobrarTasa` y `AnularRecibo` cobran, emiten y anulan exactamente igual que antes.
+- **Sí cambia el arqueo de un turno con datos heredados.** Un recibo `A_CUENTA` o
+  `CUOTA_CONVENIO` pasa de contarse `conEvento` a contarse `sinEvento` en `ArqueoDeTurno.cuadrar`
+  (cierre y `GET /turnos/{id}/cierre`); `PRECONVENIO` no cambia, ya contaba `sinEvento`. El total
+  del arqueo es el mismo en los dos casos: sólo cambia a qué mitad va el neto del recibo.

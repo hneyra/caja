@@ -98,38 +98,48 @@ class CerrarYArquearTest {
 
         @Test
         @DisplayName(
-                "una cuota inicial de convenio no abona en el libro, pero SI produce evento"
-                        + " (#118)")
-        void laCuotaInicialDeConvenioCuentaComoConEventoAunqueNoAbone() {
-            // PRECONVENIO no deja asiento en el libro (TipoDePago#abonaEnElLibro), pero el
-            // sistema que emitio la orden si tiene que enterarse de que la cuota se cobro para
-            // formalizar el convenio: produce evento igual que un cobro NORMAL. Antes de #118,
-            // el cuadre usaba abonaEnElLibro() para esta pregunta y la habria contado como
-            // "sinEvento" -como si nadie tuviera que avisarse-, que es el mismo error que
-            // ArqueoDelTurnoTest fija en el dominio.
+                "un turno con recibos heredados (A_CUENTA, PRECONVENIO, CUOTA_CONVENIO) los"
+                        + " cuenta TODOS sin evento (#118, ronda 1)")
+        void unTurnoConRecibosHeredadosLosCuentaSinEvento() {
+            // Los tres son legado de antes del buzon (V2__ordenes_de_cobro_y_outbox.sql, #35):
+            // nadie los escribe desde que el buzon existe -CobrarOrdenes solo emite NORMAL,
+            // CobrarTasa solo TASA- y ninguna fila con estos tres valores tiene un evento en
+            // pago_evento que entregar, asi que el buzon de esta prueba queda VACIO: no hay nada
+            // que encolar, porque nada se encolo nunca para un recibo heredado.
+            //
+            // Antes de #118, abonaEnElLibro() -que ArqueoDeTurno#cuadrar usaba para esta misma
+            // pregunta- daba TRUE para A_CUENTA y CUOTA_CONVENIO, asi que un turno heredado con
+            // uno de esos dos los contaba como "conEvento": como si el sistema de origen tuviera
+            // algo pendiente de recibir, cuando no hay ninguna fila que entregar. Con
+            // TipoDePago#produceEvento() los tres van a "sinEvento", que es lo correcto. El
+            // TOTAL del arqueo NO cambia: el neto se suma igual a un lado o al otro.
             CierresEnMemoria cierres =
                     new CierresEnMemoria()
-                            .conRecibosDelTurno(TURNO, preconvenio(1, "150.00", "0.00"));
-            BuzonEnMemoria buzon = new BuzonEnMemoria();
-            buzon.encolar(evento(1L, EstadoDelEvento.ENTREGADO));
+                            .conRecibosDelTurno(
+                                    TURNO,
+                                    aCuenta(1, "100.00", "0.00"),
+                                    cuotaConvenio(2, "200.00", "0.00"),
+                                    preconvenio(3, "50.00", "0.00"));
 
             CerrarTurno.Cerrado cerrado =
-                    cerrarTurno(cierres, buzon)
+                    cerrarTurno(cierres, new BuzonEnMemoria())
                             .cerrar(
                                     new CerrarTurno.Cierre(
                                             "C-01",
                                             CAJERO,
                                             HOY,
-                                            Map.of(FormaDePago.EFECTIVO, Dinero.de("150.00"))),
+                                            Map.of(FormaDePago.EFECTIVO, Dinero.de("350.00"))),
                                     porQue());
 
-            assertThat(cerrado.cuadre().conEvento())
+            assertThat(cerrado.cuadre().sinEvento())
                     .as(
-                            "la cuota inicial formaliza el convenio: el sistema que emitio la"
-                                    + " orden tiene que enterarse, aunque el libro no la trate"
-                                    + " como un abono (#35)")
-                    .isEqualTo(Dinero.de("150.00"));
-            assertThat(cerrado.cuadre().sinEvento()).isEqualTo(Dinero.CERO);
+                            "ninguno de los tres tiene un evento que entregar: ninguno se"
+                                    + " escribe desde que el buzon existe (#35)")
+                    .isEqualTo(Dinero.de("350.00"));
+            assertThat(cerrado.cuadre().conEvento()).isEqualTo(Dinero.CERO);
+            assertThat(cerrado.cuadre().total())
+                    .as("el total no cambia: solo cambia el lado donde se cuenta")
+                    .isEqualTo(Dinero.de("350.00"));
         }
 
         @Test
@@ -378,6 +388,14 @@ class CerrarYArquearTest {
 
     private static ReciboDelTurno preconvenio(long numero, String total, String anulado) {
         return recibo(numero, TipoDePago.PRECONVENIO, total, anulado);
+    }
+
+    private static ReciboDelTurno aCuenta(long numero, String total, String anulado) {
+        return recibo(numero, TipoDePago.A_CUENTA, total, anulado);
+    }
+
+    private static ReciboDelTurno cuotaConvenio(long numero, String total, String anulado) {
+        return recibo(numero, TipoDePago.CUOTA_CONVENIO, total, anulado);
     }
 
     private static ReciboDelTurno recibo(

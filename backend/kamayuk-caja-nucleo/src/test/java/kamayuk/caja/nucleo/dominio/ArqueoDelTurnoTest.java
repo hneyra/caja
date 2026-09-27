@@ -207,41 +207,40 @@ class ArqueoDelTurnoTest {
     }
 
     @Nested
-    @DisplayName("Que abona en el libro y que no")
+    @DisplayName("Que produce evento y que no (#118)")
     class DelCuadre {
 
         @Test
-        @DisplayName("una tasa y una cuota inicial de convenio no dejan asientos")
-        void loQueNoAbona() {
-            assertThat(TipoDePago.TASA.abonaEnElLibro()).isFalse();
-            assertThat(TipoDePago.PRECONVENIO.abonaEnElLibro()).isFalse();
+        @DisplayName("solo una cobranza normal produce evento: es lo unico que se encola")
+        void soloNormalProduceEvento() {
+            assertThat(TipoDePago.NORMAL.produceEvento()).isTrue();
         }
 
         @Test
-        @DisplayName("una cobranza normal si")
-        void loQueAbona() {
-            assertThat(TipoDePago.NORMAL.abonaEnElLibro()).isTrue();
+        @DisplayName("una tasa no tiene a quien avisarle: no vino de ninguna orden")
+        void unaTasaNoProduceEvento() {
+            assertThat(TipoDePago.TASA.produceEvento()).isFalse();
         }
 
         @Test
         @DisplayName(
-                "produceEvento() no es abonaEnElLibro(): PRECONVENIO no abona y SI avisa (#118)")
-        void produceEventoDifiereDeAbonaEnElLibroEnPreconvenio() {
-            // Solo una tasa no tiene a quien avisarle: el concepto lo cobra la propia caja y
-            // nunca vino de una orden.
-            assertThat(TipoDePago.TASA.produceEvento()).isFalse();
-            assertThat(TipoDePago.NORMAL.produceEvento()).isTrue();
-
-            // Y aqui es donde las dos preguntas se separan: la cuota inicial de un convenio NO
-            // abona en el libro (su efecto es el acogimiento entero, no un abono; #35) pero SI
-            // produce evento, porque el sistema que emitio la orden tiene que enterarse de que
-            // se cobro para poder formalizar el convenio. Antes de #118,
-            // ArqueoDeTurno#cuadrar leia abonaEnElLibro() para esta misma pregunta, y con un
-            // PRECONVENIO habria contado sin avisar lo que si avisa.
-            assertThat(TipoDePago.PRECONVENIO.abonaEnElLibro()).isFalse();
-            assertThat(TipoDePago.PRECONVENIO.produceEvento())
-                    .as("difiere de abonaEnElLibro(): no abona, pero el origen si se entera")
-                    .isTrue();
+                "A_CUENTA, PRECONVENIO y CUOTA_CONVENIO son legado de antes del buzon: tampoco"
+                        + " (#118, ronda 1)")
+        void losTresHeredadosNoProducenEvento() {
+            // Ninguno de los tres lo escribe el codigo de hoy: CobrarOrdenes solo emite NORMAL
+            // y CobrarTasa solo TASA. Las filas con estos tres valores que existen son de antes
+            // del buzon (V2, #35): ninguna tiene un evento en pago_evento que entregar, y
+            // tratarlas como si produjeran uno inventaria un evento que nunca se encolo.
+            //
+            // La version anterior de esta prueba (antes de la ronda 1 de #118) afirmaba que
+            // PRECONVENIO SI producia evento, «para formalizar el convenio». Es falsa: medido
+            // contra V2__ordenes_de_cobro_y_outbox.sql («A_CUENTA, PRECONVENIO y CUOTA_CONVENIO
+            // ya no los puede escribir NADIE… la cuota inicial de un convenio se cobra "como
+            // cualquier otra orden"») y ADR-0026 §5 de `rentas` («la ventanilla no cambia: Caja
+            // cobra la cuota del convenio como cualquier otra orden»), es decir como NORMAL.
+            assertThat(TipoDePago.A_CUENTA.produceEvento()).isFalse();
+            assertThat(TipoDePago.PRECONVENIO.produceEvento()).isFalse();
+            assertThat(TipoDePago.CUOTA_CONVENIO.produceEvento()).isFalse();
         }
 
         @Test

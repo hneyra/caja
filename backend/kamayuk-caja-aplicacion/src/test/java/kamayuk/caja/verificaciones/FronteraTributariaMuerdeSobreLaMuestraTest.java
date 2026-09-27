@@ -17,9 +17,10 @@ import org.junit.jupiter.api.Test;
  *
  * <p>La muestra vive en {@code kamayuk.caja.verificaciones.muestras}, fuera del arbol de
  * produccion: {@link kamayuk.caja.verificaciones.muestras.ConceptoTributarioNuevoDeMuestra} declara
- * a proposito un campo {@link kamayuk.caja.dominio.Ejercicio} — exactamente el tipo que ADR-0045
- * prohibe fuera de la lista blanca—, y aqui se comprueba la regla SIN lista blanca, para que no
- * tenga donde esconderse.
+ * a proposito un campo {@code Alicuota} —y no {@code Ejercicio}—, para demostrar que la regla que
+ * falla cerrado (ronda 1 de #118) prohibe cualquier tipo de {@code kamayuk.caja.dominio} que no sea
+ * uno de los dos genericos permitidos, sin tener que nombrar cada tipo tributario uno por uno—, y
+ * aqui se comprueba la regla SIN lista blanca de clases, para que no tenga donde esconderse.
  */
 @DisplayName("ADR-0045 — la regla de la frontera tributaria MUERDE sobre su muestra (#118)")
 class FronteraTributariaMuerdeSobreLaMuestraTest {
@@ -27,15 +28,19 @@ class FronteraTributariaMuerdeSobreLaMuestraTest {
     private static final String PAQUETE_DE_MUESTRAS = "kamayuk.caja.verificaciones.muestras";
 
     @Test
-    @DisplayName("una clase nueva con un campo Ejercicio rompe la regla, nombrandola")
+    @DisplayName("una clase nueva con un campo Alicuota rompe la regla, nombrandola")
     void laMuestraViolaLaRegla() {
-        JavaClasses clases = new ClassFileImporter().importPackages(PAQUETE_DE_MUESTRAS);
+        JavaClasses clases =
+                new ClassFileImporter()
+                        .importPackages(
+                                PAQUETE_DE_MUESTRAS,
+                                FronteraTributariaDelDominioTest.PAQUETE_COMPARTIDO);
         ArchRule regla = FronteraTributariaDelDominioTest.regla(PAQUETE_DE_MUESTRAS, Set.of());
 
         assertThatThrownBy(() -> regla.check(clases))
                 .as("una regla sin una muestra que la viole pasa en verde para siempre")
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("ConceptoTributarioNuevoDeMuestra")
-                .hasMessageContaining("Ejercicio");
+                .hasMessageContaining("Alicuota");
     }
 }
