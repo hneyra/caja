@@ -54,6 +54,115 @@
 # es otra cosa —**que la etiqueta se puede pedir**— y eso solo lo contesta el registro. Se
 # pregunta desde aqui porque es donde hay un token con `packages: read`; un PAT de escritorio
 # normal no lo tiene y recibe `403 DENIED`, que no se distingue de «no existe» si uno no lo mira.
+#
+# ## `avisar` solo corre si el MISMO commit paso todas las verificaciones que le tocaban (#115)
+#
+# Hasta aqui `avisar` solo dependia de `comprobar`: que las tres imagenes se pudieran pedir al
+# registro. Eso dice que el `push` no fallo, no que el CODIGO este bien — `backend.yml`,
+# `frontend.yml` e `infraestructura.yml` son workflows DISTINTOS, disparados por el mismo push, y
+# nada los ataba a este. Medido el 2026-09-23, leyendo `avisar` tal como estaba: dependia
+# unicamente de `needs: comprobar`, asi que un `main` con `Backend` en rojo publicaba sus tres
+# imagenes igual y pedia el despliegue igual.
+#
+# ### Por que no es un solo pipeline con `needs:`
+#
+# `needs:` solo cruza jobs DEL MISMO archivo de workflow. Fusionar `backend.yml`, `frontend.yml`,
+# `infraestructura.yml`, `despliegue.yml` y este en uno solo lo resolveria, pero al precio de
+# reescribir los cinco: cada uno tiene HOY su propio `concurrency:`, su propio `paths:` (escrito
+# dos veces, por la razon que dice su propia cabecera) y su propio nombre en la pestaña de
+# Checks — fusionarlos le cambia ese nombre a cada uno, que es lo que cualquiera lee hoy en un
+# PR. Se descarta: la ganancia (gatear `avisar`) no paga el costo (tocar cinco archivos y el
+# contrato visible de sus checks).
+#
+# ### Por que `workflow_run` solo, tampoco alcanza
+#
+# `workflow_run` dispara una ejecucion NUEVA cuando OTRO workflow termina — pero uno por uno: no
+# existe un evento «todos terminaron». Con cuatro workflows independientes (Backend siempre;
+# Frontend, Infraestructura y Despliegue solo si sus `paths:` casan con este push) hace falta, en
+# cada disparo, volver a preguntar por TODOS y decidir si YA estan completos — no solo el que
+# acaba de terminar.
+#
+# ### El diseño: un job mas aqui, contra la API de ejecuciones, con reintentos acotados
+#
+# En vez de fragmentar la espera en un sexto archivo de workflow escuchando `workflow_run`, el
+# job `verificaciones_hermanas` (mas abajo) corre DENTRO de este mismo workflow —disparado por el
+# mismo push que `publicar`— y consulta la API de ejecuciones de Actions
+# (`GET /repos/.../actions/runs?head_sha=...`) por el `head_sha` de este commit, con reintentos
+# acotados. La logica vive en `.github/scripts/decidir-avisar.mjs`, con su prueba
+# `decidir-avisar.test.mjs` (`node --test`): es la que el issue #115 pide sacar a un archivo
+# aparte por no ser trivial. Para cuando este job llega a correr —DESPUES de `publicar` y
+# `comprobar`, que ya tardan varios minutos construyendo tres imagenes— los demas workflows
+# disparados por el mismo push ya llevan un buen rato corriendo, asi que la espera que queda es
+# corta en el caso normal.
+#
+# Se prefirio esto a `workflow_run` porque el resultado es el mismo —evaluar el conjunto entero
+# cada vez que algo cambia— pero mas simple de leer: un job mas en ESTE archivo, con su propio
+# guion probado, en vez de un archivo de workflow nuevo con su propia logica de «cuando ya se
+# puede volver a evaluar el conjunto». Si el numero de workflows hermanos creciera mucho y la
+# espera se volviera cara, `workflow_run` —reevaluando el conjunto en cada evento de finalizacion
+# en vez de reintentar a ciegas— es la salida documentada; no hizo falta todavia.
+#
+# ### Que workflows se exigen, y por que la lista NO esta escrita aqui
+#
+# `Backend`, `Frontend`, `Infraestructura` y `Despliegue` — pero esa lista no vive en este
+# archivo: `decidir-avisar.mjs` LEE los `.yml` de `.github/workflows/` en cada corrida, en vez de
+# copiarlos. Escribirla a mano aqui habria sido una TERCERA copia de un dato que `paths:` ya
+# duplica dos veces dentro de cada workflow (para `push` y para `pull_request`, por la misma
+# razon que impide una ancla de YAML): una copia mas es una oportunidad mas de que alguien edite
+# un `paths:` y esta lista quede vieja **en verde**. En cambio:
+#
+#   - Un workflow SIN `push:` —`registro.yml`, que solo escucha `pull_request`— nunca puede
+#     bloquear: no hace falta excluirlo a mano, la ausencia de disparador ya lo excluye. Es la
+#     respuesta medida a «Registro/Despliegue si aplican a push en main» que pide el issue:
+#     **Registro no aplica**, estructuralmente —nunca corre para un push, asi que exigirlo
+#     dejaria `avisar` esperando algo que jamas llega—, y **Despliegue si** (tiene
+#     `push: branches: [main]`, con su propio `paths:`).
+#   - Un workflow con `push:` pero sin `paths:` —`backend.yml`— aplica SIEMPRE.
+#   - Un workflow con `paths:` —Frontend, Infraestructura, Despliegue— aplica solo si alguno de
+#     los archivos que cambio este push casa con su lista. Si no casa, GitHub JAMAS crea una
+#     ejecucion para el en este `head_sha`, y el guion no la espera: un workflow que no corrio no
+#     bloquea el despliegue para siempre, ni se da por bueno por no haber corrido — sencillamente
+#     no entra en lo exigido para este commit.
+#
+# ### Los tres desenlaces
+#
+#   - Todos los exigidos terminaron en `success` -> `verificaciones_hermanas` sale en verde y
+#     `avisar` corre.
+#   - Alguno termino y NO fue `success` -> sale en rojo nombrando cual y con que resultado, y
+#     `avisar` no corre (`needs:` lo impide por omision).
+#   - Alguno todavia no termina —o ni siquiera aparece todavia en la API, que en los primeros
+#     segundos tras el push es esperable— -> se reintenta, acotado por un limite propio ademas
+#     del `timeout-minutes` del job. Agotar el plazo sin que todos terminen se trata como fallo:
+#     la AUSENCIA de una señal de exito no es una señal de exito — la misma doctrina que
+#     `verificarAislamiento` en el backend, que tampoco se salta a si misma sin Docker.
+#
+# ## El sha de cada repositorio hermano usado en la construccion queda escrito (#115)
+#
+# Hasta aqui la imagen `:<sha de caja>` no decia que version de `kamayuk-lib` llevaba dentro —su
+# checkout no fija `ref:`, sigue el HEAD de su rama por omision al momento de construir— y el
+# aviso a `infrastructure` tampoco lo decia.
+#
+# **Solo `kamayuk-lib`, y solo en la imagen que lo usa — medido, no el «infrastructure y
+# kamayuk-lib» que el diagnostico del issue nombraba de entrada.** `backend/Dockerfile` compila
+# las dos imagenes del backend con `-Pkamayuk.sinLibreriasComunes`, que apaga el composite build
+# de `infrastructure/librerias-backend` A PROPOSITO —esa libreria es `testImplementation` y aqui
+# no corre ni una prueba (verlo en el propio `Dockerfile`)— y por eso este workflow NUNCA clona
+# `infrastructure`: no hay checkout suyo, y por lo tanto no hay sha suyo que registrar en una
+# imagen que nunca la toca. Etiquetarla igual seria afirmar una relacion que no existe. Solo
+# `frontend/Dockerfile` (la interfaz) trae contenido de un hermano, `kamayuk-lib`, por el
+# contexto con nombre que resuelve sus `link:` — asi que la etiqueta propia de hermano solo va en
+# `kamayuk-caja-interfaz`.
+#
+# `org.opencontainers.image.revision` (el `LABEL` OCI estandar para «de que commit sale esto») va
+# en las TRES imagenes, con el sha de ESTE repositorio — el mismo dato que ya lleva la etiqueta
+# `:sha`, pero legible con `docker inspect` sin tener que saber de antemano que la etiqueta ES el
+# sha. `org.kamayuk.hermano.kamayuk-lib.revision` (sin estandar OCI que lo cubra: es un dato
+# propio de este producto) va SOLO en la interfaz, con el sha que devolvio SU PROPIO checkout —
+# no el de las otras dos, que ni siquiera lo usan.
+#
+# Y el mismo sha viaja en el aviso a `infrastructure`
+# (`client_payload[hermanos][kamayuk-lib]`), para que quien reciba el evento sepa que version de
+# la libreria compilo la interfaz sin tener que bajar la imagen y leerle el `LABEL`.
 name: Publicar imágenes
 
 on:
@@ -83,6 +192,14 @@ jobs:
     name: ${{ matrix.imagen }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # El sha de `kamayuk-lib` que uso ESTE build, para que `avisar` lo lleve en el aviso a
+    # `infrastructure` (#115). Los tres matrix lo calculan —el checkout es el mismo paso para
+    # los tres, se use o no— y casi al mismo instante, asi que a efectos de trazabilidad da lo
+    # mismo cual de los tres «gane»: GitHub Actions se queda con el output del ULTIMO matrix que
+    # termine cuando varios definen el mismo nombre. Ver la cabecera del archivo, seccion «El sha
+    # de cada repositorio hermano».
+    outputs:
+      kamayuk_lib_sha: ${{ steps.kamayuk_lib.outputs.sha }}
     strategy:
       # Sin `fail-fast`: si una cae, interesa saber si las otras tambien.
       fail-fast: false
@@ -164,6 +281,30 @@ jobs:
           echo "propietario=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" \
             >> "$GITHUB_OUTPUT"
 
+      # El sha que de verdad se clono, no «el HEAD de la rama por omision al pedirlo» —eso es lo
+      # que el checkout de arriba resuelve, sin `ref:` fijo—. Se lee DESPUES del checkout, del
+      # propio `.git` que quedo en el disco, asi que es el commit real y no una promesa (#115).
+      - name: El sha de kamayuk-lib
+        id: kamayuk_lib
+        run: echo "sha=$(git -C kamayuk-lib rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # `org.opencontainers.image.revision` va en las tres imagenes. El segundo, propio de este
+      # producto y sin estandar OCI que lo cubra, SOLO en la interfaz: es la unica que trae
+      # contenido de `kamayuk-lib` dentro (ver la cabecera del archivo). Etiquetar tambien las
+      # dos del backend con un sha que nunca entra en su build afirmaria una relacion que no
+      # existe.
+      - name: Las etiquetas OCI de esta imagen
+        id: etiquetas
+        run: |
+          {
+            echo "valor<<FIN_DE_ETIQUETAS_OCI"
+            echo "org.opencontainers.image.revision=${{ github.sha }}"
+            if [ -n "${{ matrix.contextos }}" ]; then
+              echo "org.kamayuk.hermano.kamayuk-lib.revision=${{ steps.kamayuk_lib.outputs.sha }}"
+            fi
+            echo "FIN_DE_ETIQUETAS_OCI"
+          } >> "$GITHUB_OUTPUT"
+
       # El archivo y el contexto los pone la matriz, y el motivo de cada pareja esta escrito alli.
       #
       # Para las DOS DEL BACKEND el contexto es la RAIZ del repositorio, no `backend/`, y el propio
@@ -194,6 +335,7 @@ jobs:
           # flujo en una verificacion del PR y no solo en un publicador.
           push: ${{ github.event_name == 'push' }}
           tags: ghcr.io/${{ steps.registro.outputs.propietario }}/${{ matrix.imagen }}:${{ github.sha }}
+          labels: ${{ steps.etiquetas.outputs.valor }}
           cache-from: type=gha,scope=${{ matrix.imagen }}
           cache-to: type=gha,mode=max,scope=${{ matrix.imagen }}
 
@@ -251,6 +393,48 @@ jobs:
           done
           exit "$fallo"
 
+  # --- Las verificaciones hermanas del mismo commit (#115) ---------------------------
+  #
+  # El diseño completo esta en la cabecera del archivo. En resumen: este job pregunta por el
+  # `head_sha` de este push en `backend.yml`, `frontend.yml`, `infraestructura.yml` y
+  # `despliegue.yml` —los que tengan `push:` a `main` y, si tienen `paths:`, casen con lo que
+  # este push cambio— y no deja pasar a `avisar` hasta que todos los que aplican terminaron en
+  # `success`.
+  verificaciones_hermanas:
+    name: Las verificaciones hermanas del mismo commit
+    runs-on: ubuntu-latest
+    # Generoso a proposito: `KAMAYUK_INTENTOS_MAX` por omision son 40 intentos de 30s (~20 min),
+    # y el job tiene que vivir mas que eso para poder decir «se agoto el plazo» en vez de que el
+    # runner lo mate primero con un mensaje generico.
+    timeout-minutes: 25
+    needs: comprobar
+    # Solo al integrar en `main`: en un PR nunca se llega a avisar (ver `avisar`), asi que
+    # preguntar aqui seria trabajo sin destino.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # Para leer `GET /repos/.../actions/runs` de ESTE repositorio. No hace falta el PAT de
+      # `infrastructure`: eso es solo para el `repository_dispatch` de `avisar`.
+      actions: read
+    steps:
+      # `fetch-depth: 0` y no un clon superficial: hace falta el commit ANTERIOR a este push
+      # (`github.event.before`) para poder pedirle a git la lista de archivos que cambiaron.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Que las verificaciones hermanas de este commit esten todas en success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA_A_VERIFICAR: ${{ github.sha }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_REPOSITORIO: ${{ github.repository }}
+        run: node .github/scripts/decidir-avisar.mjs
+
   # --- Y que `infrastructure` lo despliegue -----------------------------------------
   #
   # Hasta aqui la cadena terminaba en «la imagen existe en el registro», y ahi se paraba:
@@ -267,11 +451,16 @@ jobs:
   # dice que el `push` no devolvio error; `comprobar` dice que la etiqueta **se puede pedir al
   # registro**. Avisar de una version cuya imagen no se puede bajar deja el pod en
   # `ImagePullBackOff` con el `up` en verde.
+  #
+  # Y desde #115 TAMBIEN depende de `verificaciones_hermanas`: `needs:` no corre un job si
+  # cualquiera de los suyos no termino en `success`, asi que basta con nombrarlo aqui —no hace
+  # falta un `if` que lea su resultado a mano—. Y de `publicar`, ahora ademas para leer su
+  # `kamayuk_lib_sha` mas abajo.
   avisar:
     name: Pedirle a `infrastructure` que despliegue esta version
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: comprobar
+    needs: [comprobar, publicar, verificaciones_hermanas]
     # Solo al integrar en `main`. En un PR la imagen ni siquiera se publica.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions: {}
@@ -281,6 +470,7 @@ jobs:
           # Un `GITHUB_TOKEN` NO puede disparar eventos en otro repositorio: hace falta un PAT
           # de grano fino con `contents: write` **solo** sobre `hneyra/infrastructure`.
           GH_TOKEN: ${{ secrets.DISPATCH_A_INFRAESTRUCTURA }}
+          KAMAYUK_LIB_SHA: ${{ needs.publicar.outputs.kamayuk_lib_sha }}
         run: |
           set -euo pipefail
           # Sin el secreto se avisa y se sale en VERDE, igual que `aplicar-stg` cuando le faltan
@@ -298,8 +488,16 @@ jobs:
             echo "::warning::Sin DISPATCH_A_INFRAESTRUCTURA: esta version no se desplegara sola."
             exit 0
           fi
+          # El sha de `kamayuk-lib` lo calculo `publicar` (#115); si por lo que sea llegara
+          # vacio, se avisa igual —la imagen ya tiene su propio `LABEL`, este campo es ademas—
+          # pero se dice en el resumen en vez de mandar un client_payload con un campo vacio sin
+          # explicar por que.
+          if [ -z "${KAMAYUK_LIB_SHA:-}" ]; then
+            echo "::warning::kamayuk_lib_sha llego vacio desde el job publicar; el aviso a infrastructure no llevara el sha de kamayuk-lib."
+          fi
           gh api repos/hneyra/infrastructure/dispatches \
             -f event_type=version-publicada \
             -f client_payload[sistema]=caja \
-            -f client_payload[sha]="$GITHUB_SHA"
-          echo "Pedido el despliegue de caja@$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+            -f client_payload[sha]="$GITHUB_SHA" \
+            -f client_payload[hermanos][kamayuk-lib]="${KAMAYUK_LIB_SHA:-}"
+          echo "Pedido el despliegue de caja@$GITHUB_SHA (kamayuk-lib@${KAMAYUK_LIB_SHA:-desconocido})" >> "$GITHUB_STEP_SUMMARY"
