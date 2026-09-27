@@ -1,12 +1,18 @@
 # Decisiones de arquitectura (ADR)
 
-**Tres decisiones propias, y ninguna es la que este indice esperaba.** Lo que la caja hace lo siguen decidiendo dos ADR que no son suyos —el camino del dinero (0026), que decide `rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la plataforma—. Las tres propias son de su interfaz.
+**Cuatro decisiones propias, y las tres primeras no son las que este indice esperaba.** Lo que la
+caja hace lo siguen decidiendo dos ADR que no son suyos —el camino del dinero (0026), que decide
+`rentas` porque la imputacion es suya, y el contexto de municipalidad (0028), que es de la
+plataforma—. Las tres primeras propias son de su interfaz; la cuarta, el 0045, es la primera de su
+frontera con `rentas`: no D-17 —que sigue abierta—, sino el recibo que ya existia y que el 0045
+declara legado.
 
 | # | Decision | Estado |
 |---|---|---|
 | [0040](ADR-0040-la-ventanilla-se-conecta.md) | Si la ventanilla se conecta, y que hace falta antes | **Aceptado** — se conecta, solo para leer (#74) |
 | [0042](ADR-0042-la-ventanilla-lee-su-propia-copia.md) | La ventanilla compone su sesion desde su propia copia, y no habla con nadie mas | **Aceptado** |
 | [0044](ADR-0044-la-ventanilla-anula-donde-esta-el-recibo.md) | La ventanilla anula donde esta el recibo, y esa es su primera escritura | **Aceptado** — amplia la 0040 (#100) |
+| [0045](ADR-0045-el-recibo-hereda-tributo-del-monolito.md) | El recibo lleva tributo, ejercicio y el desglose heredados del monolito: legado congelado, no una segunda frontera | **Aceptado** — deja abierta D-17 (#118) |
 
 La **0041** no falta: es de `infrastructure` (Grafana detras del realm de operacion), y la **0043** es de `normativa`. La numeracion es del producto, no de cada repositorio.
 
@@ -67,3 +73,7 @@ alguien cite «ADR-0004» habria que preguntar de cual habla.
 el 2026-09-20 en `infrastructure`, `rentas`, `catastro`, `normativa`, `identidad` y aqui: el mayor
 era el 0043, de `normativa`. Un numero elegido leyendo solo este indice habria sido el 0043 otra
 vez, y el choque no da ningun error — da dos documentos distintos con el mismo nombre.
+
+El 0045 salio del mismo conteo, el 2026-09-27: `infrastructure` en 0041, `rentas` en 0026,
+`catastro` en 0037, `normativa` en 0043, `identidad` sin ningun ADR propio todavia, y este
+repositorio en 0044 —el mayor de los seis—. El siguiente es el 0045.

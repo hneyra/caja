@@ -185,7 +185,11 @@ public class CobrarOrdenes {
         long reciboId = Objects.requireNonNull(emitido.id(), "Un recibo emitido trae su id");
         ordenes.marcarPagadas(peticion.ordenes(), reciboId);
 
-        // 5. El buzon, EN LA MISMA TRANSACCION. Si la fila esta, el recibo esta.
+        // 5. El buzon, EN LA MISMA TRANSACCION. Si la fila esta, el recibo esta. Este caso de
+        // uso solo emite TipoDePago.NORMAL (arriba), y TipoDePago#produceEvento() (#118, la
+        // UNICA definicion de "recibo que produce evento") es "this == NORMAL": no hace falta
+        // comprobarlo aqui porque el propio metodo que define "produce evento" es "es NORMAL",
+        // y NORMAL es lo unico que este caso de uso construye.
         UUID pagoId = UUID.randomUUID();
         EventoDePago evento =
                 buzon.encolar(

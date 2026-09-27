@@ -197,10 +197,27 @@ public class AnularRecibo {
     /**
      * Publica la anulacion al sistema que emitio las ordenes.
      *
-     * <p>Un recibo de caja de TASAS no produce evento y devuelve {@code null}: el concepto era de
-     * la propia caja, no hubo orden y no hay a quien avisarle. Mandarlo igualmente obligaria al
-     * receptor a decidir que «no encuentro ese pago» es normal, y entonces no podria distinguir un
-     * recibo de tasas de un pago que se perdio.
+     * <p>Un recibo cuyo {@link TipoDePago#produceEvento()} es falso no produce evento y devuelve
+     * {@code null}. Es la <b>unica</b> definicion de la pregunta (#118): antes se repetia, con
+     * otras palabras, en {@link kamayuk.caja.nucleo.aplicacion.ArqueoDeTurno#cuadrar}.
+     *
+     * <p>Hoy eso cubre dos casos, y son distintos:
+     *
+     * <ul>
+     *   <li>{@link TipoDePago#TASA}: el concepto era de la propia caja, no hubo orden y no hay a
+     *       quien avisarle. Mandarlo igualmente obligaria al receptor a decidir que «no encuentro
+     *       ese pago» es normal, y entonces no podria distinguir un recibo de tasas de un pago que
+     *       se perdio.
+     *   <li>{@link TipoDePago#A_CUENTA}, {@link TipoDePago#PRECONVENIO} y {@link
+     *       TipoDePago#CUOTA_CONVENIO}: son legado de antes del buzon (#35, V2) y nadie los escribe
+     *       hoy, asi que ninguno tiene un {@code PAGO_REGISTRADO} en el buzon que reversar. Este
+     *       metodo esta <b>hoy inalcanzable</b> con uno de estos tres: {@link AnularRecibo#anular}
+     *       exige {@code turno.fecha().equals(hoy)} (regla {@link FueraDelDiaDePago}), y un recibo
+     *       heredado es de antes de la migracion —nunca es el turno de hoy—. Se deja la
+     *       comprobacion igual, y no se aparta con un {@code assert}: si algun dia una restauracion
+     *       o una correccion manual dejara uno de estos tres con fecha de hoy, mandar una reversion
+     *       de un pago que nunca se encolo seria peor que no mandar nada.
+     * </ul>
      *
      * <p>El {@code pagoOriginal} viaja dentro: el receptor reversa <b>los asientos de ese pago</b>,
      * y sin el identificador tendria que buscarlos por el numero del papel — que es texto y no una
@@ -208,7 +225,7 @@ public class AnularRecibo {
      */
     private @Nullable EventoDePago publicarLaAnulacion(
             Recibo recibo, MovimientoDeRecibo anulacion, LocalDate hoy, Dinero total) {
-        if (recibo.tipoDePago() == TipoDePago.TASA) {
+        if (!recibo.tipoDePago().produceEvento()) {
             return null;
         }
         long reciboId = Objects.requireNonNull(recibo.id());

@@ -91,11 +91,18 @@ public class ArqueoDeTurno {
         Dinero conEvento = Dinero.CERO;
         Dinero sinEvento = Dinero.CERO;
         for (ReciboDelTurno recibo : recibos) {
-            // El NETO del recibo: cero si se anulo. Un recibo de caja de TASAS no produce
-            // evento —el concepto es de la propia caja, no hay a quien avisarle— y por eso
-            // cuadra solo contra el recibo. Meterlo en la comprobacion de entrega haria que
-            // todo turno que cobrara una tasa no pudiera cerrar nunca.
-            if (recibo.abonaEnElLibro()) {
+            // El NETO del recibo: cero si se anulo. La pregunta es "produjo un evento"
+            // (TipoDePago#produceEvento, #118), y solo NORMAL la cumple: es lo unico que
+            // CobrarOrdenes encola. Antes de #118 esta linea leia abonaEnElLibro() —un metodo
+            // distinto, del cierre contra el libro (#36), retirado por quedarse sin llamador—,
+            // que para A_CUENTA y CUOTA_CONVENIO daba TRUE. Un turno con un recibo heredado de
+            // esos dos tipos (de antes del buzon, #35, V2) pasa entonces de contarse como "con
+            // evento" a contarse como "sin evento": el total del arqueo NO cambia —el neto se
+            // suma igual a un lado o al otro—, y es lo correcto, porque ninguno de los dos tiene
+            // una fila en pago_evento que entregar. PRECONVENIO seguia "sin evento" antes y
+            // sigue "sin evento" ahora: no cambia. ArqueoDelTurnoTest y CerrarYArquearTest fijan
+            // los cinco valores de TipoDePago contra esta pregunta.
+            if (recibo.produceEvento()) {
                 conEvento = conEvento.mas(recibo.neto());
             } else {
                 sinEvento = sinEvento.mas(recibo.neto());

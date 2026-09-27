@@ -207,20 +207,40 @@ class ArqueoDelTurnoTest {
     }
 
     @Nested
-    @DisplayName("Que abona en el libro y que no")
+    @DisplayName("Que produce evento y que no (#118)")
     class DelCuadre {
 
         @Test
-        @DisplayName("una tasa y una cuota inicial de convenio no dejan asientos")
-        void loQueNoAbona() {
-            assertThat(TipoDePago.TASA.abonaEnElLibro()).isFalse();
-            assertThat(TipoDePago.PRECONVENIO.abonaEnElLibro()).isFalse();
+        @DisplayName("solo una cobranza normal produce evento: es lo unico que se encola")
+        void soloNormalProduceEvento() {
+            assertThat(TipoDePago.NORMAL.produceEvento()).isTrue();
         }
 
         @Test
-        @DisplayName("una cobranza normal si")
-        void loQueAbona() {
-            assertThat(TipoDePago.NORMAL.abonaEnElLibro()).isTrue();
+        @DisplayName("una tasa no tiene a quien avisarle: no vino de ninguna orden")
+        void unaTasaNoProduceEvento() {
+            assertThat(TipoDePago.TASA.produceEvento()).isFalse();
+        }
+
+        @Test
+        @DisplayName(
+                "A_CUENTA, PRECONVENIO y CUOTA_CONVENIO son legado de antes del buzon: tampoco"
+                        + " (#118, ronda 1)")
+        void losTresHeredadosNoProducenEvento() {
+            // Ninguno de los tres lo escribe el codigo de hoy: CobrarOrdenes solo emite NORMAL
+            // y CobrarTasa solo TASA. Las filas con estos tres valores que existen son de antes
+            // del buzon (V2, #35): ninguna tiene un evento en pago_evento que entregar, y
+            // tratarlas como si produjeran uno inventaria un evento que nunca se encolo.
+            //
+            // La version anterior de esta prueba (antes de la ronda 1 de #118) afirmaba que
+            // PRECONVENIO SI producia evento, «para formalizar el convenio». Es falsa: medido
+            // contra V2__ordenes_de_cobro_y_outbox.sql («A_CUENTA, PRECONVENIO y CUOTA_CONVENIO
+            // ya no los puede escribir NADIE… la cuota inicial de un convenio se cobra "como
+            // cualquier otra orden"») y ADR-0026 §5 de `rentas` («la ventanilla no cambia: Caja
+            // cobra la cuota del convenio como cualquier otra orden»), es decir como NORMAL.
+            assertThat(TipoDePago.A_CUENTA.produceEvento()).isFalse();
+            assertThat(TipoDePago.PRECONVENIO.produceEvento()).isFalse();
+            assertThat(TipoDePago.CUOTA_CONVENIO.produceEvento()).isFalse();
         }
 
         @Test

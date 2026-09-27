@@ -16,7 +16,7 @@ import kamayuk.caja.dominio.Dinero;
  * que sale del cajon (V30 §5). Cero cuando el recibo sigue vigente.
  *
  * @param numero el numero impreso del recibo
- * @param tipoDePago que clase de cobranza fue; decide si abona en el libro
+ * @param tipoDePago que clase de cobranza fue; decide si produce evento
  * @param formaDePago con que se pago; decide en que cajon del arqueo cae
  * @param total lo que el recibo cobro, congelado
  * @param anulado lo que su anulacion devolvio; {@link Dinero#CERO} si no esta anulado
@@ -58,8 +58,12 @@ public record ReciboDelTurno(
         return total.menos(anulado);
     }
 
-    /** Si dejo asientos en el libro. Ver {@link TipoDePago#abonaEnElLibro}. */
-    public boolean abonaEnElLibro() {
-        return tipoDePago.abonaEnElLibro();
+    /**
+     * Si produce un evento que hay que entregar al sistema que emitio la orden. Ver {@link
+     * TipoDePago#produceEvento} (#118): es la unica definicion, y solo {@link TipoDePago#NORMAL} la
+     * cumple.
+     */
+    public boolean produceEvento() {
+        return tipoDePago.produceEvento();
     }
 }
