@@ -10,6 +10,9 @@ import kamayuk.caja.dominio.Dinero;
  * camino del cobro: esta en el de la conciliacion, que es una operacion de negocio con su pantalla
  * y su hora. Si el origen no contesta, <b>la conciliacion no se puede hacer</b> y el dia no cierra
  * — que es exactamente lo que ADR-0026 dice que cuesta esta separacion.
+ *
+ * <p><b>Se llama fuera de toda transaccion (#133).</b> Quien pregunta ya leyo lo suyo y solto la
+ * conexion: una respuesta que tarda no puede dejar a la ventanilla sin conexiones del pool.
  */
 public interface AbonosAplicadosEnElOrigen {
 

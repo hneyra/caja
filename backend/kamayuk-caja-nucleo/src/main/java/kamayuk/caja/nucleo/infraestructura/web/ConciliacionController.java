@@ -42,6 +42,15 @@ public class ConciliacionController {
     }
 
     /**
+     * La conciliacion de un dia.
+     *
+     * <p><b>Sin {@code @Transactional}, a diferencia de otras lecturas de este paquete, y no debe
+     * llevarlo (#133).</b> {@link ConciliacionDelDia#de} pregunta por HTTP a cada sistema de
+     * origen, y una transaccion abierta aqui retendria una conexion del pool durante esas llamadas:
+     * con el origen sin contestar, bastan diez hojas de cierre abiertas para que {@code POST
+     * /cobros} se quede sin conexion. La lectura de la base abre y cierra la suya dentro del caso
+     * de uso.
+     *
      * @param fecha el dia de caja que se concilia. <b>Obligatorio</b>: sin el habria que elegir uno
      *     —«hoy»— y una conciliacion que se responde sola con la fecha del reloj no es reproducible
      *     al dia siguiente (regla 6)

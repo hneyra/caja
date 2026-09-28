@@ -11,7 +11,6 @@ import kamayuk.caja.nucleo.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * La conciliacion del dia (ADR-0026 §3).
@@ -37,27 +36,46 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Los eventos pendientes, muertos y explicados salen del buzon y no dependen de nadie. Asi que
  * un origen caido deja la conciliacion incompleta, no ciega: se sigue sabiendo cuantos pagos estan
  * en transito y cuantos murieron.
+ *
+ * <h2>Ninguna conexion de la base retenida mientras se espera al origen (#133)</h2>
+ *
+ * <p>Primero se lee el recuento, en una transaccion corta que abre y cierra {@link LeerElRecuento}
+ * —otro bean, para que su anotacion pase por el proxy—; despues, ya sin transaccion y con la
+ * conexion devuelta al pool, se pregunta a cada origen. Hasta #133 el caso de uso entero llevaba un
+ * {@code @Transactional(readOnly = true)}, y retenia una conexion durante todas las llamadas HTTP:
+ * con el origen aceptando y sin contestar, diez hojas de cierre abiertas agotaban el pool y la
+ * ventanilla dejaba de cobrar. Lo mide {@code LaConciliacionNoRetieneLaBaseTest}, con un pool de
+ * una sola conexion y un cobro en otro hilo mientras el origen «no contesta».
  */
 @Service
 public class ConciliacionDelDia {
 
-    private final BuzonDeSalida buzon;
+    private final LeerElRecuento leer;
     private final AbonosAplicadosEnElOrigen origen;
 
-    public ConciliacionDelDia(BuzonDeSalida buzon, AbonosAplicadosEnElOrigen origen) {
-        this.buzon = buzon;
+    public ConciliacionDelDia(LeerElRecuento leer, AbonosAplicadosEnElOrigen origen) {
+        this.leer = leer;
         this.origen = origen;
     }
 
     /**
+     * La conciliacion de un dia.
+     *
+     * <p><b>No lleva {@code @Transactional}, y no debe (#133).</b> La transaccion es solo la de la
+     * lectura, y la abre {@link LeerElRecuento}. Si este metodo abriera una, la de dentro se uniria
+     * a ella y la conexion quedaria tomada durante todas las llamadas al origen; por lo mismo,
+     * quien lo llame tampoco puede tener una abierta —{@code ConciliacionController} no la tiene—.
+     *
      * @param dia el dia de caja que se concilia; entra como argumento (regla 6)
      */
-    @Transactional(readOnly = true)
     public Conciliacion de(LocalDate dia) {
         Objects.requireNonNull(dia, "La conciliacion es de un dia concreto (regla 6)");
-        List<Linea> lineas = new ArrayList<>();
-        for (BuzonDeSalida.RecuentoDelDia recuento : buzon.recuentoDe(dia)) {
-            lineas.add(lineaDe(recuento));
+        List<BuzonDeSalida.RecuentoDelDia> recuentos = leer.delDia(dia);
+        // Desde aqui no hay transaccion ni conexion tomada: cada pregunta al origen puede tardar
+        // lo que tarde sin quitarle a la ventanilla una conexion del pool.
+        List<Linea> lineas = new ArrayList<>(recuentos.size());
+        for (BuzonDeSalida.RecuentoDelDia delSistema : recuentos) {
+            lineas.add(lineaDe(delSistema));
         }
         return new Conciliacion(dia, List.copyOf(lineas));
     }

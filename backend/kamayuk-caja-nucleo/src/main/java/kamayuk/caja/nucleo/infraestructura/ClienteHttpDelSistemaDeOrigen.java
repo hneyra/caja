@@ -26,6 +26,11 @@ import tools.jackson.databind.json.JsonMapper;
  * eso es lo que hace cierto el criterio 2 del encargo: con el sistema de origen apagado, la
  * ventanilla sigue cobrando y emitiendo recibo, porque nadie le pregunto nada.
  *
+ * <p><b>Y «nunca dentro» tardo en ser verdad en los dos llamadores.</b> El publicador llamaba desde
+ * la transaccion de su recorrido hasta #109, y la conciliacion desde un {@code @Transactional} de
+ * solo lectura hasta #133: las dos retenian una conexion del pool mientras esperaban aqui, que con
+ * las esperas de abajo —y las del token— son decenas de segundos por llamada.
+ *
  * <h2>A donde se llama, y por que es un mapa</h2>
  *
  * <p>La caja no sabe cuantos sistemas hay. La direccion de cada uno se configura por nombre —{@code
