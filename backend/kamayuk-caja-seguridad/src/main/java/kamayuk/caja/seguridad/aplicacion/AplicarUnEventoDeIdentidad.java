@@ -2,13 +2,17 @@ package kamayuk.caja.seguridad.aplicacion;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import kamayuk.caja.autorizacion.Privilegio;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.persistencia.RepositorioJdbc;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.TipoDeEventoDeIdentidad;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -76,23 +80,29 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Asi que un alta o una modificacion casan primero por ese id —y si la fila lo lleva, se le
  * escribe la clave nueva: es el renombrado— y, si ninguna fila lo lleva, por la clave natural
- * <b>entre las filas que no llevan ninguno</b>, que se adoptan estampandoles el id: son las de
- * antes de V5, que no tienen de donde saber de que sujeto son. <b>No se rellenan desde una
- * migracion</b> —{@code V5} no sabe el id de {@code identidad} de una fila existente, y ademas un
- * {@code UPDATE} sobre una tabla de tenant desde el migrador muere bajo RLS (hallazgo 4 de {@code
- * docs/40-datos/hallazgos-de-rls.md}): esta clase es el UNICO lugar donde una fila vieja puede
- * ganar su {@code identidad_sujeto_id}, y lo gana con el primer evento que la nombra, no antes. Una
- * afiliacion o un permiso casan igual y, desde la ronda 1 de #111, TAMBIEN adoptan cuando la fila
- * que encuentran por su clave natural no lleva sujeto —no hace falta esperar al evento del propio
- * usuario o grupo—: ver {@code casarParaNombrar}. (Las filas que el defecto <b>anterior</b> a #111
- * ya dejo huerfanas y habilitadas en una base desplegada no las toca ninguna adopcion, porque ya NO
- * reciben eventos; y una fila de antes de V5 cuya PRIMERA modificacion tras la migracion sea
- * precisamente un renombrado tampoco se adopta —se busca por la clave que el evento trae, la NUEVA,
- * y la huerfana todavia tiene la vieja— asi que se inserta una fila nueva y la huerfana queda
- * intacta, un duplicado distinto del de un choque, porque aqui no hay ni un aviso que lo delate.
- * Las dos son <a href="https://github.com/hneyra/caja/issues/125">#125</a>, sin resolver aqui). El
- * acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por su
- * cuenta.
+ * <b>entre las filas que no llevan ninguno</b>, que se adoptan estampandoles el id —salvo con un
+ * alta, que no adopta nunca, y salvo que el sujeto tenga su alta APARTADA aqui (ronda 2 de #125:
+ * ver {@code exigirQueSuAltaNoSeHayaApartado}), porque entonces es un sujeto nuevo que reutiliza la
+ * clave de una huerfana—: son las de antes de V5, que no tienen de donde saber de que sujeto son.
+ * <b>No se rellenan desde una migracion</b> —{@code V5} no sabe el id de {@code identidad} de una
+ * fila existente, y ademas un {@code UPDATE} sobre una tabla de tenant desde el migrador muere bajo
+ * RLS (hallazgo 4 de {@code docs/40-datos/hallazgos-de-rls.md}): esta clase es el UNICO lugar donde
+ * una fila vieja puede ganar su {@code identidad_sujeto_id}, y lo gana con el primer evento que la
+ * nombra, no antes. Una afiliacion o un permiso casan igual y, desde la ronda 1 de #111, TAMBIEN
+ * adoptan cuando la fila que encuentran por su clave natural no lleva sujeto —no hace falta esperar
+ * al evento del propio usuario o grupo—: ver {@code casarParaNombrar}. (Las filas que el defecto
+ * <b>anterior</b> a #111 ya dejo huerfanas y habilitadas en una base desplegada no las toca ninguna
+ * adopcion, porque ya NO reciben eventos; y una fila de antes de V5 cuya PRIMERA modificacion tras
+ * la migracion sea precisamente un renombrado tampoco se adopta —se busca por la clave que el
+ * evento trae, la NUEVA, y la huerfana todavia tiene la vieja— asi que se inserta una fila nueva y
+ * la huerfana queda intacta, un duplicado distinto del de un choque. Las dos son <a
+ * href="https://github.com/hneyra/caja/issues/125">#125</a>, y se cierran SIN escribirlas: el
+ * guardia deja de conceder por una fila sin sujeto pasado {@link PlazoDeAdopcion#DIAS} dias desde
+ * {@code sin_sujeto_desde} (V6), y mientras tanto {@link #filasSinSujeto} las lista para que el
+ * consumidor avise al responsable en cada corrida. Esta clase sigue siendo el unico escritor: la
+ * forma de «arreglar» una fila legitima es que {@code identidad} la toque y su evento la adopte
+ * aqui.) El acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por
+ * su cuenta.
  *
  * <p>Un choque —la clave nueva ya es de otra fila— tiene dos desenlaces distintos segun de que lado
  * este la fila que cambia: ver {@code casarParaEscribir} y {@code casarParaNombrar}, y la tabla de
@@ -245,6 +255,95 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                 .single();
     }
 
+    /**
+     * Las filas de {@code usuario} y {@code grupo} sin sujeto de {@code identidad}, partidas por si
+     * todavia conceden el dia {@code hoy} (#125). Solo lee, y solo las habilitadas: una fila
+     * deshabilitada no concede con sujeto ni sin el.
+     *
+     * <p>Vive aqui, junto a {@link #apartados()}, porque es la otra mitad de lo que esta copia no
+     * consiguio aplicar: un apartado es un evento que no entro; una fila sin sujeto, una fila a la
+     * que ningun evento llego. La condicion de «todavia concede» es la del guardia, letra por
+     * letra: {@code sin_sujeto_desde >=} {@link PlazoDeAdopcion#primerInstanteQueConcede}. El dia
+     * que se publica es el de Lima de ese instante.
+     */
+    @Transactional(readOnly = true)
+    public FilasSinSujeto filasSinSujeto(LocalDate hoy) {
+        OffsetDateTime corte = PlazoDeAdopcion.primerInstanteQueConcede(hoy);
+        List<FilaSinSujeto> queConceden = sinSujetoEntre(corte, null);
+        // Ayer concedian y hoy ya no: el corte de ayer es el comienzo de su ultimo dia.
+        List<FilaSinSujeto> queDejaronDeConcederHoy =
+                sinSujetoEntre(PlazoDeAdopcion.primerInstanteQueConcede(hoy.minusDays(1)), corte);
+        long queYaNoConceden =
+                jdbc().sql(
+                                "SELECT (SELECT count(*) FROM usuario WHERE identidad_sujeto_id"
+                                        + " IS NULL AND habilitado AND (sin_sujeto_desde IS NULL"
+                                        + " OR sin_sujeto_desde < :corte))"
+                                        + " + (SELECT count(*) FROM grupo WHERE identidad_sujeto_id"
+                                        + " IS NULL AND habilitado AND (sin_sujeto_desde IS NULL"
+                                        + " OR sin_sujeto_desde < :corte))")
+                        .param("corte", corte)
+                        .query(Long.class)
+                        .single();
+        return new FilasSinSujeto(queConceden, queDejaronDeConcederHoy, queYaNoConceden);
+    }
+
+    /**
+     * Las habilitadas sin sujeto con {@code desde <= sin_sujeto_desde}, y {@code < hasta} si se da,
+     * por tabla y clave. Sin tope son las que conceden hoy; con el corte de hoy como tope, las que
+     * concedieron ayer por ultima vez.
+     */
+    private List<FilaSinSujeto> sinSujetoEntre(
+            OffsetDateTime desde, @Nullable OffsetDateTime hasta) {
+        String tope = hasta == null ? "" : " AND sin_sujeto_desde < :hasta";
+        JdbcClient.StatementSpec consulta =
+                jdbc().sql(
+                                "SELECT 'usuario' AS tabla, id, cuenta AS clave, sin_sujeto_desde"
+                                        + " FROM usuario WHERE identidad_sujeto_id IS NULL"
+                                        + " AND habilitado AND sin_sujeto_desde >= :desde"
+                                        + tope
+                                        + " UNION ALL"
+                                        + " SELECT 'grupo', id, nombre, sin_sujeto_desde"
+                                        + " FROM grupo WHERE identidad_sujeto_id IS NULL"
+                                        + " AND habilitado AND sin_sujeto_desde >= :desde"
+                                        + tope
+                                        + " ORDER BY tabla, clave")
+                        .param("desde", desde);
+        if (hasta != null) {
+            consulta = consulta.param("hasta", hasta);
+        }
+        return consulta.query(
+                        (fila, n) ->
+                                new FilaSinSujeto(
+                                        fila.getString("tabla"),
+                                        fila.getLong("id"),
+                                        fila.getString("clave"),
+                                        ZonaHoraria.diaDe(
+                                                fila.getObject(
+                                                                "sin_sujeto_desde",
+                                                                OffsetDateTime.class)
+                                                        .toInstant())))
+                .list();
+    }
+
+    /**
+     * Las filas sin sujeto de una municipalidad, partidas por si todavia conceden (#125).
+     *
+     * @param queConceden las que conceden hoy, por tabla y clave
+     * @param queDejaronDeConcederHoy las que concedieron ayer por ultima vez (ronda 2): el WARN las
+     *     nombra solo el dia en que cruzan, no cada corrida para siempre
+     * @param queYaNoConceden cuantas habilitadas ya no conceden, las de hoy incluidas y las que no
+     *     tienen fecha tambien
+     */
+    public record FilasSinSujeto(
+            List<FilaSinSujeto> queConceden,
+            List<FilaSinSujeto> queDejaronDeConcederHoy,
+            long queYaNoConceden) {
+        public FilasSinSujeto {
+            queConceden = List.copyOf(queConceden);
+            queDejaronDeConcederHoy = List.copyOf(queDejaronDeConcederHoy);
+        }
+    }
+
     // ------------------------------------------------------------------
 
     /** El acuse local. {@code false} si ya estaba: el evento se sirvio dos veces. */
@@ -271,7 +370,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     private Aplicacion usuario(EventoDeIdentidadRecibido evento, JsonNode cuerpo) {
         long identidadId = exigirId(cuerpo, Sujeto.USUARIO.campoId);
         String cuenta = exigir(cuerpo, "cuenta");
-        Casamiento casamiento = casarParaEscribir(Sujeto.USUARIO, identidadId, cuenta);
+        Casamiento casamiento =
+                casarParaEscribir(Sujeto.USUARIO, identidadId, cuenta, esAlta(evento));
         String sql =
                 casamiento.local() == null
                         ? "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
@@ -305,7 +405,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     private Aplicacion grupo(EventoDeIdentidadRecibido evento, JsonNode cuerpo) {
         long identidadId = exigirId(cuerpo, Sujeto.GRUPO.campoId);
         String nombre = exigir(cuerpo, "nombre");
-        Casamiento casamiento = casarParaEscribir(Sujeto.GRUPO, identidadId, nombre);
+        Casamiento casamiento =
+                casarParaEscribir(Sujeto.GRUPO, identidadId, nombre, esAlta(evento));
         String sql =
                 casamiento.local() == null
                         ? "INSERT INTO grupo (municipalidad_id, identidad_sujeto_id, nombre,"
@@ -443,19 +544,21 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
 
     /** Las dos tablas cuyas filas son sujetos de {@code identidad}, y con que se casan. */
     private enum Sujeto {
-        USUARIO("usuario", "cuenta", "usuarioId", "la cuenta"),
-        GRUPO("grupo", "nombre", "grupoId", "el grupo");
+        USUARIO("usuario", "cuenta", "usuarioId", "la cuenta", "USUARIO_DADO_DE_ALTA"),
+        GRUPO("grupo", "nombre", "grupoId", "el grupo", "GRUPO_DADO_DE_ALTA");
 
         final String tabla;
         final String clave;
         final String campoId;
         final String articulado;
+        final String tipoDeSuAlta;
 
-        Sujeto(String tabla, String clave, String campoId, String articulado) {
+        Sujeto(String tabla, String clave, String campoId, String articulado, String tipoDeSuAlta) {
             this.tabla = tabla;
             this.clave = clave;
             this.campoId = campoId;
             this.articulado = articulado;
+            this.tipoDeSuAlta = tipoDeSuAlta;
         }
     }
 
@@ -480,9 +583,23 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *       —eso es un renombrado, y se le escribe la clave nueva—, <b>salvo que esa clave nueva ya
      *       sea de otra fila</b>: ver el choque, abajo.
      *   <li>Si ninguna lo lleva, la que tiene esa clave natural <b>y ningun sujeto</b>: una fila de
-     *       antes de V5, que se adopta estampandole el id.
+     *       antes de V5, que se adopta estampandole el id — <b>solo si el evento es un {@code
+     *       *_MODIFICADO} y el alta de ese sujeto no esta apartada aqui</b> (ronda 2 de #125: si lo
+     *       esta, el {@code *_MODIFICADO} del sujeto nuevo adoptaria lo que su alta no pudo). Un
+     *       {@code *_DADO_DE_ALTA} no adopta nunca (ronda 1 de #125): la fila que ya esta en la
+     *       copia ya tuvo su alta, asi que otra alta con su clave es OTRO sujeto —el caso es
+     *       «jperez» renombrado en {@code identidad} y un «jperez» nuevo dado de alta despues:
+     *       adoptar la huerfana le heredaria al nuevo los miembros y los permisos del anterior—. Se
+     *       aparta con {@link NoSePuedeAplicar}, nombrando la fila y el sujeto nuevo, y el nuevo no
+     *       recibe nada hasta que alguien lo resuelva: falla cerrado.
      *   <li>Si ninguna de las dos, es nueva.
      * </ol>
+     *
+     * <p>Un alta del MISMO sujeto que ya esta —una fila que ya lleva ese id— sigue casando en el
+     * paso 1, por id: no es una adopcion. {@code identidad} hoy no la emite ({@code
+     * registrarUsuario} y {@code registrarGrupo} solo publican el alta cuando el id es nulo, y
+     * volver a habilitar es un {@code *_MODIFICADO}; medido en {@code identidad@6c5e433}), pero si
+     * algun dia lo hiciera, se aplica sobre su fila.
      *
      * <p><b>El choque de un renombrado (ronda 1 de #111) NO se aparta.</b> Hasta aqui, que la clave
      * nueva ya fuera de otra fila —huerfana o de otro sujeto— era {@link NoSePuedeAplicar} entero:
@@ -501,7 +618,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      * ya es de OTRO sujeto en esta copia— sigue siendo {@link NoSePuedeAplicar} entero: aqui no hay
      * fila propia que actualizar reteniendo su clave, asi que no hay nada seguro que escribir.
      */
-    private Casamiento casarParaEscribir(Sujeto sujeto, long identidadId, String clave) {
+    private Casamiento casarParaEscribir(
+            Sujeto sujeto, long identidadId, String clave, boolean esAlta) {
         List<Candidata> candidatas =
                 jdbc().sql(
                                 "SELECT id, identidad_sujeto_id, "
@@ -567,9 +685,87 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                                 + ": a esta copia le falta el evento que lo renombro, y escribir"
                                 + " este sobre esa fila se la daria a otro");
             }
+            if (esAlta) {
+                throw new NoSePuedeAplicar(
+                        "`identidad` da de alta "
+                                + sujeto.articulado
+                                + " "
+                                + identidadId
+                                + " con el nombre «"
+                                + clave
+                                + "», y en esta copia ese nombre lo tiene la fila "
+                                + porClave.id()
+                                + " sin sujeto de `identidad`: una huerfana (de antes de V5, o la"
+                                + " que dejo un renombrado antes de #111) que ya tuvo su propia"
+                                + " alta. Un alta es un sujeto NUEVO, y adoptar esa fila le"
+                                + " heredaria sus miembros y sus permisos; no se aplica hasta"
+                                + " resolverlo a mano (#125)");
+            }
+            exigirQueSuAltaNoSeHayaApartado(sujeto, identidadId, clave, porClave);
             return new Casamiento(porClave.id(), clave, null);
         }
         return new Casamiento(null, clave, null);
+    }
+
+    /**
+     * Niega la adopcion de una fila sin sujeto a un sujeto cuya ALTA esta apartada en {@code
+     * identidad_evento_muerto} (ronda 2 de #125).
+     *
+     * <p>La ronda 1 aparto el alta que caia sobre una huerfana, pero eso se esquivaba con el evento
+     * siguiente del mismo sujeto: la afiliacion, el permiso o la modificacion de «jperez» (el
+     * nuevo, id 200) no encontraban ninguna fila con el id 200, encontraban la huerfana por la
+     * cuenta y le estampaban el 200 —y con sujeto puesto, el plazo de {@link
+     * kamayuk.caja.seguridad.dominio.PlazoDeAdopcion} ya no le aplicaba—. Un sujeto cuya alta esta
+     * apartada aqui nunca tuvo fila en esta copia: no puede ser el dueno de una fila sin sujeto. Se
+     * aparta con {@link NoSePuedeAplicar}, que avisa al responsable nombrando la huerfana y el
+     * sujeto, y todos sus eventos siguientes se apartaran igual hasta que alguien lo resuelva:
+     * falla cerrado.
+     *
+     * <p><b>Solo el alta APARTADA, no la APLICADA</b>, y esta medido. Antes de V5 este mismo
+     * aplicador ya acusaba en {@code identidad_evento_aplicado} (V3, etapa 4), pero creaba la fila
+     * SIN sujeto: el alta del dueno legitimo de toda fila de antes de V5 esta alli, y contarla
+     * dejaria sin remedio exactamente a las filas que #111 quiere adoptar (lo mide {@code
+     * laFilaDeAntesDeV5ConSuAltaAplicadaSeAdopta}). Y un alta aplicada DESPUES de V5 siempre deja
+     * una fila con su id —inserta con el, o casa por el—, asi que su sujeto casa por id en el paso
+     * 1 y nunca llega hasta aqui. Las dos tablas guardan {@code tipo} (tal como se publico) y
+     * {@code sujeto_id} (el del sobre, que para un alta es el {@code usuarioId} o el {@code
+     * grupoId}, contrastado con el cuerpo) en columnas propias: la consulta es directa.
+     */
+    private void exigirQueSuAltaNoSeHayaApartado(
+            Sujeto sujeto, long identidadId, String clave, Candidata huerfana) {
+        boolean apartada =
+                Boolean.TRUE.equals(
+                        jdbc().sql(
+                                        "SELECT EXISTS (SELECT 1 FROM identidad_evento_muerto"
+                                                + " WHERE sujeto_id = :identidadId AND tipo ="
+                                                + " :tipo)")
+                                .param("identidadId", identidadId)
+                                .param("tipo", sujeto.tipoDeSuAlta)
+                                .query(Boolean.class)
+                                .single());
+        if (apartada) {
+            throw new NoSePuedeAplicar(
+                    "`identidad` nombra "
+                            + sujeto.articulado
+                            + " "
+                            + identidadId
+                            + " con el nombre «"
+                            + clave
+                            + "», y en esta copia ese nombre lo tiene la fila "
+                            + huerfana.id()
+                            + " sin sujeto de `identidad`. El alta de "
+                            + identidadId
+                            + " se aparto aqui (identidad_evento_muerto): es un sujeto que nunca"
+                            + " tuvo fila en esta copia, no el dueno de esa huerfana, y adoptarla le"
+                            + " heredaria sus miembros y sus permisos. No se aplica hasta"
+                            + " resolverlo a mano (#125)");
+        }
+    }
+
+    /** Si el evento es un alta, que nunca adopta por la clave (ronda 1 de #125). */
+    private static boolean esAlta(EventoDeIdentidadRecibido evento) {
+        return evento.tipo() == TipoDeEventoDeIdentidad.USUARIO_DADO_DE_ALTA
+                || evento.tipo() == TipoDeEventoDeIdentidad.GRUPO_DADO_DE_ALTA;
     }
 
     private static String deQuien(Candidata fila) {
@@ -587,8 +783,10 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *   <li>La que ya lleva ese sujeto de {@code identidad}: es ella.
      *   <li>Si ninguna lo lleva, la que tiene esa clave natural. Si esa fila no lleva NINGUN sujeto
      *       —una de antes de V5, o una que ni su propio alta/modificacion adopto todavia— se adopta
-     *       AQUI MISMO, estampandole el id: una afiliacion o un permiso no tienen por que esperar
-     *       al evento del propio sujeto para cerrar esa ventana (ronda 1 de #111).
+     *       AQUI MISMO, estampandole el id, salvo que el alta de ese sujeto este apartada (ronda 2
+     *       de #125: {@code exigirQueSuAltaNoSeHayaApartado}): una afiliacion o un permiso no
+     *       tienen por que esperar al evento del propio sujeto para cerrar esa ventana (ronda 1 de
+     *       #111).
      *   <li>Pero si esa fila YA es de OTRO sujeto, no se adopta ni se usa: es un choque, no una
      *       ausencia. {@code identidad} nombra un sujeto por un id que en esta copia ya es de otro,
      *       y aplicar esto encima le pondria los permisos o la afiliacion de un sujeto a la fila de
@@ -647,6 +845,7 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                             + ": a esta copia le falta el evento que lo puso al dia, y aplicar esto"
                             + " sobre esa fila se la daria a otro sujeto");
         }
+        exigirQueSuAltaNoSeHayaApartado(sujeto, identidadId, clave, porClave);
         jdbc().sql(
                         "UPDATE "
                                 + sujeto.tabla

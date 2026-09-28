@@ -26,6 +26,7 @@ import kamayuk.caja.plataforma.RecorridoPorMunicipalidades;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import kamayuk.caja.seguridad.dominio.CatalogoDelSistema;
 import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
@@ -134,6 +135,16 @@ class ImplantacionDeCeroJdbcTest {
         assertThat(contar(municipalidad, "grupo", "true"))
                 .as("los dos grupos que `identidad` crea al implantar, tambien del buzon")
                 .isEqualTo(2);
+        assertThat(
+                        contar(municipalidad, "usuario", "identidad_sujeto_id IS NULL")
+                                + contar(municipalidad, "grupo", "identidad_sujeto_id IS NULL"))
+                .as(
+                        "[#125: en una base implantada despues de #111 NINGUNA fila de usuario ni de"
+                                + " grupo nace sin sujeto de `identidad`: el unico que las escribe"
+                                + " es el aplicador, que siempre lo estampa. Por eso el plazo de"
+                                + " PlazoDeAdopcion no le quita nada a una instalacion nueva: solo"
+                                + " corre donde ya habia filas al llegar V5]")
+                .isZero();
         assertThat(contar(municipalidad, "miembro", "activo"))
                 .as("la afiliacion del administrador y las cuatro de las cuentas de servicio")
                 .isEqualTo(5);
@@ -509,6 +520,14 @@ class ImplantacionDeCeroJdbcTest {
         public void hayEventosPospuestos(
                 List<EventoDeIdentidadRecibido> lista, Instant ahora, Duration umbral) {
             throw new AssertionError("ningun evento de esta corriente se pospone: " + lista);
+        }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, java.time.LocalDate hoy) {
+            throw new AssertionError(
+                    "[#125: una implantacion de cero no deja NINGUNA fila sin sujeto] "
+                            + queConceden);
         }
     }
 

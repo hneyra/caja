@@ -161,10 +161,25 @@ class LecturasDeLaSesionFronteraTest {
                 "POLITICA",
                 "avance_recaudacion",
                 "Avance de recaudacion");
-        long cajerosDeA = insertar("grupo", "nombre", municipalidadA, "Cajeros");
+        // Con sujeto de `identidad`, como las escribe el aplicador: una fila sin el deja de
+        // conceder pasado su plazo (#125), y esta prueba no es sobre eso.
+        long cajerosDeA =
+                insertar("grupo", "identidad_sujeto_id, nombre", municipalidadA, 1L, "Cajeros");
         jperezDeA =
-                insertar("usuario", "cuenta, nombre", municipalidadA, JPEREZ, "Juana Perez Chero");
-        insertar("usuario", "cuenta, nombre", municipalidadA, SIN_PERMISOS, "Cuenta sin permisos");
+                insertar(
+                        "usuario",
+                        "identidad_sujeto_id, cuenta, nombre",
+                        municipalidadA,
+                        1L,
+                        JPEREZ,
+                        "Juana Perez Chero");
+        insertar(
+                "usuario",
+                "identidad_sujeto_id, cuenta, nombre",
+                municipalidadA,
+                2L,
+                SIN_PERMISOS,
+                "Cuenta sin permisos");
         miembro(municipalidadA, cajerosDeA, jperezDeA);
         permiso(municipalidadA, cajaTributaria, cajerosDeA, "lectura, impresion");
         permiso(
@@ -189,12 +204,14 @@ class LecturasDeLaSesionFronteraTest {
                         "OPCION_MENU",
                         "caja_tributaria",
                         "Caja tributaria");
-        long cajerosDeB = insertar("grupo", "nombre", municipalidadB, "Cajeros");
+        long cajerosDeB =
+                insertar("grupo", "identidad_sujeto_id, nombre", municipalidadB, 1L, "Cajeros");
         jperezDeB =
                 insertar(
                         "usuario",
-                        "cuenta, nombre",
+                        "identidad_sujeto_id, cuenta, nombre",
                         municipalidadB,
+                        1L,
                         JPEREZ,
                         "Julio Perez Sandoval");
         miembro(municipalidadB, cajerosDeB, jperezDeB);

@@ -108,6 +108,23 @@ public final class BaseDeDatosDePrueba implements AutoCloseable {
         }
     }
 
+    /**
+     * Los roles y una base vacia, SIN migrar: para quien necesite migrar solo hasta una version y
+     * medir que hace una migracion posterior con las filas que ya habia (#125). Quien la pide la
+     * migra; los fixtures no llevan Flyway en su classpath de compilacion.
+     */
+    @SuppressWarnings("checkstyle:IllegalCatch")
+    public static BaseDeDatosDePrueba provisionarSinMigrar() throws SQLException, IOException {
+        BaseDeDatosDePrueba base = new BaseDeDatosDePrueba(MotorPostgres.iniciar());
+        try {
+            base.crearRoles();
+            return base;
+        } catch (RuntimeException | SQLException | IOException e) {
+            base.close();
+            throw e;
+        }
+    }
+
     /** URL JDBC del motor, para quien necesite armar su propio pool. */
     public String url() {
         return motor.url();

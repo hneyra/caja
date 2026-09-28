@@ -3,10 +3,12 @@ package kamayuk.caja.seguridad.aplicacion;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
@@ -199,6 +201,58 @@ public class ConsumirEventosDeIdentidad {
         }
         alerta.hayEventosPospuestos(List.copyOf(viejos), ahora, EDAD_QUE_SE_AVISA);
         return viejos.size();
+    }
+
+    /**
+     * El aviso de las filas sin sujeto de {@code identidad} que todavia conceden, <b>una vez por
+     * corrida</b> (#125). Lo llama el runner al final, junto al de los pospuestos.
+     *
+     * <p>Una fila sin sujeto no es un fallo de la corrida —ningun evento que esta corrida pudiera
+     * aplicar la arregla—, asi que no falla ni cambia el codigo de salida. Lo que este metodo evita
+     * es que una huerfana de #111 conceda durante su plazo sin que lo sepa nadie, y que una cuenta
+     * legitima que espera su primer evento pierda el acceso sin que nadie lo viera venir: el aviso
+     * dice cual es cada una y el dia en que deja de conceder (ver {@link
+     * kamayuk.caja.seguridad.dominio.PlazoDeAdopcion}).
+     *
+     * <p>El dia es el de Lima ({@link ZonaHoraria#diaDe}), el mismo con que el guardia corta: el
+     * bean del reloj esta en esa zona, pero un {@code Clock} en UTC —el de las pruebas, o uno mal
+     * configurado— daria de noche el dia siguiente, y el aviso diria «concede» de una fila que el
+     * guardia ya niega.
+     *
+     * <p><b>El ERROR al responsable se repite en cada corrida</b> mientras quede alguna que
+     * concede, como el de los pospuestos: es un riesgo vivo con fecha de fin —el plazo—, y callarlo
+     * entre corridas seria esconderlo. <b>Las que ya no conceden, no</b>: ya no son un riesgo, y
+     * hasta la ronda 2 una linea WARN las contaba en cada corrida, cada cinco minutos y sin fin,
+     * que es el canal que grita en lo corriente (#437). Ahora el WARN nombra solo las que dejaron
+     * de conceder HOY —su ultimo dia fue ayer—, asi que cada fila aparece un solo dia, calculado
+     * con el reloj inyectado; las demas solo entran como cuenta en el ERROR, si lo hay.
+     *
+     * @return cuantas se avisaron; cero, que es lo corriente en una base implantada despues de #111
+     */
+    public int avisarDeLasFilasSinSujeto() {
+        LocalDate hoy = ZonaHoraria.diaDe(reloj.instant());
+        AplicarUnEventoDeIdentidad.FilasSinSujeto filas = aplicador.filasSinSujeto(hoy);
+        if (!filas.queDejaronDeConcederHoy().isEmpty()) {
+            java.util.StringJoiner cuales = new java.util.StringJoiner(", ");
+            for (kamayuk.caja.seguridad.FilaSinSujeto fila : filas.queDejaronDeConcederHoy()) {
+                cuales.add(fila.tabla() + " «" + fila.clave() + "» (id " + fila.id() + " aqui)");
+            }
+            log.warn(
+                    "HOY ({}) dejan de conceder {} fila(s) de usuario o grupo sin sujeto de"
+                            + " `identidad`, al cumplirse su plazo de {} dias desde V6 (#125): {}."
+                            + " No se vuelve a decir manana. Si alguna era legitima, se recupera"
+                            + " cuando `identidad` la toque, comprobando antes que es el MISMO"
+                            + " sujeto y no una clave reasignada",
+                    hoy,
+                    filas.queDejaronDeConcederHoy().size(),
+                    kamayuk.caja.seguridad.dominio.PlazoDeAdopcion.DIAS,
+                    cuales);
+        }
+        if (filas.queConceden().isEmpty()) {
+            return 0;
+        }
+        alerta.hayFilasSinSujeto(filas.queConceden(), filas.queYaNoConceden(), hoy);
+        return filas.queConceden().size();
     }
 
     private static String motivoDe(RuntimeException noSePudo) {

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,7 @@ import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.plataforma.RecorridoPorMunicipalidades;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -190,6 +192,60 @@ class CorrerElConsumidorDeIdentidadTest {
         assertThat(alerta.pospuestos).isEmpty();
     }
 
+    @Test
+    @DisplayName(
+            "#125: las filas sin sujeto que todavia conceden se avisan UNA vez por corrida, con el"
+                    + " dia de Lima")
+    void lasFilasSinSujetoSeAvisanUnaVezPorCorrida() {
+        AlertaQueAnota alerta = new AlertaQueAnota();
+        FilaSinSujeto huerfana = new FilaSinSujeto("grupo", 5, "Cajeros", LocalDate.of(2026, 9, 3));
+        AplicadorQuePospone aplicador =
+                new AplicadorQuePospone(
+                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(
+                                List.of(huerfana), List.of(), 2));
+
+        new CorrerElConsumidorDeIdentidad(
+                        new ConsumirEventosDeIdentidad(
+                                new BuzonDeMentira(3),
+                                aplicador,
+                                alerta,
+                                // Las 02:00 UTC del 10 son las 21:00 del 9 en Lima.
+                                Clock.fixed(Instant.parse("2026-09-10T02:00:00Z"), ZoneOffset.UTC)),
+                        registroCon("200105", CATACAOS),
+                        "kamayuk-caja-servicio-200105")
+                .run(new DefaultApplicationArguments());
+
+        assertThat(aplicador.diasConsultados)
+                .as(
+                        "[una consulta por corrida, no por vuelta —se dieron cuatro—, y con el dia"
+                                + " de LIMA: a las 02:00 UTC del 10 en Lima aun es el 9, y el"
+                                + " guardia corta con ese dia; con el de UTC el aviso diria"
+                                + " «concede» de una fila que el guardia ya niega]")
+                .containsExactly(LocalDate.of(2026, 9, 9));
+        assertThat(alerta.sinSujeto)
+                .as("[y el aviso lleva la fila y cuantas ya no conceden]")
+                .containsExactly("[" + huerfana + "] y 2 que ya no conceden, hoy 2026-09-09");
+        assertThat(TenantContext.actualSiHay()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("#125 CONTRASTE: sin filas sin sujeto que concedan, no se avisa")
+    void sinFilasSinSujetoNoSeAvisa() {
+        AlertaQueAnota alerta = new AlertaQueAnota();
+        AplicadorQuePospone aplicador =
+                new AplicadorQuePospone(
+                        new AplicarUnEventoDeIdentidad.FilasSinSujeto(List.of(), List.of(), 3));
+
+        runnerCon(new BuzonDeMentira(1), alerta, aplicador).run(new DefaultApplicationArguments());
+
+        assertThat(aplicador.diasConsultados).hasSize(1);
+        assertThat(alerta.sinSujeto)
+                .as(
+                        "[las que ya no conceden no son un riesgo: van a una linea del registro, no"
+                                + " al responsable cada cinco minutos]")
+                .isEmpty();
+    }
+
     // ------------------------------------------------------------------
 
     private static final Instant AHORA = Instant.parse("2026-09-09T23:00:00Z");
@@ -207,12 +263,16 @@ class CorrerElConsumidorDeIdentidadTest {
 
     private static CorrerElConsumidorDeIdentidad runnerCon(
             FuenteDeEventosDeIdentidad buzon, AlertaDeEventosSinAplicar alerta) {
+        return runnerCon(buzon, alerta, new AplicadorQuePospone());
+    }
+
+    private static CorrerElConsumidorDeIdentidad runnerCon(
+            FuenteDeEventosDeIdentidad buzon,
+            AlertaDeEventosSinAplicar alerta,
+            AplicarUnEventoDeIdentidad aplicador) {
         return new CorrerElConsumidorDeIdentidad(
                 new ConsumirEventosDeIdentidad(
-                        buzon,
-                        new AplicadorQuePospone(),
-                        alerta,
-                        Clock.fixed(AHORA, ZoneOffset.UTC)),
+                        buzon, aplicador, alerta, Clock.fixed(AHORA, ZoneOffset.UTC)),
                 registroCon("200105", CATACAOS),
                 "kamayuk-caja-servicio-200105");
     }
@@ -238,11 +298,18 @@ class CorrerElConsumidorDeIdentidadTest {
                 List<EventoDeIdentidadRecibido> pospuestos, Instant ahora, Duration umbral) {
             throw new AssertionError("no deberia llamarse: " + pospuestos);
         }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, LocalDate hoy) {
+            throw new AssertionError("no deberia llamarse: " + queConceden);
+        }
     }
 
     /** Anota lo que se avisa, sin componer ninguna prosa. */
     private static final class AlertaQueAnota implements AlertaDeEventosSinAplicar {
         private final List<List<EventoDeIdentidadRecibido>> pospuestos = new ArrayList<>();
+        private final List<String> sinSujeto = new ArrayList<>();
 
         @Override
         public void hayUnEventoSinAplicar(
@@ -259,6 +326,13 @@ class CorrerElConsumidorDeIdentidadTest {
         public void hayEventosPospuestos(
                 List<EventoDeIdentidadRecibido> lista, Instant ahora, Duration umbral) {
             pospuestos.add(List.copyOf(lista));
+        }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, LocalDate hoy) {
+            sinSujeto.add(
+                    queConceden + " y " + queYaNoConceden + " que ya no conceden, hoy " + hoy);
         }
     }
 
@@ -303,14 +377,31 @@ class CorrerElConsumidorDeIdentidadTest {
         }
     }
 
-    /** Pospone las afiliaciones y aplica todo lo demas. No toca ninguna base. */
+    /**
+     * Pospone las afiliaciones y aplica todo lo demas. No toca ninguna base: tampoco para leer las
+     * filas sin sujeto, que contesta con lo que se le dio y anota con que dia se le pregunto.
+     */
     private static final class AplicadorQuePospone extends AplicarUnEventoDeIdentidad {
+        private final FilasSinSujeto filas;
+        private final List<LocalDate> diasConsultados = new ArrayList<>();
+
         AplicadorQuePospone() {
+            this(new FilasSinSujeto(List.of(), List.of(), 0));
+        }
+
+        AplicadorQuePospone(FilasSinSujeto filas) {
             super(
                     JdbcClient.create(new DriverManagerDataSource()),
                     tools.jackson.databind.json.JsonMapper.builder().build(),
                     Clock.systemUTC(),
                     new AlertaQueNuncaSeLlama());
+            this.filas = filas;
+        }
+
+        @Override
+        public FilasSinSujeto filasSinSujeto(LocalDate hoy) {
+            diasConsultados.add(hoy);
+            return filas;
         }
 
         @Override
@@ -384,6 +475,11 @@ class CorrerElConsumidorDeIdentidadTest {
         public Aplicacion aplicar(EventoDeIdentidadRecibido evento) {
             contextos.add(TenantContext.actual().valor());
             return Aplicacion.APLICADO;
+        }
+
+        @Override
+        public FilasSinSujeto filasSinSujeto(LocalDate hoy) {
+            return new FilasSinSujeto(List.of(), List.of(), 0);
         }
     }
 }

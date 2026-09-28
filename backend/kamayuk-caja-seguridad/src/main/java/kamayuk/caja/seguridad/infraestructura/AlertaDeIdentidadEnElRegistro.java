@@ -2,10 +2,13 @@ package kamayuk.caja.seguridad.infraestructura;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.StringJoiner;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -113,6 +116,49 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                 pospuestos.size(),
                 enMinutos(umbral),
                 lista,
+                responsable,
+                canal);
+    }
+
+    @Override
+    public void hayFilasSinSujeto(
+            List<FilaSinSujeto> queConceden, long queYaNoConceden, LocalDate hoy) {
+        StringJoiner lista = new StringJoiner("; ");
+        for (FilaSinSujeto fila : queConceden) {
+            lista.add(
+                    fila.tabla()
+                            + " «"
+                            + fila.clave()
+                            + "» (id "
+                            + fila.id()
+                            + " aqui), sin sujeto desde "
+                            + fila.desde()
+                            + ", concede hasta el "
+                            + fila.concedeHasta());
+        }
+        REGISTRO.error(
+                "LA COPIA LOCAL DE LA AUTORIZACION TIENE {} FILA(S) SIN SUJETO DE `identidad` QUE"
+                        + " TODAVIA CONCEDEN (hoy es {}): {}. Ningun evento las adopto desde V5, y"
+                        + " desde aqui no se sabe si cada una es una cuenta o un grupo legitimo que"
+                        + " espera su primer evento o una huerfana que el defecto de #111 dejo tras"
+                        + " un renombrado. NO basta con que en `identidad` exista esa misma clave:"
+                        + " puede haberse reasignado a otra persona o a otro grupo. Antes de tocar"
+                        + " nada, comprueba en `identidad` que es el MISMO sujeto —su id de"
+                        + " `identidad` y su fecha de alta anteriores a V5, y en su auditoria que"
+                        + " esa clave no se renombro ni se volvio a dar de alta—. Si lo es, cualquier"
+                        + " modificacion, afiliacion o permiso que lo nombre lo adopta aqui y vuelve"
+                        + " a conceder. Si NO lo es —la clave es de un sujeto nuevo—, no la toques"
+                        + " pensando en esta fila: la huerfana deja de conceder sola el dia que se"
+                        + " indica, a los {} dias de V6, y los eventos del sujeto nuevo que la"
+                        + " nombren se apartaran con su propio aviso hasta que alguien decida a mano"
+                        + " (#125). Esta caja no edita ni borra estas filas: su unico escritor es el"
+                        + " consumidor del buzon (regla 12). Ademas hay {} habilitada(s) sin sujeto"
+                        + " que YA no conceden. Responsable: {} <{}>",
+                queConceden.size(),
+                hoy,
+                lista,
+                PlazoDeAdopcion.DIAS,
+                queYaNoConceden,
                 responsable,
                 canal);
     }

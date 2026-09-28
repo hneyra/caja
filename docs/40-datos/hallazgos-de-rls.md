@@ -151,6 +151,18 @@ Un índice único **no tiene `NOT VALID`**, así que la única forma de que la m
 pararse es que su predicado excluya por construcción a las filas anteriores — es lo que `V75` hace
 con `WHERE acto = 'ALTA_DEUDA'`, columna que `V68` estrenó y que en toda fila previa es nula.
 
+**Y lo que sí se puede poner en las filas que ya hay: un valor por omisión que no sea volátil
+(`caja`#125).** El `UPDATE` muere, pero `ALTER TABLE … ADD COLUMN c timestamptz DEFAULT now()`
+**pasa** con el dueño, sin contexto de tenant y con `FORCE`: `now()` es estable, así que se evalúa
+**una vez**, se guarda en el catálogo (`attmissingval`) y las filas existentes lo leen de ahí — no se
+reescribe el montón ni se consulta la tabla. Seguido de `ALTER COLUMN c DROP DEFAULT`, las filas que
+ya estaban **conservan** ese valor y las que se inserten después nacen nulas. Es lo que hace
+`V6__desde_cuando_una_fila_espera_su_sujeto.sql` para marcar las filas de la copia de la autorización
+que V5 encontró sin sujeto, y lo mide `SinSujetoDesdeTest` migrando hasta `V5`, sembrando y
+terminando con el `Migrador` del despliegue. Sirve para **una** marca común a todas las filas previas
+—el instante de la migración—; para un valor que dependa de cada fila sigue sin haber salida desde
+el migrador.
+
 ### Hallazgo 5 — Bajo RLS, el operador espacial tampoco llega al índice
 
 Es el hallazgo 3 otra vez, con otro operador, y por eso conviene leerlos como una **familia** y no

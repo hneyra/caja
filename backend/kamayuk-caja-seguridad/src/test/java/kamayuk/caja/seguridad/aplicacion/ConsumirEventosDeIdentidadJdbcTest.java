@@ -3,6 +3,9 @@ package kamayuk.caja.seguridad.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -11,23 +14,30 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.UUID;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
+import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.QueryTimeoutException;
@@ -289,6 +299,162 @@ class ConsumirEventosDeIdentidadJdbcTest {
     }
 
     // ------------------------------------------------------------------
+    //  #125 — las filas sin sujeto que todavia conceden
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "#125: se avisa de las filas sin sujeto que todavia conceden —cuenta y grupo— y de"
+                    + " ninguna otra; las vencidas se cuentan")
+    void avisaDeLasFilasSinSujetoQueTodaviaConceden() throws SQLException {
+        long otra = crearMunicipalidad("209904", "Municipalidad D");
+        // AHORA es 2026-09-09T15:00Z: en Lima, el 9.
+        LocalDate ultimoDia = PlazoDeAdopcion.corte(LocalDate.of(2026, 9, 9));
+        LocalDate vencida = ultimoDia.minusDays(1);
+        try (Connection admin = base.conexionAdmin();
+                PreparedStatement s =
+                        admin.prepareStatement(
+                                "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
+                                        + " nombre, habilitado, sin_sujeto_desde)"
+                                        + " VALUES (?, ?, ?, 'x', ?, ?)")) {
+            insertarUsuario(s, otra, null, "en.plazo", true, ultimoDia);
+            insertarUsuario(s, otra, null, "vencida", true, vencida);
+            insertarUsuario(s, otra, null, "sin.fecha", true, null);
+            insertarUsuario(s, otra, null, "deshabilitada", false, ultimoDia);
+            insertarUsuario(s, otra, 9L, "con.sujeto", true, vencida);
+        }
+        try (Connection admin = base.conexionAdmin();
+                PreparedStatement s =
+                        admin.prepareStatement(
+                                "INSERT INTO grupo (municipalidad_id, identidad_sujeto_id, nombre,"
+                                        + " sin_sujeto_desde) VALUES (?, ?, ?, ?)")) {
+            s.setLong(1, otra);
+            s.setNull(2, java.sql.Types.BIGINT);
+            s.setString(3, "Cajeros viejo");
+            s.setObject(4, enLima(ultimoDia));
+            s.executeUpdate();
+            s.setLong(2, 9L);
+            s.setString(3, "Cajeros");
+            s.executeUpdate();
+        }
+        TenantContext.fijar(new MunicipalidadId(otra));
+
+        int avisadas = consumidor.avisarDeLasFilasSinSujeto();
+
+        assertThat(avisadas).isEqualTo(2);
+        assertThat(alerta.avisos)
+                .as(
+                        "[UNA llamada, con las dos que todavia conceden —en el orden tabla, clave— y"
+                                + " la cuenta de las que ya no: «vencida» y «sin.fecha». Ni la"
+                                + " deshabilitada, que no concede de todos modos, ni las que llevan"
+                                + " sujeto, que el plazo no les afecta]")
+                .containsExactly(
+                        "SIN SUJETO: grupo «Cajeros viejo» hasta "
+                                + PlazoDeAdopcion.concedeHasta(ultimoDia)
+                                + ", usuario «en.plazo» hasta "
+                                + PlazoDeAdopcion.concedeHasta(ultimoDia)
+                                + "; ya no conceden 2; hoy 2026-09-09");
+    }
+
+    @Test
+    @DisplayName(
+            "#125 ronda 2: el WARN de las que ya no conceden solo nombra las que cruzaron el plazo"
+                    + " HOY, y al dia siguiente ya no las repite")
+    void elWarnDeLasVencidasSoloElDiaQueCruzan() throws SQLException {
+        long otra = crearMunicipalidad("209905", "Municipalidad E");
+        LocalDate hoy = LocalDate.of(2026, 9, 9);
+        LocalDate ultimoDia = PlazoDeAdopcion.corte(hoy);
+        try (Connection admin = base.conexionAdmin();
+                PreparedStatement s =
+                        admin.prepareStatement(
+                                "INSERT INTO usuario (municipalidad_id, identidad_sujeto_id, cuenta,"
+                                        + " nombre, habilitado, sin_sujeto_desde)"
+                                        + " VALUES (?, ?, ?, 'x', ?, ?)")) {
+            // Ayer concedia por ultima vez: hoy es el dia en que cruza.
+            insertarUsuario(s, otra, null, "cruza.hoy", true, ultimoDia.minusDays(1));
+            insertarUsuario(s, otra, null, "vencida.hace.dias", true, ultimoDia.minusDays(5));
+            insertarUsuario(s, otra, null, "sin.fecha.e", true, null);
+        }
+        TenantContext.fijar(new MunicipalidadId(otra));
+        ListAppender<ILoggingEvent> registro = new ListAppender<>();
+        registro.start();
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger)
+                        LoggerFactory.getLogger(ConsumirEventosDeIdentidad.class);
+        logger.addAppender(registro);
+        try {
+            consumidor.avisarDeLasFilasSinSujeto();
+        } finally {
+            logger.detachAppender(registro);
+        }
+
+        List<String> avisos =
+                registro.list.stream()
+                        .filter(linea -> linea.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .toList();
+        assertThat(avisos)
+                .as(
+                        "[una linea, con la que cruzo hoy y ninguna otra: repetir cada cinco minutos"
+                                + " y para siempre las que ya no conceden es el canal que grita en"
+                                + " lo corriente (#437)]")
+                .singleElement()
+                .asString()
+                .contains("«cruza.hoy»")
+                .doesNotContain("vencida.hace.dias")
+                .doesNotContain("sin.fecha.e");
+        assertThat(alerta.avisos)
+                .as("y ninguna concede, asi que el responsable no recibe nada")
+                .noneMatch(aviso -> aviso.startsWith("SIN SUJETO"));
+
+        AplicarUnEventoDeIdentidad aplicador = aplicadorDeVerdad(alerta);
+        assertThat(aplicador.filasSinSujeto(hoy.plusDays(1)).queDejaronDeConcederHoy())
+                .as("al dia siguiente, «cruza.hoy» ya no es de hoy: no se vuelve a nombrar")
+                .isEmpty();
+        assertThat(aplicador.filasSinSujeto(hoy).queDejaronDeConcederHoy())
+                .extracting(FilaSinSujeto::clave)
+                .containsExactly("cruza.hoy");
+    }
+
+    @Test
+    @DisplayName("#125 CONTRASTE: una copia sin filas sin sujeto no avisa")
+    void unaCopiaSinFilasSinSujetoNoAvisa() {
+        TenantContext.fijar(new MunicipalidadId(municipalidad));
+
+        assertThat(consumidor.avisarDeLasFilasSinSujeto()).isZero();
+        assertThat(alerta.avisos).noneMatch(aviso -> aviso.startsWith("SIN SUJETO"));
+    }
+
+    private static void insertarUsuario(
+            PreparedStatement s,
+            long municipalidad,
+            @Nullable Long sujeto,
+            String cuenta,
+            boolean habilitado,
+            @Nullable LocalDate desde)
+            throws SQLException {
+        s.setLong(1, municipalidad);
+        if (sujeto == null) {
+            s.setNull(2, java.sql.Types.BIGINT);
+        } else {
+            s.setLong(2, sujeto);
+        }
+        s.setString(3, cuenta);
+        s.setBoolean(4, habilitado);
+        if (desde == null) {
+            s.setNull(5, java.sql.Types.TIMESTAMP_WITH_TIMEZONE);
+        } else {
+            s.setObject(5, enLima(desde));
+        }
+        s.executeUpdate();
+    }
+
+    /** El comienzo del dia en Lima, que es con lo que el guardia corta el plazo. */
+    private static java.time.OffsetDateTime enLima(LocalDate dia) {
+        return ZonaHoraria.comienzoDelDia(dia).atOffset(ZoneOffset.UTC);
+    }
+
+    // ------------------------------------------------------------------
 
     private static AplicarUnEventoDeIdentidad aplicadorDeVerdad(AlertaDeEventosSinAplicar alerta) {
         return envolver(
@@ -448,6 +614,22 @@ class ConsumirEventosDeIdentidadJdbcTest {
                 java.time.Instant ahora,
                 java.time.Duration umbral) {
             avisos.add("POSPUESTOS: " + pospuestos.size());
+        }
+
+        @Override
+        public void hayFilasSinSujeto(
+                List<FilaSinSujeto> queConceden, long queYaNoConceden, LocalDate hoy) {
+            StringJoiner filas = new StringJoiner(", ");
+            for (FilaSinSujeto fila : queConceden) {
+                filas.add(fila.tabla() + " «" + fila.clave() + "» hasta " + fila.concedeHasta());
+            }
+            avisos.add(
+                    "SIN SUJETO: "
+                            + filas
+                            + "; ya no conceden "
+                            + queYaNoConceden
+                            + "; hoy "
+                            + hoy);
         }
     }
 }
