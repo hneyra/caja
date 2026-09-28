@@ -144,7 +144,8 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
   const datos = useDatosDeLaHoja(clave, hoja.ruta);
   // Lo que la hoja escribe (#100): quien atiende el acto, lo que la sesion puede —que es lo que
   // decide si la accion se puede pulsar y con que motivo si no— y el rechazo del backend si lo hubo.
-  const anulacion = useLaAnulacion(clave);
+  // Con el recibo de la ruta desde #134: el acto y su rechazo son de ese recibo, y de ningun otro.
+  const anulacion = useLaAnulacion(clave, hoja.ruta.sujeto);
   return (
     <PantallaDelSistema
       definicion={pantallaDe(clave)}
@@ -153,6 +154,8 @@ function CuerpoDeLaPantalla({ clave }: { readonly clave: ClaveDeHoja }) {
       hoja={anulacion.conLaHoja(hoja)}
       navegacion={navegacion}
       actos={anulacion.actos}
+      // El acto abierto lo lleva la costura y no la pantalla (#134): elegir otro recibo lo cierra.
+      actoAbierto={anulacion.actoAbierto}
       alAbrirActo={anulacion.alAbrirActo}
     />
   );

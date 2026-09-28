@@ -1,5 +1,6 @@
 import {
   Pantalla,
+  type ActoAbierto,
   type DatosDeLaPantalla,
   type DefinicionDePantalla,
   type HojaDelMarco,
@@ -45,6 +46,12 @@ export interface PantallaDelSistemaProps {
   readonly actos?: ManejadoresDeLosActos;
   /** Se abrio o se cerro un acto (#117): la costura de la anulacion cancela su borrador al cerrarlo. */
   readonly alAbrirActo?: (clave: string | null, parametros?: Readonly<Record<string, string>>) => void;
+  /**
+   * El acto abierto, si lo lleva quien monta la pantalla (#134). Con el —`null` incluido— la pantalla
+   * no lo guarda en su estado: la costura de la anulacion lo cierra al elegir otro recibo. Sin el,
+   * como hasta #134, que es lo que ven las guardas que montan la pantalla sola.
+   */
+  readonly actoAbierto?: ActoAbierto | null;
 }
 
 export function PantallaDelSistema({
@@ -55,6 +62,7 @@ export function PantallaDelSistema({
   navegacion,
   actos,
   alAbrirActo,
+  actoAbierto,
 }: PantallaDelSistemaProps) {
   const { t } = useTranslation();
   const textos = useTextosDelInterprete();
@@ -70,6 +78,7 @@ export function PantallaDelSistema({
       {...(navegacion === undefined ? {} : { navegacion })}
       {...(actos === undefined ? {} : { actos })}
       {...(alAbrirActo === undefined ? {} : { alAbrirActo })}
+      {...(actoAbierto === undefined ? {} : { actoAbierto })}
     />
   );
 }

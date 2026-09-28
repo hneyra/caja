@@ -37,9 +37,9 @@ import { ACTO_DE_ANULACION } from '../pantallas/arbol.ts';
  *
  * <h2>Cuando se borra</h2>
  *
- * Al anular con exito y al cerrar el acto —que es cancelarlo—, salvo que lo que se cierre sea el
- * rechazo de un 401: entonces cerrar y recargar es justo lo que se le pide a quien mira, y el borrador
- * tiene que seguir ahi. Lo decide `useLaAnulacion.ts`, que es quien sabe cuando pasa cada cosa. Y al
+ * Al anular con exito y al cerrar el acto —que es cancelarlo, lo cierre el boton o elegir otro
+ * recibo en la lista (#134)—, salvo que lo que se cierre sea el rechazo de un 401: entonces cerrar y
+ * recargar es justo lo que se le pide a quien mira, y el borrador tiene que seguir ahi. Lo decide `useLaAnulacion.ts`, que es quien sabe cuando pasa cada cosa. Y al
  * cerrar la sesion, desde `aplicacion.tsx`.
  *
  * <h2>Y es de UNA cuenta</h2>

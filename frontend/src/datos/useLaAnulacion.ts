@@ -1,4 +1,5 @@
 import type {
+  ActoAbierto,
   CambioDeLoTecleado,
   DatoConNombre,
   DatosDeLaPantalla,
@@ -9,7 +10,7 @@ import type {
   ManejadoresDeLosActos,
 } from '@kamayuk/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ErrorDeLaApi } from '../api/cliente.ts';
@@ -53,7 +54,28 @@ import { useCuentaQueEscribe } from './useCuentaDeLaSesion.ts';
  * definicion pide `conservaLoTecleado`, el interprete guarda lo tecleado donde esta costura le dice
  * —`conLaHoja`— y esta costura lo copia a la pestana (`borradorDeLaAnulacion.ts`). Al volver del
  * emisor, abrir la anulacion sobre el mismo recibo lo encuentra escrito. Se borra al anular con
- * exito y al cerrar el acto, que es cancelarlo.
+ * exito y al cerrar el acto, que es cancelarlo —tambien cuando lo cierra elegir otro recibo (#134)—.
+ *
+ * <h2>Y desde #134, el acto y su rechazo son del recibo elegido</h2>
+ *
+ * Hasta #134 el acto abierto lo guardaba `<Pantalla>` en su estado, y la pantalla no se vuelve a
+ * montar al elegir otra fila —solo al cambiar de hoja—: con el acto abierto sobre `001-000123`,
+ * pulsar «Ver el duplicado» en `001-000124` movia la ruta y el bloque de arriba, pero el acto seguia
+ * diciendo 123 y **confirmar anulaba el 123** mirando el 124. Y el rechazo vivia para la hoja entera:
+ * un 409 sobre el 123 salia al abrir el acto sobre el 124, antes de enviar nada. Ahora:
+ *
+ *   · **El acto abierto lo lleva esta costura** (`actoAbierto`, controlado) y solo se entrega a la
+ *     pantalla mientras su recibo sea el de la ruta: elegir otro lo cierra. Se cierra como el boton
+ *     «Cerrar» —cancelando el borrador—, salvo tras un 401, por lo mismo que alli (#117).
+ *   · **Y lo que se envia se vuelve a comprobar**: `numeroQueSeAnula` no deja salir un `POST` con un
+ *     numero que no sea el que la ruta tiene elegido en ese momento.
+ *   · **El rechazo es del recibo y del acto**: se guarda con su numero, solo se ensena sobre ese
+ *     recibo, y abrir el acto lo borra —lo que se ensena al abrir es el formulario, no el envio
+ *     anterior—. Tambien el 401 se recuerda con su numero: cerrar el acto de OTRO recibo si cancela.
+ *
+ * Por que no se vuelve a montar la pantalla con el recibo en la `key`, que tambien cerraria el acto:
+ * porque se llevaria el foco del boton de la fila que se acaba de pulsar —se elige con el teclado
+ * (#99)— y volveria a pedir la lista en cada eleccion.
  *
  * <h2>Y por que vive fuera de `useDatosDeLaHoja`</h2>
  *
@@ -75,6 +97,36 @@ export interface LaAnulacion {
   readonly conLaHoja: (hoja: HojaDelMarco) => HojaDelMarco;
   /** Se abrio o se cerro un acto. Cerrar el de anular es cancelarlo: su borrador se va (#117). */
   readonly alAbrirActo: (clave: string | null, parametros?: Readonly<Record<string, string>>) => void;
+  /**
+   * El acto abierto, **si sigue siendo del recibo elegido** (#134). Se le pasa a `<Pantalla>`, que
+   * entonces no lo guarda en su estado: elegir otro recibo lo cierra.
+   */
+  readonly actoAbierto: ActoAbierto | null;
+}
+
+/**
+ * **Si un acto abierto sigue siendo del recibo que la ruta tiene elegido** (#134).
+ *
+ * El de anular se abre con el numero del recibo en sus parametros (`con` de la accion), y deja de
+ * valer en cuanto la ruta elige otro —o ninguno—. Un acto que no se abrio sobre un recibo no se ata
+ * a ninguno.
+ */
+export function sigueSiendoDelElegido(abierto: ActoAbierto, elegido: string | null): boolean {
+  const suyo = abierto.parametros?.[NUMERO_DEL_RECIBO];
+  return suyo === undefined || suyo === elegido;
+}
+
+/**
+ * **El numero que se anula, o ninguno** (#134): el del acto, y solo si es el que la ruta tiene
+ * elegido **al enviar**. Cerrar el acto al elegir otro recibo ya lo impide; esto es lo que hace que
+ * no dependa de que ese cierre llegue antes que la confirmacion.
+ */
+export function numeroQueSeAnula(
+  parametros: Readonly<Record<string, string>>,
+  elegido: string | null,
+): string | null {
+  const delActo = parametros[NUMERO_DEL_RECIBO];
+  return delActo !== undefined && delActo !== '' && delActo === elegido ? delActo : null;
 }
 
 /** El titulo del peldano, por lo que el backend contesto. Cada uno se arregla en otro sitio. */
@@ -131,11 +183,16 @@ export function falloDeLaAnulacion(error: unknown, t: (clave: string) => string)
   };
 }
 
-export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
+/**
+ * `elegido` es el sujeto de la ruta de la hoja: el recibo que se esta mirando. Es lo que ata el acto
+ * y su rechazo a un recibo (#134).
+ */
+export function useLaAnulacion(clave: ClaveDeHoja, elegido: string | null): LaAnulacion {
   const { t } = useTranslation();
   const consultas = useQueryClient();
   const permisos = usePermisosDeLaSesion();
-  const [fallo, setFallo] = useState<EstadoDeUnaLectura | null>(null);
+  /** El rechazo del ultimo envio, **con el numero del recibo** al que se le envio (#134). */
+  const [fallo, setFallo] = useState<{ readonly numero: string; readonly estado: EstadoDeUnaLectura } | null>(null);
   const puede = loQuePuedeLaSesion(permisos);
   const conActos = clave === 'duplicado-recibo';
   // Quien escribe: el borrador se guarda con su cuenta y solo a ella se le devuelve (#117).
@@ -158,13 +215,17 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
   useEffect(() => {
     if (conActos && cuenta !== null && leidoPara === cuenta) guardarLosBorradores(cuenta, tecleado.actos);
   }, [conActos, cuenta, leidoPara, tecleado.actos]);
-  /** Los parametros del acto de anular abierto, para saber que borrador se cancela al cerrarlo. */
-  const abierto = useRef<Readonly<Record<string, string>> | null>(null);
   /**
-   * El ultimo envio lo rechazo un 401 (#117, revision). Entonces cerrar el acto NO es cancelarlo: lo
-   * que se le pide a quien mira es cerrar, recargar y volver a entrar, y el borrador tiene que seguir.
+   * El acto abierto, el que sea (#134). Lo lleva esta costura y no `<Pantalla>`, para poder cerrarlo
+   * cuando la ruta elige otro recibo: la pantalla no se vuelve a montar por eso.
    */
-  const rechazadoPorLaSesion = useRef(false);
+  const [abierto, setAbierto] = useState<ActoAbierto | null>(null);
+  /**
+   * El recibo cuyo ultimo envio rechazo un 401 (#117, revision; con su numero desde #134). Cerrar
+   * SU acto no es cancelarlo: lo que se le pide a quien mira es cerrar, recargar y volver a entrar,
+   * y el borrador tiene que seguir. Cerrar el de otro recibo si lo es.
+   */
+  const [rechazadoPorLaSesion, setRechazadoPorLaSesion] = useState<string | null>(null);
   const olvidar = (parametros: Readonly<Record<string, string>>): void => {
     const apertura = aperturaDeLaAnulacion(parametros);
     setTecleado((antes) => {
@@ -174,13 +235,35 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
       return { ...antes, actos };
     });
   };
+  /**
+   * Cerrar un acto: el de anular se cancela —su borrador se va—, salvo que su recibo acabe de
+   * recibir un 401, que es justo cuando hay que conservarlo (#117).
+   */
+  const cerrar = (acto: ActoAbierto): void => {
+    if (acto.clave !== ACTO_DE_ANULACION) return;
+    const parametros = acto.parametros ?? {};
+    if (rechazadoPorLaSesion === null || rechazadoPorLaSesion !== parametros[NUMERO_DEL_RECIBO]) olvidar(parametros);
+  };
+  if (abierto !== null && !sigueSiendoDelElegido(abierto, elegido)) {
+    // **Elegir otro recibo cierra el acto** (#134), y lo cierra como el boton «Cerrar». Durante el
+    // render y no en un efecto, como `leidoPara`: asi la pantalla no llega a pintar el acto de un
+    // recibo encima de otro.
+    setAbierto(null);
+    cerrar(abierto);
+  }
 
   const anular = async (envio: EnvioDeUnActo): Promise<void> => {
     // El numero sale de lo que la accion le dio al acto (`con`), que a su vez sale de la ruta de la
-    // hoja: es el recibo que se esta mirando, y no uno tecleado.
-    const numero = envio.parametros[NUMERO_DEL_RECIBO] ?? '';
+    // hoja: es el recibo que se esta mirando, y no uno tecleado. Y tiene que SEGUIR siendolo al
+    // enviar (#134): con otro elegido no sale nada.
+    const numero = numeroQueSeAnula(envio.parametros, elegido);
+    if (numero === null) {
+      throw new Error(
+        `La anulacion se abrio sobre «${envio.parametros[NUMERO_DEL_RECIBO] ?? ''}» y la ruta tiene elegido «${elegido ?? ''}»: no se envia.`,
+      );
+    }
     setFallo(null);
-    rechazadoPorLaSesion.current = false;
+    setRechazadoPorLaSesion(null);
     try {
       await anularElCobro(numero, {
         motivo: String(envio.valores['motivo'] ?? ''),
@@ -193,8 +276,8 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
         observacion: envio.observacion,
       });
     } catch (error) {
-      setFallo(falloDeLaAnulacion(error, t));
-      rechazadoPorLaSesion.current = error instanceof ErrorDeLaApi && error.estado === 401;
+      setFallo({ numero, estado: falloDeLaAnulacion(error, t) });
+      setRechazadoPorLaSesion(error instanceof ErrorDeLaApi && error.estado === 401 ? numero : null);
       // Se relanza: la pieza distingue «enviado» de «rechazado» por si la promesa se rompio, y
       // tragarla aqui dejaria el acto diciendo que el cobro quedo anulado cuando no lo esta.
       throw error;
@@ -223,13 +306,17 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
         : hoja,
     alAbrirActo: (claveDelActo, parametros) => {
       if (claveDelActo === null) {
-        if (abierto.current !== null && !rechazadoPorLaSesion.current) olvidar(abierto.current);
-        abierto.current = null;
+        if (abierto !== null) cerrar(abierto);
+        setAbierto(null);
         return;
       }
-      abierto.current = claveDelActo === ACTO_DE_ANULACION ? (parametros ?? {}) : null;
-      rechazadoPorLaSesion.current = false;
+      setAbierto({ clave: claveDelActo, ...(parametros === undefined ? {} : { parametros }) });
+      // Abrir el acto es empezar de cero (#134): el rechazo que hubiera era del envio anterior, y
+      // ensenarlo encima de un formulario que todavia no se ha enviado lo atribuye a este.
+      setFallo(null);
+      setRechazadoPorLaSesion(null);
     },
+    actoAbierto: abierto !== null && sigueSiendoDelElegido(abierto, elegido) ? abierto : null,
     conLaSesion: (datos) => {
       const nombrados = new Map<string, DatoConNombre>([
         ...(datos.nombrados ?? []),
@@ -239,9 +326,10 @@ export function useLaAnulacion(clave: ClaveDeHoja): LaAnulacion {
       return {
         ...datos,
         nombrados,
-        ...(fallo === null
+        // Solo sobre el recibo al que se le envio (#134): el de otro no dice nada de este.
+        ...(fallo === null || fallo.numero !== elegido
           ? {}
-          : { lecturas: new Map([...(datos.lecturas ?? []), [ACTO_DE_ANULACION, fallo]]) }),
+          : { lecturas: new Map([...(datos.lecturas ?? []), [ACTO_DE_ANULACION, fallo.estado]]) }),
       };
     },
   };
