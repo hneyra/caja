@@ -88,16 +88,21 @@ public class OrdenDeCobroController {
      *
      * <p>RNF-055 al otro lado de una frontera HTTP: leerlo como numero de coma flotante puede
      * cambiarle el valor, y el sitio donde eso pasa es el camino del dinero.
+     *
+     * <p>Y con dos decimales como mucho (#142): con tres, la columna lo redondeaba al guardarlo, y
+     * ese redondeo es una decision de D-03 que nadie tomo. Ver {@link ImporteRecibido}.
      */
     private static Dinero importeDe(@Nullable String texto) {
         String valor = CajaController.exigir(texto, "importe");
+        Dinero importe;
         try {
-            return Dinero.de(valor);
+            importe = Dinero.de(valor);
         } catch (IllegalArgumentException malEscrito) {
             throw new ProblemaDeNegocio(
                     CodigoDeError.VALIDACION,
                     "El campo 'importe' no es un importe: '" + valor + "'");
         }
+        return ImporteRecibido.sinRedondear(importe, "El campo 'importe'", valor);
     }
 
     private static LocalDate fechaDe(@Nullable String texto, String campo) {

@@ -207,6 +207,41 @@ class CierreYRecaudacionControllerTest {
     }
 
     @Test
+    @DisplayName("#142 — lo declarado con tres decimales, 422: el cierre no cuadra con un redondeo")
+    void unDeclaradoConTresDecimalesSeRechaza() throws Exception {
+        // 150.005 + 149.995 = 300.000, que es lo cobrado: hasta #142 esto contestaba «cuadra»,
+        // la cabecera guardaba 300.00 y el detalle 150.01 + 150.00 —la columna redondea el
+        // empate lejos del cero—, asi que releido desde el detalle el turno descuadraba en un
+        // centimo que nadie declaro.
+        MvcResult resultado =
+                cierre(
+                        """
+                        {"caja":"C-01","cajero":"jperez",
+                         "declarado":{"EFECTIVO":"150.005","TARJETA":"149.995"},
+                         "observacion":"cierre con fracciones de centimo"}
+                        """);
+
+        assertThat(resultado.getResponse().getStatus()).isEqualTo(422);
+        assertThat(resultado.getResponse().getContentAsString())
+                .contains("Lo declarado en EFECTIVO trae mas de dos decimales: '150.005'");
+        assertThat(cierres.registrados()).as("y no se firma ningun cierre").isEmpty();
+    }
+
+    @Test
+    @DisplayName("#142 — los ceros de la derecha no cuentan: «300.000» cierra y cuadra")
+    void losCerosDeLaDerechaNoCuentanEnElCierre() throws Exception {
+        MvcResult resultado =
+                cierre(
+                        """
+                        {"caja":"C-01","cajero":"jperez","declarado":{"EFECTIVO":"300.000"},
+                         "observacion":"cierre con un cero de mas"}
+                        """);
+
+        assertThat(resultado.getResponse().getStatus()).isEqualTo(201);
+        assertThat(resultado.getResponse().getContentAsString()).contains("\"cuadra\":true");
+    }
+
+    @Test
     @DisplayName("cerrar dos veces, 409: el estado del turno no admite la operacion")
     void cerrarDosVecesDevuelve409() throws Exception {
         cierre(cuerpoDeCierre());

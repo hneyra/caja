@@ -144,6 +144,10 @@ public class CierreController {
      * <p>Las cifras llegan como texto y se convierten con {@code new BigDecimal(texto)}: un numero
      * JSON pasa por un {@code double} en el analizador y ya perdio precision antes de que nadie
      * pueda comprobarlo (regla 1, RNF-055).
+     *
+     * <p>Y con dos decimales como mucho (#142): con tres, el cierre contestaba que cuadraba con una
+     * cifra que la cabecera guardaba redondeada de un modo y el detalle de otro. Ver {@link
+     * ImporteRecibido}.
      */
     private static Map<FormaDePago, Dinero> declaradoDe(@Nullable Map<String, String> declarado) {
         Map<FormaDePago, Dinero> porForma = new EnumMap<>(FormaDePago.class);
@@ -161,8 +165,9 @@ public class CierreController {
             if (texto == null || texto.isBlank()) {
                 continue;
             }
+            Dinero importe;
             try {
-                porForma.put(forma, new Dinero(new BigDecimal(texto.strip())));
+                importe = new Dinero(new BigDecimal(texto.strip()));
             } catch (NumberFormatException noEsUnImporte) {
                 throw new ProblemaDeNegocio(
                         CodigoDeError.VALIDACION,
@@ -172,6 +177,9 @@ public class CierreController {
                                 + texto
                                 + "'");
             }
+            porForma.put(
+                    forma,
+                    ImporteRecibido.sinRedondear(importe, "Lo declarado en " + forma, texto));
         }
         return porForma;
     }
