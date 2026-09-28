@@ -13,12 +13,17 @@ import {
   MedicionImposible,
   PREFIJO_DE_LA_API,
   REDACTADO,
+  anadirALaFormaMedida,
   codigoDeSalida,
+  compararConLaFirma,
   compararFormas,
+  describir,
+  firmaDe,
   formaDe,
   medir,
   problemasDeLasOpciones,
   redactar,
+  unirFirmas,
   rutaDeLaConciliacion as laDelGuion,
   rutaDelCierre as elDelGuion,
   rutaDelDuplicado as elDuplicadoDelGuion,
@@ -143,7 +148,7 @@ describe('el guion pide lo que pide la ventanilla', () => {
   });
 
   it('las rutas con variable se componen igual que en `lecturas.ts`', () => {
-    for (const numero of ['001-000123', 'A/B 7']) expect(elDuplicadoDelGuion(numero)).toBe(rutaDelDuplicado(numero));
+    for (const numero of ['001-0000123', 'A/B 7']) expect(elDuplicadoDelGuion(numero)).toBe(rutaDelDuplicado(numero));
     expect(elDelGuion(7)).toBe(rutaDelCierre(7));
     expect(laDelGuion('2026-03-15')).toBe(rutaDeLaConciliacion('2026-03-15'));
   });
@@ -189,12 +194,15 @@ describe('la comparacion de formas', () => {
     ]);
   });
 
-  it('un `Instant` con fraccion y un importe con un decimal de menos, dentro de una lista', () => {
+  it('un `Instant` sin fraccion y un importe con un decimal de menos, dentro de una lista', () => {
+    // Al reves que hasta #89: la captura ya lleva los seis decimales que se midieron, y lo que
+    // seria nuevo es un instante que llegara SIN ellos —`ISO_INSTANT` lo escribe asi cuando los
+    // microsegundos valen cero—.
     const [primero, segundo] = RECIBOS_MEDIDOS.contenido;
     const medida = {
       ...RECIBOS_MEDIDOS,
       contenido: [
-        { ...primero, emitidoEn: '2026-03-16T02:04:00.123456Z' },
+        { ...primero, emitidoEn: '2026-03-16T02:04:00Z' },
         { ...segundo, importe: { importe: '25.0', actualizadoA: '2026-03-15' } },
       ],
     };
@@ -202,7 +210,7 @@ describe('la comparacion de formas', () => {
       [
         'forma',
         '$.contenido[].emitidoEn',
-        'llega «texto:instante-utc-fraccion-6» y la captura solo ejerce «texto:instante-utc»',
+        'llega «texto:instante-utc» y la captura solo ejerce «texto:instante-utc-fraccion-6»',
       ],
       ['forma', '$.contenido[].importe.importe', 'llega «texto:decimal-1» y la captura solo ejerce «texto:decimal-2»'],
     ]);
@@ -228,6 +236,106 @@ describe('la comparacion de formas', () => {
   it('las capturas de una misma lectura se unen, y una lista vacia no es una diferencia', () => {
     expect(compararFormas(TURNO_SIN_ABRIR_MEDIDO, [TURNO_MEDIDO, TURNO_SIN_ABRIR_MEDIDO])).toEqual([]);
     expect(compararFormas(TURNO_MEDIDO, [TURNO_MEDIDO, TURNO_SIN_ABRIR_MEDIDO])).toEqual([]);
+  });
+});
+
+/**
+ * **La firma de lo medido, y la comparacion en los dos sentidos** (#89).
+ *
+ * Es lo que se versiona de una medicion —`verificaciones/forma-medida.json`— y con lo que la guarda
+ * de las capturas las compara sin red. Aqui se prueba que la firma no lleve valores, que la union
+ * sea la de las mediciones, y que la comparacion vea lo que tiene que ver en cada sentido.
+ */
+describe('la firma de lo medido', () => {
+  const importe = (valor: string) => ({ importe: valor, actualizadoA: '2026-03-15' });
+
+  it('lleva las clases de cada ruta y los campos de cada objeto, y ni un valor', () => {
+    const firma = firmaDe([{ total: importe('1842.60'), en: '2026-03-16T02:04:00.557166Z', lineas: [] }]);
+    expect(firma).toEqual({
+      formas: {
+        $: ['objeto'],
+        '$.en': ['texto:instante-utc-fraccion-6'],
+        '$.lineas': ['lista'],
+        '$.total': ['objeto'],
+        '$.total.actualizadoA': ['texto:fecha'],
+        '$.total.importe': ['texto:decimal-2'],
+      },
+      campos: { $: ['en', 'lineas', 'total'], '$.total': ['actualizadoA', 'importe'] },
+    });
+    expect(JSON.stringify(firma)).not.toContain('1842.60');
+  });
+
+  it('la union es lo que llego en ALGUNA medicion', () => {
+    const una = firmaDe([{ area: null }]);
+    const otra = firmaDe([{ area: 'MER' }]);
+    expect(unirFirmas([una, otra]).formas['$.area']).toEqual(['nulo', 'texto']);
+  });
+
+  it('EL CENTINELA: cada captura comparada con su propia firma no tiene ninguna diferencia', () => {
+    for (const lectura of LECTURAS) {
+      expect(compararConLaFirma(firmaDe(lectura.capturas), lectura.capturas), lectura.clave).toEqual([]);
+    }
+  });
+
+  it('lo que llego y la captura no ejerce se dice, como en `compararFormas`', () => {
+    const sinFraccion = RECIBOS_MEDIDOS.contenido.map((r) => ({ ...r, emitidoEn: '2026-03-16T02:04:00Z' }));
+    const medida = firmaDe([{ ...RECIBOS_MEDIDOS, contenido: sinFraccion }]);
+    // Las dos mitades a la vez: lo que llego no lo ejerce la captura, y lo que ella ejerce no llego.
+    expect(compararConLaFirma(medida, [RECIBOS_MEDIDOS]).map(describir)).toEqual([
+      'forma $.contenido[].emitidoEn: llega «texto:instante-utc» y la captura solo ejerce «texto:instante-utc-fraccion-6»',
+      'sin-medir $.contenido[].emitidoEn: la captura ejerce «texto:instante-utc-fraccion-6» y ninguna medicion lo trajo: lo medido es «texto:instante-utc»',
+    ]);
+  });
+
+  it('y la vuelta: una forma que la captura ejerce y nadie midio, aunque otra fila ejerza la medida', () => {
+    // Es el caso que `compararFormas` no puede ver: la fila vieja, sin fraccion, al lado de la medida.
+    const [primero, segundo] = RECIBOS_MEDIDOS.contenido;
+    const captura = { ...RECIBOS_MEDIDOS, contenido: [primero, { ...segundo, emitidoEn: '2026-03-16T02:11:37Z' }] };
+    expect(compararFormas(RECIBOS_MEDIDOS, [captura])).toEqual([]);
+    expect(compararConLaFirma(firmaDe([RECIBOS_MEDIDOS]), [captura]).map((d) => [d.clase, d.ruta])).toEqual([
+      ['sin-medir', '$.contenido[].emitidoEn'],
+    ]);
+  });
+
+  it('una derivada declarada calla su diferencia; una que sobra se dice', () => {
+    const medida = firmaDe([{ diferencia: null }]);
+    const derivada = { ruta: '$.diferencia', forma: 'texto:decimal-2', porque: 'el origen no estaba' };
+    expect(compararConLaFirma(medida, [{ diferencia: '0.00' }, { diferencia: null }], [derivada])).toEqual([]);
+    expect(compararConLaFirma(medida, [{ diferencia: null }], [derivada]).map((d) => d.detalle)).toEqual([
+      'se declara derivada «texto:decimal-2» y la captura no la ejerce: la declaracion sobra',
+    ]);
+  });
+
+  it('un campo de mas o de menos en un objeto se dice, y bajo un nulo no se baja', () => {
+    const medida = firmaDe([{ anulacion: { fecha: '2026-03-15', motivo: 'x' }, nuevo: 1 }]);
+    expect(compararConLaFirma(medida, [{ anulacion: null }]).map(describir)).toEqual([
+      'forma $.anulacion: llega «objeto» y la captura solo ejerce «nulo»',
+      'sobra $.nuevo: lo medido lo trae y la captura no',
+      // Y la vuelta, en la misma ruta y sin bajar a `fecha` ni a `motivo`.
+      'sin-medir $.anulacion: la captura ejerce «nulo» y ninguna medicion lo trajo: lo medido es «objeto»',
+    ]);
+  });
+
+  it('la forma medida une cada medicion a la anterior, en el orden de LECTURAS y solo con lo que llego en 200', () => {
+    const medicion = { orden: 'node desarrollo/medir-las-capturas.mjs --forma f.json', fecha: '2026-09-28T19:26:49Z', base: BASE, cuenta: 'medicion-de-interfaces' };
+    const primera = anadirALaFormaMedida(
+      null,
+      [
+        { clave: 'turnoDelDia', estado: 200, diferencias: [], firma: firmaDe([TURNO_SIN_ABRIR_MEDIDO]) },
+        { clave: 'sesion', estado: 200, diferencias: [], firma: firmaDe([SESION_MEDIDA]) },
+        { clave: 'cajas', estado: 403, diferencias: [] },
+      ],
+      medicion,
+    );
+    expect(Object.keys(primera.lecturas)).toEqual(['sesion', 'turnoDelDia']);
+    const segunda = anadirALaFormaMedida(
+      primera,
+      [{ clave: 'turnoDelDia', estado: 200, diferencias: [], firma: firmaDe([TURNO_MEDIDO]) }],
+      { ...medicion, cuenta: 'jperez' },
+    );
+    expect(segunda.mediciones.map((m) => m.cuenta)).toEqual(['medicion-de-interfaces', 'jperez']);
+    expect(segunda.lecturas.turnoDelDia?.formas['$.turnos[].abiertoEn']).toEqual(['texto:instante-utc-fraccion-6']);
+    expect(segunda.lecturas.sesion).toEqual(primera.lecturas.sesion);
   });
 });
 

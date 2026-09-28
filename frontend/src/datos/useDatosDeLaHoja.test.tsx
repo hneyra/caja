@@ -227,24 +227,24 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
 
   it('con un sujeto, se pide SU duplicado y el segundo bloque se llena con lo que contesto', async () => {
     const pedidas = contestaLosDos(DUPLICADO_MEDIDO);
-    const { result } = renderHook(() => useDatosDeLaHoja('duplicado-recibo', ruta('001-000123')), {
+    const { result } = renderHook(() => useDatosDeLaHoja('duplicado-recibo', ruta('001-0000123')), {
       wrapper: arnes(),
     });
 
     await waitFor(() => {
-      expect(result.current.valores?.get(coordenada(1, 0))).toBe('001-000123');
+      expect(result.current.valores?.get(coordenada(1, 0))).toBe('001-0000123');
     });
     expect(pedidas).toEqual([
       '/caja/api/v1/recibos',
-      '/caja/api/v1/recibos/001-000123/duplicado',
+      '/caja/api/v1/recibos/001-0000123/duplicado',
     ]);
     expect(result.current.valores?.get(coordenada(1, 2))).toBe('Cajero de la prueba');
     expect(result.current.valores?.get(coordenada(1, 4))).toBe('15/03/2026 21:04');
     // Lo que la accion de anular lee (#100): sobre que recibo actuaria, y si ya esta anulado. El
     // numero sale de la RUTA y el estado de la respuesta; ninguno de los dos se pinta dos veces.
-    expect(result.current.nombrados?.get(NUMERO_DEL_RECIBO)).toBe('001-000123');
+    expect(result.current.nombrados?.get(NUMERO_DEL_RECIBO)).toBe('001-0000123');
     expect(result.current.nombrados?.get(ESTADO_DEL_RECIBO)).toBe(DUPLICADO_MEDIDO.estado);
-    expect(result.current.tablas?.get(TABLA_DE_LINEAS)?.filas).toHaveLength(2);
+    expect(result.current.tablas?.get(TABLA_DE_LINEAS)?.filas).toHaveLength(DUPLICADO_MEDIDO.recibo.lineas.length);
     // Ni un hueco: los ocho campos tienen dato.
     expect(result.current.ausenciaPorCampo?.size).toBe(0);
     expect(result.current.ausencia.explicacion).toBe('');
@@ -252,7 +252,7 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
     const realzadas = result.current.tablas
       ?.get(TABLA_DE_RECIBOS)
       ?.filas.filter((f) => f.realzada === true);
-    expect(realzadas?.map((f) => f.clave)).toEqual(['001-000123']);
+    expect(realzadas?.map((f) => f.clave)).toEqual(['001-0000123']);
   });
 
   it('un numero que no existe lo dice, y NO vacia la lista que ya estaba', async () => {
@@ -422,7 +422,7 @@ describe('un reparto que lanza deja SU lectura en fallo (#117)', () => {
       ),
     );
     const { result } = renderHook(
-      () => useDatosDeLaHoja('duplicado-recibo', { sujeto: '001-000123', parametros: {} }),
+      () => useDatosDeLaHoja('duplicado-recibo', { sujeto: '001-0000123', parametros: {} }),
       { wrapper: arnes() },
     );
     await waitFor(() => {

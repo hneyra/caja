@@ -31,14 +31,14 @@ afterEach(() => {
 describe('lo que sale al cable', () => {
   it('es un `POST` a la ruta del cobro, con el cuerpo tal cual', async () => {
     const doble = vi.fn<typeof fetch>(() =>
-      Promise.resolve(new Response(JSON.stringify({ numero: '001-000123' }), { status: 201, headers: JSON_ })),
+      Promise.resolve(new Response(JSON.stringify({ numero: '001-0000123' }), { status: 201, headers: JSON_ })),
     );
     vi.stubGlobal('fetch', doble);
 
-    await anularElCobro('001-000123', { motivo: 'Cobro duplicado', observacion: 'Se anula por duplicado' });
+    await anularElCobro('001-0000123', { motivo: 'Cobro duplicado', observacion: 'Se anula por duplicado' });
 
     const [url, opciones] = doble.mock.calls[0] ?? [];
-    expect(String(url)).toBe('/caja/api/v1/cobros/001-000123/anulacion');
+    expect(String(url)).toBe('/caja/api/v1/cobros/001-0000123/anulacion');
     expect(opciones?.method).toBe('POST');
     expect(JSON.parse(String(opciones?.body))).toEqual({
       motivo: 'Cobro duplicado',
@@ -51,7 +51,7 @@ describe('lo que sale al cable', () => {
 
   it('la ruta lleva la variable entre llaves, como su `@PostMapping`, y el numero se codifica', () => {
     expect(RUTA_DE_LA_ANULACION).toBe('/cobros/{nro}/anulacion');
-    expect(rutaDeLaAnulacion('001-000123')).toBe('/cobros/001-000123/anulacion');
+    expect(rutaDeLaAnulacion('001-0000123')).toBe('/cobros/001-0000123/anulacion');
     // La serie la pone cada instalacion: una con una barra dentro partiria la ruta en dos.
     expect(rutaDeLaAnulacion('001/A-9')).toBe('/cobros/001%2FA-9/anulacion');
   });
@@ -64,7 +64,7 @@ describe('lo que sale al cable', () => {
       ),
     );
 
-    await expect(anularElCobro('001-000123', { motivo: 'm', observacion: 'obs' })).rejects.toMatchObject({
+    await expect(anularElCobro('001-0000123', { motivo: 'm', observacion: 'obs' })).rejects.toMatchObject({
       estado: 409,
     });
   });

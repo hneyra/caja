@@ -17,7 +17,7 @@ import {
  * tumbar el acto: en el peor caso, no hay borrador.
  */
 
-const APERTURA = aperturaDeLaAnulacion({ numeroDelRecibo: '001-000123' });
+const APERTURA = aperturaDeLaAnulacion({ numeroDelRecibo: '001-0000123' });
 const CUENTA = 'jperez';
 const ESCRITO = {
   valores: { motivo: 'Cobro duplicado', autorizadoPor: 'La jefa' },
@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe('el borrador de la anulacion', () => {
   it('la apertura es la del interprete: la clave del acto y los parametros con que se abrio', () => {
-    expect(APERTURA).toBe(`${ACTO_DE_ANULACION}|{"numeroDelRecibo":"001-000123"}`);
+    expect(APERTURA).toBe(`${ACTO_DE_ANULACION}|{"numeroDelRecibo":"001-0000123"}`);
   });
 
   it('lo guardado se lee igual, bajo la clave con el prefijo de esta interfaz', () => {

@@ -146,7 +146,7 @@ describe('una hoja que revienta al dibujarse no tumba la raiz', () => {
       render(<Aplicacion />);
       expect(await screen.findByText(/El interprete tropezo con este recibo/, {}, { timeout: 5_000 })).toBeTruthy();
 
-      window.location.hash = '#/duplicado-recibo/001-000123';
+      window.location.hash = '#/duplicado-recibo/001-0000123';
       window.dispatchEvent(new HashChangeEvent('hashchange'));
       await waitFor(() => {
         expect(screen.queryByText(/Esta pantalla no se pudo dibujar/)).toBeNull();

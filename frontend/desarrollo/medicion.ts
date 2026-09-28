@@ -10,6 +10,8 @@ import {
   CIERRE_MEDIDO,
   CONCILIACION_MEDIDA,
   DISTRIBUCION_MEDIDA,
+  DUPLICADO_ANULADO_MEDIDO,
+  DUPLICADO_DE_TASA_MEDIDO,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
@@ -22,12 +24,21 @@ import {
  *
  * <h2>Para que existe</h2>
  *
- * Las tres capturas de `src/datos/*Medida.ts` estan **derivadas** del contrato, no medidas: su
- * `ORIGEN_DE_LA_CAPTURA` lo dice. Medirlas exige una cuenta con la que pedir un token a un backend
- * de verdad, y esa cuenta —`medicion-de-interfaces`— solo existe en `stg` (identidad#50,
- * infrastructure#207). El dia que exista, medir tiene que ser **una orden**:
+ * Las tres capturas de `src/datos/*Medida.ts` estuvieron **derivadas** del contrato hasta que se
+ * midieron: el 2026-09-28, contra una plataforma local completa, con `medicion-de-interfaces` —la
+ * cuenta que la implantacion de `identidad` da de alta (identidad#50) y que en local se crea en el
+ * emisor con `crear-usuario.sh`— y con el administrador (#89). Medir es **una orden**:
  * `desarrollo/medir-las-capturas.mjs`, que es la cascara con la red y el disco. Aqui vive todo lo
  * demas, y se prueba en `verificaciones/el-guion-de-medicion.test.ts` sin red.
+ *
+ * <h2>Lo que queda de una medicion: su firma</h2>
+ *
+ * Lo medido crudo **no se versiona** —lleva a los pagadores—, y sin ello nada impediria que una
+ * captura volviera a la forma derivada el dia despues. Lo que se versiona es su **firma**
+ * (`firmaDe`): por cada ruta JSON, las clases de valor que llegaron, y por cada objeto sus campos;
+ * ni un valor. `--forma verificaciones/forma-medida.json` la une a la que ya hubiera, y
+ * `verificaciones/las-capturas-son-las-medidas.test.ts` compara las capturas con ella en los dos
+ * sentidos (`compararConLaFirma`).
  *
  * <h2>Lo que compara, y lo que NO</h2>
  *
@@ -35,7 +46,7 @@ import {
  * cada valor —nulo, entero, un instante UTC con o sin fraccion, una fecha, un decimal con cuantos
  * decimales—. **No compara los valores**: los de la captura estan elegidos para ejercer casos, y
  * los de `stg` son los que haya. Tampoco juzga el orden de las listas: las respuestas crudas se
- * guardan tal cual, y el orden se lee ahi.
+ * guardan tal cual, y el orden se lee ahi —y el que se midio lo sostiene la guarda de las capturas—.
  *
  * <h2>Por que la cascara esta aparte, y es `.mjs`</h2>
  *
@@ -126,8 +137,12 @@ function formaDeUnTexto(texto: string): string {
 /** Una diferencia de forma entre lo medido y lo capturado, con la ruta JSON donde esta. */
 export interface Diferencia {
   readonly ruta: string;
-  /** `sobra`: lo medido trae un campo que la captura no tiene. `falta`: al reves. */
-  readonly clase: 'sobra' | 'falta' | 'forma';
+  /**
+   * `sobra`: lo medido trae un campo que la captura no tiene. `falta`: al reves. `forma`: llega una
+   * clase de valor que la captura no ejerce. `sin-medir`: la captura ejerce una que ninguna medicion
+   * trajo y nadie la declaro derivada (solo `compararConLaFirma`).
+   */
+  readonly clase: 'sobra' | 'falta' | 'forma' | 'sin-medir';
   readonly detalle: string;
 }
 
@@ -234,6 +249,183 @@ export function compararFormas(medida: unknown, capturas: readonly unknown[]): r
 /** Una diferencia en una linea. */
 export function describir(d: Diferencia): string {
   return `${d.clase.padEnd(5)} ${d.ruta}: ${d.detalle}`;
+}
+
+// ── LA FIRMA: la forma de lo medido, sin un solo valor ──────────────────────────────────────────
+
+/**
+ * **La forma de una o varias respuestas, sin sus valores** (#89).
+ *
+ * Por cada ruta JSON —`$.contenido[].emitidoEn`—, las clases de valor que llegaron en ella segun
+ * `formaDe`; y por cada ruta que llego como objeto, sus campos. Es lo que se puede versionar de una
+ * medicion: no lleva ni un nombre, ni un importe, ni un documento.
+ */
+export interface Firma {
+  readonly formas: Readonly<Record<string, readonly string[]>>;
+  readonly campos: Readonly<Record<string, readonly string[]>>;
+}
+
+const plano = (mapa: Map<string, Set<string>>): Record<string, string[]> =>
+  Object.fromEntries([...mapa.keys()].sort().map((clave) => [clave, [...(mapa.get(clave) ?? [])].sort()]));
+
+/** La firma de unos valores: la union de lo que ejerce cada uno, ordenada para que se pueda comparar. */
+export function firmaDe(valores: readonly unknown[]): Firma {
+  const { formas, campos } = loQueEjercen(valores);
+  return { formas: plano(formas), campos: plano(campos) };
+}
+
+/** La union de varias firmas: lo que llego en alguna de las mediciones. */
+export function unirFirmas(firmas: readonly Firma[]): Firma {
+  const formas = new Map<string, Set<string>>();
+  const campos = new Map<string, Set<string>>();
+  for (const firma of firmas) {
+    for (const [destino, origen] of [
+      [formas, firma.formas],
+      [campos, firma.campos],
+    ] as const) {
+      for (const [ruta, valores] of Object.entries(origen)) {
+        destino.set(ruta, new Set([...(destino.get(ruta) ?? []), ...valores]));
+      }
+    }
+  }
+  return { formas: plano(formas), campos: plano(campos) };
+}
+
+/** La ruta que contiene a otra: `$.a[].b` -> `$.a[]` -> `$.a` -> `$`. */
+function padreDe(ruta: string): string {
+  return ruta.endsWith('[]') ? ruta.slice(0, -2) : ruta.slice(0, Math.max(1, ruta.lastIndexOf('.')));
+}
+
+/** Si en esa ruta de la firma llego alguna vez algo que tiene hijos: un objeto o una lista. */
+function contiene(firma: Firma, ruta: string): boolean {
+  return (firma.formas[ruta] ?? []).some((forma) => forma === 'objeto' || forma === 'lista');
+}
+
+/**
+ * Una clase de valor que la captura ejerce **sin que nadie la haya medido**, dicha a proposito: la
+ * rama que la maquina que midio no podia dar. Lleva su porque, que es lo que se lee en la guarda.
+ */
+export interface Derivada {
+  readonly ruta: string;
+  readonly forma: string;
+  readonly porque: string;
+}
+
+/**
+ * **Compara unas capturas con la firma de lo medido, en los dos sentidos.**
+ *
+ * `compararFormas` pregunta si lo que llego lo ejerce la captura; esto pregunta ademas lo contrario:
+ * si lo que la captura ejerce **llego alguna vez**. Sin la vuelta, una captura podria volver a
+ * escribir un instante sin fraccion —la forma que el backend no manda— y seguir en verde, porque
+ * otra fila de la misma lista ejerce la medida.
+ *
+ *   · **sobra / falta** — los campos de un objeto medido y los del capturado, en la misma ruta;
+ *   · **forma** — una clase que llego y la captura no ejerce;
+ *   · **sin-medir** — una clase que la captura ejerce, que no llego nunca y que `derivadas` no
+ *     declara. Una derivada que ya se midio, o que la captura no ejerce, sobra, y tambien se dice.
+ *
+ * Bajo una ruta que en uno de los dos lados nunca tuvo hijos no se sigue bajando: la diferencia ya
+ * esta dicha una vez, en su ruta, como en `compararFormas`.
+ */
+export function compararConLaFirma(
+  medida: Firma,
+  capturas: readonly unknown[],
+  derivadas: readonly Derivada[] = [],
+): readonly Diferencia[] {
+  const capturada = firmaDe(capturas);
+  const diferencias: Diferencia[] = [];
+  const declarada = (ruta: string, forma: string) => derivadas.some((d) => d.ruta === ruta && d.forma === forma);
+  const hijoDeAmbos = (ruta: string) => ruta === '$' || (contiene(medida, padreDe(ruta)) && contiene(capturada, padreDe(ruta)));
+
+  for (const [ruta, formas] of Object.entries(medida.formas)) {
+    if (!hijoDeAmbos(ruta)) continue;
+    const suyas = capturada.formas[ruta];
+    // Un campo que la captura no tiene se dice abajo, como campo que sobra; un elemento de lista,
+    // aqui: la captura solo tiene listas vacias en esa ruta.
+    if (suyas === undefined && !ruta.endsWith('[]')) continue;
+    for (const forma of formas) {
+      if (suyas?.includes(forma) === true) continue;
+      diferencias.push({
+        ruta,
+        clase: 'forma',
+        detalle:
+          suyas === undefined
+            ? `llega «${forma}» y la captura solo tiene listas vacias`
+            : `llega «${forma}» y la captura solo ejerce «${suyas.join(' | ')}»`,
+      });
+    }
+  }
+  for (const [ruta, campos] of Object.entries(medida.campos)) {
+    const suyos = capturada.campos[ruta];
+    if (suyos === undefined || !hijoDeAmbos(ruta)) continue;
+    for (const campo of campos.filter((c) => !suyos.includes(c))) {
+      diferencias.push({ ruta: `${ruta}.${campo}`, clase: 'sobra', detalle: 'lo medido lo trae y la captura no' });
+    }
+    for (const campo of suyos.filter((c) => !campos.includes(c))) {
+      diferencias.push({ ruta: `${ruta}.${campo}`, clase: 'falta', detalle: 'la captura lo tiene y lo medido no lo trae' });
+    }
+  }
+  for (const [ruta, formas] of Object.entries(capturada.formas)) {
+    const medidas = medida.formas[ruta];
+    if (medidas === undefined || !hijoDeAmbos(ruta)) continue;
+    for (const forma of formas.filter((f) => !medidas.includes(f) && !declarada(ruta, f))) {
+      diferencias.push({
+        ruta,
+        clase: 'sin-medir',
+        detalle: `la captura ejerce «${forma}» y ninguna medicion lo trajo: lo medido es «${medidas.join(' | ')}»`,
+      });
+    }
+  }
+  for (const d of derivadas) {
+    const ejercida = capturada.formas[d.ruta]?.includes(d.forma) === true;
+    const medidaYa = medida.formas[d.ruta]?.includes(d.forma) === true;
+    if (ejercida && !medidaYa) continue;
+    diferencias.push({
+      ruta: d.ruta,
+      clase: 'forma',
+      detalle: medidaYa
+        ? `se declara derivada «${d.forma}» y ya se midio: la declaracion sobra`
+        : `se declara derivada «${d.forma}» y la captura no la ejerce: la declaracion sobra`,
+    });
+  }
+  return diferencias;
+}
+
+/** Una medicion, dicha en la firma que deja: con que orden, cuando, contra que y con que cuenta. */
+export interface Medicion {
+  readonly orden: string;
+  readonly fecha: string;
+  readonly base: string;
+  readonly cuenta: string;
+}
+
+/**
+ * **La forma medida que se versiona**: la firma de cada lectura, unida sobre varias mediciones, y
+ * la lista de esas mediciones. Es `verificaciones/forma-medida.json`.
+ */
+export interface FormaMedida {
+  readonly mediciones: readonly Medicion[];
+  readonly lecturas: Readonly<Record<string, Firma>>;
+}
+
+/**
+ * Une a la forma medida que ya hubiera lo que dejo una medicion. **Solo lo que llego en 200 y era
+ * JSON**: un 403 o un 500 no dicen la forma de nada. Las lecturas se guardan en el orden de
+ * `LECTURAS`, para que el archivo no cambie de orden segun cual se midio antes.
+ */
+export function anadirALaFormaMedida(
+  anterior: FormaMedida | null,
+  resultados: readonly Resultado[],
+  medicion: Medicion,
+): FormaMedida {
+  const lecturas: Record<string, Firma> = {};
+  for (const { clave } of LECTURAS) {
+    const antes = anterior?.lecturas[clave];
+    const ahora = resultados.find((r) => r.clave === clave)?.firma;
+    const firmas = [antes, ahora].filter((f): f is Firma => f !== undefined);
+    if (firmas.length > 0) lecturas[clave] = unirFirmas(firmas);
+  }
+  return { mediciones: [...(anterior?.mediciones ?? []), medicion], lecturas };
 }
 
 // ── LOS SECRETOS ────────────────────────────────────────────────────────────────────────────────
@@ -370,7 +562,8 @@ export const LECTURAS: readonly Lectura[] = [
       recibo === undefined
         ? { omitida: '`/recibos` no trajo ninguno y la orden no dijo `--recibo <numero>`' }
         : rutaDelDuplicado(recibo),
-    capturas: [DUPLICADO_MEDIDO],
+    // Las tres clases de recibo que el backend da: de una orden, anulado con su acta, y de tasa.
+    capturas: [DUPLICADO_MEDIDO, DUPLICADO_ANULADO_MEDIDO, DUPLICADO_DE_TASA_MEDIDO],
   },
   {
     clave: 'turnoDelDia',
@@ -462,6 +655,8 @@ export interface Resultado {
   /** Por que lo que llego no se puede comparar: no contesto, o no es JSON. Es un fallo. */
   readonly problema?: string;
   readonly diferencias: readonly Diferencia[];
+  /** La forma de lo que llego, sin sus valores: solo si llego en 200 y era JSON. */
+  readonly firma?: Firma;
 }
 
 /** Un fallo que para la medicion entera: sin token no hay nada que medir. */
@@ -599,10 +794,12 @@ export async function medir(o: Opciones, e: Efectos): Promise<readonly Resultado
 
     let diferencias: readonly Diferencia[] = [];
     let problema: string | undefined;
+    let firma: Firma | undefined;
     if (respuesta.status === 200) {
       try {
         const leido: unknown = JSON.parse(cuerpo);
         diferencias = compararFormas(leido, lectura.capturas);
+        firma = firmaDe([leido]);
         lectura.encadenar?.(leido, contexto);
       } catch {
         problema = 'el cuerpo no es JSON';
@@ -636,6 +833,7 @@ export async function medir(o: Opciones, e: Efectos): Promise<readonly Resultado
       estado: respuesta.status,
       diferencias,
       ...(problema === undefined ? {} : { problema }),
+      ...(firma === undefined ? {} : { firma }),
     });
   }
   return resultados;

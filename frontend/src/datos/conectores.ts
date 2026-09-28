@@ -182,7 +182,7 @@ export interface Conector {
  *
  * Porque una ventanilla se recarga, y porque el recibo que hay que revisar se pasa por un enlace.
  * Con la eleccion en el estado del componente, las dos cosas devuelven la pantalla en blanco. En la
- * ruta —`#/duplicado-recibo/001-000123`, lo que `Destino.enLaRuta` declara— las dos la devuelven
+ * ruta —`#/duplicado-recibo/001-0000123`, lo que `Destino.enLaRuta` declara— las dos la devuelven
  * igual. Quien la escribe es la accion de la fila; quien la lee es el gancho.
  */
 export interface LecturaDeLoElegido {

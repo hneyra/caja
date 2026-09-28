@@ -153,6 +153,7 @@ Las guardas que ocupan el lugar del artboard que caja no tiene:
 | `solo-lee.test.ts` | El cliente sólo publica `leer`; nada compone un `metodo:`; ningún destino ofrece Guardar (ADR-0040) |
 | `la-cuenta-no-se-inventa.test.tsx` | La barra dice la cuenta que contesta el backend, o que no la conoce; ningún nombre de persona en `src/` (#44) |
 | `camino-a-la-api.test.ts` | Proxy de Vite, `PREFIJO` y `Api.RAIZ` dicen lo mismo; las lecturas de sesión y las cinco de datos existen con los campos que se leen (#84) |
+| `las-capturas-son-las-medidas.test.ts` | Las capturas tienen la forma **medida** (`forma-medida.json`) en los dos sentidos, con lo derivado declarado, y sus listas el orden del `ORDER BY` (#89) |
 | `src/datos/conectores.test.ts` | Cada hoja que lee reparte a su definición: todo campo de sólo lectura con dato **o** con su palabra, filas del ancho de su tabla, su ruta entre las lecturas de su hoja, la hora de Lima y ningún total sumado en el cliente (#84) |
 | `imagen-y-despliegue.test.ts` | El `Dockerfile`, el `nginx.conf` y `configuracion.js` tienen la forma que el descriptor y el compose esperan |
 
@@ -161,8 +162,12 @@ y el de dentro, lo que había. Con dos archivos que no cargan, escribe `33 passe
 
 ## 8. Medir las capturas contra un backend de verdad (#89)
 
-Las tres capturas de `frontend/src/datos/*Medida.ts` están **derivadas** del contrato, y su
-`ORIGEN_DE_LA_CAPTURA` lo dice. Medirlas es **una orden**: `frontend/desarrollo/medir-las-capturas.mjs`
+Las tres capturas de `frontend/src/datos/*Medida.ts` estuvieron **derivadas** del contrato hasta el
+**2026-09-28**, en que se midieron contra una plataforma local completa (#89): lo medido no era lo
+derivado en siete sitios —instantes con seis decimales, importes `"0"`, el número de recibo con siete
+dígitos, `tipoDePago`, `OPCION_MENU`, `/pagos/sin-entregar` que sólo da MUERTOS y el orden de tres
+listas—, y su `ORIGEN_DE_LA_CAPTURA` dice ahora la orden, la fecha, las cuentas y los commits. Medirlas
+es **una orden**: `frontend/desarrollo/medir-las-capturas.mjs`
 pide el token de la cuenta de medición, pide las **catorce** lecturas de `RUTAS`
 (`src/datos/lecturas.ts`: cinco de sesión y nueve de Tesorería), guarda cada respuesta **cruda** con
 su estado, su fecha y la orden `curl` exacta, y compara su **forma** —campos que sobran o faltan,
@@ -187,15 +192,42 @@ KAMAYUK_CLAVE_DE_MEDICION="$(cat "$PRIVADO/clave")" node desarrollo/medir-las-ca
   --base "https://$DOMINIO" --emisor "https://$DOMINIO/keycloak/realms/kamayuk"
 ```
 
-**Contra la plataforma local.** Allí la cuenta de medición **no existe** —la siembra `infrastructure`
-sólo donde hay usuarios de prueba—, así que se mide con el administrador que deja
-`preparar-identidades.sh` (`KAMAYUK_ADMINISTRADOR` del `.env`) y la clave que ese guion imprime. Su
-matriz de permisos tiene los siete privilegios y no sólo `lectura`: la forma es la misma.
+**Contra la plataforma local**, que es como se midió en #89. La **fila** de `medicion-de-interfaces`
+sí existe en local —la da de alta la implantación de `identidad` (identidad#50) y llega a la copia de
+esta caja por el buzón, con `lectura` sobre las siete opciones—; lo que falta es su **cuenta en el
+emisor**, que `infrastructure` sólo siembra donde hay usuarios de prueba. Se crea con el mismo guion
+que `preparar-identidades.sh` usa para el administrador, sin `--reset` para que la clave sea
+permanente:
+
+```bash
+cd ../infrastructure/despliegue    # después de `levantar-todo.sh identidad caja`
+KAMAYUK_CLAVE_KEYCLOAK=… ./identidad/crear-usuario.sh medicion-de-interfaces "$(cat <archivo>)" 1
+```
+
+Y con el administrador que deja `preparar-identidades.sh` (`KAMAYUK_ADMINISTRADOR` del `.env`), que
+es quien tiene turno y cobra. **Sin datos no se mide ninguna forma**: una lista vacía no dice cómo
+llega un instante. Lo que ninguna ruta da de alta —áreas, ventanillas y tarifas— se inserta por SQL; lo
+demás se hace por la API con el administrador —dos órdenes de `rentas` y una de un segundo sistema,
+tres cobros, una tasa, una anulación y una reimpresión—, y con el sistema de origen apagado el
+publicador deja los pagos MUERTOS en ochenta segundos. Las órdenes de #89 están en su fila de
+`docs/agent/HISTORY.md`.
 
 ```bash
 KAMAYUK_CLAVE_DE_MEDICION="$(cat <archivo con la clave>)" node desarrollo/medir-las-capturas.mjs \
-  --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez
+  --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --turno <id> \
+  --forma verificaciones/forma-medida.json
+KAMAYUK_CLAVE_DE_MEDICION="$(cat <archivo con la clave>)" node desarrollo/medir-las-capturas.mjs \
+  --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez \
+  --forma verificaciones/forma-medida.json
 ```
+
+**`--forma` es lo que queda en el repositorio.** Une la **firma** de lo medido —por cada ruta JSON, las
+clases de valor que llegaron, y por cada objeto sus campos; ni un valor— a la de
+`frontend/verificaciones/forma-medida.json`, con la orden, la fecha, la base y la cuenta de cada
+corrida. `verificaciones/las-capturas-son-las-medidas.test.ts` compara con ella las capturas **en los
+dos sentidos** —todo lo medido lo ejerce alguna captura, y lo que una captura ejerce se midió o está
+declarado derivado con su porqué— y el orden de las listas. Para volver a medir desde cero, se borra
+el archivo antes de la primera corrida.
 
 **Tres variables se encadenan**, o se dan: el recibo del duplicado sale del primero de `/recibos`
 (`--recibo`), el día de la conciliación de la `fecha` de `/turnos/del-dia` (`--fecha`), y el turno del

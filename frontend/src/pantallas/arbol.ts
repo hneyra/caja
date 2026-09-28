@@ -105,7 +105,7 @@ export const ARBOL = [
             operacion: { verbo: 'POST', ruta: '/cobros/{nro}/anulacion', controlador: 'ReciboController' },
           },
         ],
-        // **El recibo elegido viaja en la ruta** (#99): `#/duplicado-recibo/001-000123`. Es lo que
+        // **El recibo elegido viaja en la ruta** (#99): `#/duplicado-recibo/001-0000123`. Es lo que
         // hace que recargar —o pasarle el enlace a quien tiene que revisar ese recibo— siga
         // ensenando el mismo, y que la segunda lectura sepa cual pedir sin guardarlo en ningun
         // estado. Es la unica hoja que declara algo: las otras cinco no eligen nada.

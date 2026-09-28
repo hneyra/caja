@@ -193,7 +193,7 @@ export function leerNoEscribe(): Promise<unknown> {
  */
 export function escribirExigeSuCuerpo(): Promise<unknown> {
   // @ts-expect-error — falta el cuerpo, que es obligatorio.
-  return escribir('/cobros/001-000123/anulacion');
+  return escribir('/cobros/001-0000123/anulacion');
 }
 
 /**
@@ -205,5 +205,5 @@ export function escribirExigeSuCuerpo(): Promise<unknown> {
  */
 export function escribirNoEligeElVerbo(): Promise<unknown> {
   // @ts-expect-error — `escribir` no recibe un verbo: el tercer parametro es la senal.
-  return escribir('/cobros/001-000123/anulacion', {}, 'DELETE');
+  return escribir('/cobros/001-0000123/anulacion', {}, 'DELETE');
 }
