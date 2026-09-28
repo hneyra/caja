@@ -159,9 +159,22 @@ reescribe el montón ni se consulta la tabla. Seguido de `ALTER COLUMN c DROP DE
 ya estaban **conservan** ese valor y las que se inserten después nacen nulas. Es lo que hace
 `V6__desde_cuando_una_fila_espera_su_sujeto.sql` para marcar las filas de la copia de la autorización
 que V5 encontró sin sujeto, y lo mide `SinSujetoDesdeTest` migrando hasta `V5`, sembrando y
-terminando con el `Migrador` del despliegue. Sirve para **una** marca común a todas las filas previas
-—el instante de la migración—; para un valor que dependa de cada fila sigue sin haber salida desde
-el migrador.
+terminando con el `Migrador` del despliegue. Es lo que V6 necesitaba: **una** marca común a todas las
+filas previas —el instante de la migración—.
+
+**Y un valor por fila también se puede, con un `ALTER TABLE` que reescriba (`caja`#125, medido).**
+En PostgreSQL 16, con el dueño —sin `BYPASSRLS`—, `FORCE ROW LEVEL SECURITY` y sin contexto de
+tenant, sobre la misma tabla en la que `UPDATE t SET k = k || '!'` muere con `unrecognized
+configuration parameter "app.municipalidad_id"`, **pasan** las dos reescrituras enteras: `ALTER TABLE
+t ADD COLUMN c timestamptz DEFAULT clock_timestamp()` —volátil, así que no va al catálogo: reescribe
+el montón, y el `relfilenode` cambia— y `ALTER TABLE t ALTER COLUMN k TYPE text USING (k || '-' ||
+municipalidad_id)`, que deja en cada fila un valor calculado de ella misma, de las dos
+municipalidades. La política se aplica al DML y no a la reescritura de un `ALTER TABLE`, como
+tampoco al escaneo de validación de un `CHECK` (arriba). Así que «el migrador no puede escribir un
+valor por fila» es falso; lo cierto es más estrecho: **sin contexto de tenant no puede hacer DML**,
+y lo que se escriba tiene que poder calcularse con una expresión sobre la propia fila. En V6 no
+había tal valor que calcular —el id de `identidad` de una fila vieja no se sabe aquí—, y por eso la
+marca es común.
 
 ### Hallazgo 5 — Bajo RLS, el operador espacial tampoco llega al índice
 
