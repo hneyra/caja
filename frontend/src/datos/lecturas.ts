@@ -333,7 +333,19 @@ export const RUTAS = {
   // `tamano` a 200 por lo mismo que los accesos: las cajas de una municipalidad caben en una pagina,
   // y con el tamano por omision la tabla perderia las que pasan de veinte sin decirlo.
   cajas: '/cajas?tamano=200',
-  recibos: '/recibos',
+  // **Los mas recientes primero** (#135). Sin consulta, el backend ordena por `fecha` —el instante
+  // de emision— en `ASCENDENTE` y corta en 20: la hoja ensenaba los veinte recibos MAS ANTIGUOS de
+  // la municipalidad, y un recibo solo se anula el dia de su cobro, asi que ninguno de los que se
+  // veian se podia anular. El orden va escrito entero —campo y sentido— para no depender de lo que
+  // el backend ponga por omision; lo ata `verificaciones/camino-a-la-api.test.ts` contra
+  // `ParametrosDePaginacion`, `Paginacion.Direccion` y la lista blanca de `ReciboRepositoryJdbc`.
+  //
+  // `tamano` se queda en 20 y se escribe para que tampoco dependa del backend. Mas filas no son
+  // gratis aqui: la hoja no pagina y el recibo elegido —con la accion de anular— va DEBAJO de la
+  // lista, asi que cinco veces mas filas lo alejan cinco veces mas. Lo que no cabe se ve: la barra
+  // de la tabla dice `20 / 356` (`conteoDeLaTabla`), y la instruccion de la hoja no promete una
+  // busqueda que no ofrece.
+  recibos: '/recibos?tamano=20&ordenarPor=fecha&direccion=DESCENDENTE',
   // Con la variable entre llaves, igual que la escribe su `@GetMapping` y que la declara el arbol:
   // asi la guarda puede compararla sin conocer ningun numero. La compone `rutaDelDuplicado`.
   duplicadoDeUnRecibo: '/recibos/{nro}/duplicado',

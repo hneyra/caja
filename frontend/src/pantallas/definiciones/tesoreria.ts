@@ -132,12 +132,18 @@ export const TESORERIA = {
     // (`useLaAnulacion.ts`) lo copia a la pestana, y un 401 a mitad del acto no se lo lleva al
     // volver a entrar. Sin `suciaAlTeclear`: la hoja no ofrece «Guardar» ni se marca sucia.
     hoja: { conservaLoTecleado: 'soloSiSucia' },
+    // **Sin prometer una busqueda que la hoja no ofrece** (#135). Hasta #135 decia «busque el
+    // recibo por el documento del pagador, la caja, el cajero o las fechas», y la lista no tiene un
+    // solo campo: pide `GET /recibos` sin filtros. El backend los admite (`?documento=`, `?caja=`,
+    // `?cajero=`, `?desde=`, `?hasta=`); ofrecerlos es otra decision, y hasta entonces esto dice lo
+    // que hay. «Los más recientes» lo sostiene el orden que pide `RUTAS.recibos`, y los dos los ata
+    // `verificaciones/camino-a-la-api.test.ts`.
     instruccion:
-      'busque el recibo por el documento del pagador, la caja, el cajero o las fechas, ábralo para ver su duplicado y, si procede, anúlelo desde aquí.',
+      'abra un recibo de la lista —van primero los más recientes— para ver su duplicado y, si procede, anúlelo desde aquí. Esta pantalla todavía no busca por pagador, caja, cajero ni fechas.',
     bloques: [
       {
         titulo: 'Recibos localizados',
-        nota: 'Lo emitido y lo anulado, con cuántas veces se reimprimió cada recibo.',
+        nota: 'Lo emitido y lo anulado, los más recientes primero, con cuántas veces se reimprimió cada recibo.',
         campos: [],
         tabla: {
           titulo: 'Recibos',

@@ -15,8 +15,10 @@ name: Frontend
 # nadie vaya a pedir por su etiqueta, y el filtro evita una instalacion de npm en cada cambio del
 # backend. Pero **las guardas de `frontend/verificaciones/` leen archivos de fuera de `frontend/`**
 # —`Api.java`, los controladores y los `Resource` que la interfaz lee, `CatalogoDelSistema.java`,
-# el compose, el descriptor, este mismo flujo y el de las imagenes—, y un cambio en uno de ellos
-# tiene que volver a medirse aqui. Por eso estan en la lista.
+# desde #135 lo que decide como se ordena la lista de recibos (`ParametrosDePaginacion.java`,
+# `Paginacion.java` y `ReciboRepositoryJdbc.java`), el compose, el descriptor, este mismo flujo y el
+# de las imagenes—, y un cambio en uno de ellos tiene que volver a medirse aqui. Por eso estan en la
+# lista.
 #
 # LO QUE EL FILTRO NO PUEDE VER: un cambio en `kamayuk-lib`. Eso lo cubre la CI de la libreria,
 # que corre `yarn verificar` de este frontend antes de mezclar (su `consumidores.json`).
@@ -24,9 +26,9 @@ name: Frontend
 on:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
+    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ParametrosDePaginacion.java", "backend/kamayuk-caja-dominio-compartido/src/main/java/kamayuk/caja/compartido/Paginacion.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/ReciboRepositoryJdbc.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
+    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ParametrosDePaginacion.java", "backend/kamayuk-caja-dominio-compartido/src/main/java/kamayuk/caja/compartido/Paginacion.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/ReciboRepositoryJdbc.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
 
 permissions:
   contents: read

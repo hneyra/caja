@@ -354,8 +354,8 @@ export const LECTURAS: readonly Lectura[] = [
   { clave: 'cajas', plantilla: '/cajas?tamano=200', ruta: fija('/cajas?tamano=200'), capturas: [CAJAS_MEDIDAS] },
   {
     clave: 'recibos',
-    plantilla: '/recibos',
-    ruta: fija('/recibos'),
+    plantilla: '/recibos?tamano=20&ordenarPor=fecha&direccion=DESCENDENTE',
+    ruta: fija('/recibos?tamano=20&ordenarPor=fecha&direccion=DESCENDENTE'),
     capturas: [RECIBOS_MEDIDOS],
     encadenar: (cuerpo, contexto) => {
       if (contexto.recibo !== undefined || !esObjeto(cuerpo) || !Array.isArray(cuerpo.contenido)) return;

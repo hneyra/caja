@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { sembrarElCatalogo } from '../desarrollo/sembrarElCatalogo.ts';
 import { Aplicacion, CONSULTAS } from '../src/aplicacion.tsx';
 import { CATALOGO } from '../src/catalogo.ts';
+import { RUTAS } from '../src/datos/lecturas.ts';
 import { SESION_MEDIDA } from '../src/datos/sesionMedida.ts';
 import type { ClaveDeHoja } from '../src/pantallas/arbol.ts';
 import { bloquesDe, pantallaDe } from '../src/pantallas/definiciones/index.ts';
@@ -112,7 +113,7 @@ describe('con el catalogo sembrado, la ventanilla se recorre sin backend', () =>
     });
     // La lista, y nada mas: sin recibo elegido no se pide su ficha, y la anulacion no sale sola.
     // Es lo que hace cierto que la unica escritura de esta interfaz la dispare una persona.
-    expect(pedidas).toEqual(['/caja/api/v1/recibos']);
+    expect(pedidas).toEqual([`/caja/api/v1${RUTAS.recibos}`]);
     expect(pedidas.filter((url) => url.includes('/anulacion'))).toEqual([]);
   });
 
