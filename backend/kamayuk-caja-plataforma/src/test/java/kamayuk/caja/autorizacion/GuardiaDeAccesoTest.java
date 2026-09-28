@@ -93,8 +93,16 @@ class GuardiaDeAccesoTest {
                 .as(
                         "distingue «no te conozco» de «no te dejo»: no son la misma cosa ni se"
                                 + " arreglan igual")
-                .contains("no esta dada de alta en este sistema")
-                .contains("la administracion de usuarios, grupos y permisos vive en rentas");
+                .contains("no esta dada de alta en este sistema");
+        assertThat(cuerpo)
+                .as(
+                        "#140 — y dice DONDE y QUE: el alta y la afiliacion se hacen en `identidad`"
+                                + " (ADR-0039). `rentas` ya no administra a nadie, y mandar alli"
+                                + " es mandar a buscar el alta donde no se hace")
+                .contains("Hay que darla de alta en `identidad`")
+                .contains(
+                        "afiliarla alli a un grupo con permisos sobre las opciones de este sistema")
+                .doesNotContain("rentas");
         assertThat(cuerpo).doesNotContain("\"detail\":\"No tiene el privilegio");
 
         // LO QUE ESTA PRUEBA NO PUEDE AFIRMAR: el `title` SIGUE diciendo «No tiene el privilegio

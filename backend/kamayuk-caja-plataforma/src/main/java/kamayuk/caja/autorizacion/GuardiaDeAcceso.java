@@ -117,10 +117,16 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
         //
         // Sin esto las dos cosas salian como el mismo 403: un funcionario dado de alta al que le
         // falta un permiso, y uno que **no esta dado de alta en este sistema** — que aqui no se
-        // arregla de ninguna manera, porque las nueve escrituras de administracion de seguridad
-        // viven en `rentas` (ADR-0030 §3) y el unico escritor local es el sembrador de la copia.
-        // El primero lo arregla un administrador concediendo algo; el segundo no, y quien lee el
-        // mensaje no tenia forma de distinguirlos.
+        // arregla de ninguna manera, porque la administracion de usuarios, grupos y permisos vive
+        // en `identidad` —sus escrituras se fueron alli en la etapa 4 de ADR-0039, y desde la
+        // etapa 5 ni la implantacion siembra la copia— y el unico escritor local de la copia es
+        // `AplicarUnEventoDeIdentidad` (regla 12), que aplica lo que publica el buzon de alli.
+        // El primero lo arregla un administrador concediendo algo; el segundo exige antes el alta
+        // de la cuenta, y quien lee el mensaje no tenia forma de distinguirlos.
+        //
+        // Hasta #140 este comentario decia `rentas` y «el sembrador», y el mensaje de abajo
+        // mandaba a administrar usuarios en `rentas`: eran de antes de ADR-0039, y quien le hacia
+        // caso buscaba el alta en un sistema que ya no la hace.
         //
         // Es el mismo reparto que #21 hizo en `caja` con el 401 de la credencial: separar lo que
         // se arregla dando un permiso de lo que se arregla del lado del despliegue.
@@ -131,8 +137,9 @@ public class GuardiaDeAcceso implements HandlerInterceptor {
                             + usuario
                             + "» no esta dada de alta en este sistema. No es que le falte un"
                             + " privilegio: no tiene ninguna ficha aqui, y el alta no se hace desde"
-                            + " este sistema — la administracion de usuarios, grupos y permisos"
-                            + " vive en rentas.");
+                            + " este sistema. Hay que darla de alta en `identidad` y afiliarla alli"
+                            + " a un grupo con permisos sobre las opciones de este sistema; esta"
+                            + " copia la trae del buzon de `identidad` en su siguiente pasada.");
         }
 
         // El mensaje dice que falta, no quien lo tiene ni como se configura: eso

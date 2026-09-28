@@ -26,8 +26,10 @@ public interface ComprobadorDeAcceso {
      * no esta dado de alta en absoluto, y las dos cosas llegaban al funcionario como el mismo 403.
      * No son la misma cosa ni se arreglan igual: la primera la arregla un administrador concediendo
      * un permiso; la segunda <b>no se puede arreglar desde este sistema</b>, porque aqui no hay
-     * ninguna escritura de administracion de seguridad — las nueve viven en {@code rentas}
-     * (ADR-0030 §3), y el unico escritor local es el sembrador de la copia.
+     * ninguna escritura de administracion de seguridad — viven en {@code identidad} desde la etapa
+     * 4 de ADR-0039, desde la etapa 5 ni la implantacion siembra la copia, y su unico escritor
+     * local es {@code AplicarUnEventoDeIdentidad} (regla 12), que aplica lo que publica el buzon de
+     * alli. Hasta #140 aqui decia {@code rentas} y «el sembrador».
      *
      * <p>Es el mismo reparto que #21 hizo en {@code caja} con el 401: separar lo que se arregla
      * dando un permiso de lo que se arregla del lado del despliegue, y <b>decirlo en el

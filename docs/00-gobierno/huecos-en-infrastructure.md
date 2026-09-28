@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | Estado | Vigente |
-| Abierto por | #18, el último del lote de dieciséis de `caja-web`; ampliado en #79 con el §4 |
+| Abierto por | #18, el último del lote de dieciséis de `caja-web`; ampliado en #79 con el §4 y en #140 con el §5 |
 | Medido en | `infrastructure` en `main`, clonado en `../infrastructure`, con vitest 3.2.7 y `docker compose v5.5.1` |
 
 Este repositorio ya declara su interfaz entera: la imagen (#16), el `Deployment`, el `Service`, el
@@ -294,6 +294,42 @@ detrás»—. Este descriptor ya pide lo menos que puede sin mentir: el publicad
 que corren este mismo jar, y los `limits` de siempre.
 
 Queda declarado en [`infrastructure`#198](https://github.com/hneyra/infrastructure/issues/198).
+
+---
+
+## 5 · El censo de las cinco copias: `GuardiaDeAcceso` y `ComprobadorDeAcceso` — de #140
+
+**#140 corrige dos archivos de `plataforma` que son copia.** El 403 de una cuenta sin ficha
+mandaba a administrar usuarios «en rentas», y el comentario de al lado y el javadoc de
+`ComprobadorDeAcceso` nombraban como único escritor local «el sembrador de la copia». Desde
+ADR-0039 las dos cosas son falsas: las escrituras de administración se fueron a `identidad` en la
+etapa 4, y desde la etapa 5 ni la implantación siembra la copia —su único escritor es
+`AplicarUnEventoDeIdentidad`—. `identidad` lo dejó escrito en el javadoc de su `EventosController`
+(`identidad@6c5e433`, líneas 87-90): «se corrige en la pieza compartida, no en una copia». **Esa
+pieza compartida no existe todavía** —es la librería 2 de `infrastructure`#22, `comun-plataforma`—,
+así que se corrige aquí y se declara lo que eso mueve al otro lado.
+
+**Lo que mueve: `infra/verificaciones/lo-que-los-cinco-comparten.test.ts`.** Declara los dos
+archivos con `grupos: "caja, catastro, identidad, normativa | rentas"`, y el motivo del segundo
+dice que «los tres se dejaron idénticos a propósito». Medido con la normalización de esa guarda
+(`kamayuk.<sistema>` → `kamayuk.SYS`) y `md5sum`, contra la única otra copia de ese grupo que hay
+clonada en esta máquina:
+
+| Archivo | `caja@7bae757` | esta rama | `identidad@6c5e433` |
+|---|---|---|---|
+| `autorizacion/GuardiaDeAcceso.java` | `b41353c1…` | `1f17790a…` | `b41353c1…` |
+| `autorizacion/ComprobadorDeAcceso.java` | `4cc98c85…` | `6672db4e…` | `4cc98c85…` |
+
+En cuanto esto se mezcle, las dos entradas pasan a **tres** grupos —`caja | catastro, identidad,
+normativa | rentas`— y la guarda sale roja nombrándolas. **La guarda entera no se pudo correr
+aquí**: `catastro` y `normativa` no están clonados y `clonDe` lanza sin ellos, a propósito.
+
+**Por qué el mensaje nuevo no nombra `caja`.** Dice «las opciones de este sistema», para que
+`catastro` y `normativa` lo puedan copiar **tal cual** y el censo vuelva a juntarlos sin escribir
+una entrada nueva. `identidad` no puede copiarlo igual —allí sí se da el alta, y no hay buzón del
+que traerla—, así que su frase será propia. `rentas` no entra: su copia no tiene
+`conoceAlUsuario` ni la frase (medido en `rentas@f768c79`). Mientras no se copie, la entrada de
+`DIVERGENCIAS_DECLARADAS` tiene que decir los grupos que haya y por qué.
 
 ---
 
