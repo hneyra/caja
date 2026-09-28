@@ -268,6 +268,16 @@ class ElRegistroDeUnaVueltaTest {
                         .contains("id de `identidad` y su fecha de alta")
                         .contains("Si NO lo es")
                         .doesNotContain("Si EXISTE en `identidad` con esa clave");
+                assertThat(deLaAlerta.list.getFirst().getFormattedMessage())
+                        .as(
+                                "[seguimiento de #125: «cualquier modificacion la adopta» no era"
+                                        + " cierto —un evento con OTRA clave no la encuentra, e"
+                                        + " inhabilitarla la adopta inhabilitada— y el aviso nombra"
+                                        + " los actos que de verdad la adoptan]")
+                        .contains("CON ESA MISMA CLAVE")
+                        .contains("re-habilitarlo, fijarle su vigencia")
+                        .contains("no inhabilitarlo")
+                        .doesNotContain("cualquier modificacion");
             } finally {
                 suLogger.detachAppender(deLaAlerta);
             }

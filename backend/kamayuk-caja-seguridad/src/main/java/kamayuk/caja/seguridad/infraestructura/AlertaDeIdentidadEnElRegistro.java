@@ -145,15 +145,21 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                         + " puede haberse reasignado a otra persona o a otro grupo. Antes de tocar"
                         + " nada, comprueba en `identidad` que es el MISMO sujeto —su id de"
                         + " `identidad` y su fecha de alta anteriores a V5, y en su auditoria que"
-                        + " esa clave no se renombro ni se volvio a dar de alta—. Si lo es, cualquier"
-                        + " modificacion, afiliacion o permiso que lo nombre lo adopta aqui y vuelve"
-                        + " a conceder. Si NO lo es —la clave es de un sujeto nuevo—, no la toques"
-                        + " pensando en esta fila: la huerfana deja de conceder sola el dia que se"
-                        + " indica, a los {} dias de V6, y los eventos del sujeto nuevo que la"
-                        + " nombren se apartaran con su propio aviso hasta que alguien decida a mano"
-                        + " (#125). Esta caja no edita ni borra estas filas: su unico escritor es el"
-                        + " consumidor del buzon (regla 12). Ademas hay {} habilitada(s) sin sujeto"
-                        + " que YA no conceden. Responsable: {} <{}>",
+                        + " esa clave no se renombro ni se volvio a dar de alta—. Si lo es, un acto"
+                        + " en `identidad` que publique un evento que lo nombre CON ESA MISMA CLAVE"
+                        + " lo adopta aqui y vuelve a conceder: re-habilitarlo, fijarle su vigencia,"
+                        + " re-afiliarlo a un grupo en el que ya esta o volver a fijarle un permiso"
+                        + " que ya tiene sobre una opcion de `caja` (el de otro sistema se ignora"
+                        + " aqui); no inhabilitarlo, que lo adoptaria inhabilitado, y un evento con"
+                        + " OTRA clave no lo adopta. Si NO"
+                        + " lo es —la clave es de un sujeto nuevo—, no la toques pensando en esta"
+                        + " fila: la huerfana deja de conceder sola el dia que se indica, a los {}"
+                        + " dias de V6, o en el acto si antes llega el alta del sujeto nuevo, que"
+                        + " se aparta con su propio aviso igual que sus eventos siguientes hasta"
+                        + " que alguien decida a mano (#125, docs/40-datos/filas-sin-sujeto.md)."
+                        + " Esta caja no edita ni borra estas filas por su cuenta: su unico escritor"
+                        + " es el consumidor del buzon (regla 12). Ademas hay {} habilitada(s) sin"
+                        + " sujeto que YA no conceden. Responsable: {} <{}>",
                 queConceden.size(),
                 hoy,
                 lista,

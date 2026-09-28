@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.UUID;
+import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.dominio.ZonaHoraria;
@@ -30,6 +31,8 @@ import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
+import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
+import kamayuk.caja.seguridad.infraestructura.LecturaDeLaCopiaLocalJdbc;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +48,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -417,6 +421,101 @@ class ConsumirEventosDeIdentidadJdbcTest {
     }
 
     @Test
+    @DisplayName(
+            "#125 seguimiento: el alta que choca con una cuenta SIN sujeto la deja sin conceder EN"
+                    + " EL ACTO, aunque este en su plazo: el guardia la niega y la matriz sale vacia")
+    void elAltaQueChocaRetiraLaHuerfanaEnElActo() throws SQLException {
+        long otra = crearMunicipalidad("209906", "Municipalidad F");
+        LocalDate hoy = LocalDate.of(2026, 9, 9);
+        long huerfana;
+        try (Connection admin = base.conexionAdmin();
+                Statement s = admin.createStatement()) {
+            s.execute(
+                    "INSERT INTO modulo_sistema (municipalidad_id, codigo, nombre) VALUES ("
+                            + otra
+                            + ", 'TESORERIA', 'Tesoreria')");
+            s.execute(
+                    "INSERT INTO acceso (municipalidad_id, modulo_id, tipo, codigo, nombre)"
+                            + " SELECT "
+                            + otra
+                            + ", id, 'OPCION_MENU', 'permisos', 'Permisos' FROM modulo_sistema"
+                            + " WHERE municipalidad_id = "
+                            + otra);
+            // La fila de antes de V5: fechada por V6 hace dos dias —dentro del plazo— y con su
+            // propio permiso. Su dueno se fue; la clave, en `identidad`, es ahora de otra persona.
+            try (ResultSet fila =
+                    s.executeQuery(
+                            "INSERT INTO usuario (municipalidad_id, cuenta, nombre,"
+                                    + " sin_sujeto_desde) VALUES ("
+                                    + otra
+                                    + ", 'reasignada', 'El anterior', '"
+                                    + ZonaHoraria.comienzoDelDia(hoy.minusDays(2))
+                                    + "') RETURNING id")) {
+                fila.next();
+                huerfana = fila.getLong(1);
+            }
+            s.execute(
+                    "INSERT INTO permiso (municipalidad_id, acceso_id, usuario_id, lectura,"
+                            + " usuario_registro) SELECT "
+                            + otra
+                            + ", id, "
+                            + huerfana
+                            + ", true, 'antes-de-v5' FROM acceso WHERE municipalidad_id = "
+                            + otra);
+        }
+        TenantContext.fijar(new MunicipalidadId(otra));
+        assertThat(autoriza("reasignada", hoy))
+                .as("precondicion: en su plazo, la fila del anterior concede")
+                .isTrue();
+        EventoDeIdentidadRecibido altaDelNuevo =
+                evento(
+                        60,
+                        "USUARIO_DADO_DE_ALTA",
+                        "{\"usuarioId\":990,\"cuenta\":\"reasignada\",\"nombre\":\"La"
+                                + " nueva\",\"correo\":null,\"habilitado\":true,"
+                                + "\"vigenciaDesde\":null,\"vigenciaHasta\":null}");
+        buzon.sirve(altaDelNuevo);
+
+        ConsumirEventosDeIdentidad.Vuelta vuelta = consumidor.consumir();
+
+        assertThat(vuelta.apartados()).isEqualTo(1);
+        assertThat(autoriza("reasignada", hoy))
+                .as(
+                        "[quien entra ahora con «reasignada» es el sujeto 990, cuya alta se acaba de"
+                                + " apartar: la fila del anterior no le puede conceder sus permisos"
+                                + " durante lo que le quede de plazo]")
+                .isFalse();
+        assertThat(matriz("reasignada", hoy))
+                .as("y la matriz de la sesion dice lo mismo que el guardia")
+                .isEmpty();
+        assertThat(
+                        leerTexto(
+                                "SELECT coalesce(identidad_sujeto_id::text, 'sin sujeto') || '|' ||"
+                                        + " coalesce(sin_sujeto_desde::text, 'sin fecha') FROM"
+                                        + " usuario WHERE id = "
+                                        + huerfana))
+                .as(
+                        "[no se adopta y no se borra: pierde la fecha, y sin sujeto ni fecha no concede]")
+                .isEqualTo("sin sujeto|sin fecha");
+        String prefijo = "La fila " + huerfana + " de usuario DEJA DE CONCEDER DESDE YA";
+        assertThat(
+                        leerTexto(
+                                "SELECT motivo FROM identidad_evento_muerto WHERE evento_id = '"
+                                        + altaDelNuevo.eventoId()
+                                        + "'"))
+                .as(
+                        "[el motivo lo dice DELANTE, para que no lo corte el tope de 400 de la columna]")
+                .startsWith(prefijo)
+                .contains("«reasignada»")
+                .contains("990");
+        assertThat(alerta.avisos)
+                .as("y el responsable recibe el mismo motivo")
+                .last()
+                .asString()
+                .startsWith("USUARIO_DADO_DE_ALTA: " + prefijo);
+    }
+
+    @Test
     @DisplayName("#125 CONTRASTE: una copia sin filas sin sujeto no avisa")
     void unaCopiaSinFilasSinSujetoNoAvisa() {
         TenantContext.fijar(new MunicipalidadId(municipalidad));
@@ -447,6 +546,35 @@ class ConsumirEventosDeIdentidadJdbcTest {
             s.setObject(5, enLima(desde));
         }
         s.executeUpdate();
+    }
+
+    /** El guardia de produccion, sobre la opcion sembrada, en la transaccion del contexto. */
+    private static boolean autoriza(String cuenta, LocalDate fecha) {
+        ComprobadorDeAccesoJdbc comprobador = new ComprobadorDeAccesoJdbc(jdbc);
+        return Boolean.TRUE.equals(
+                new TransactionTemplate(gestor)
+                        .execute(
+                                estado ->
+                                        comprobador.autoriza(
+                                                cuenta, "permisos", Privilegio.LECTURA, fecha)));
+    }
+
+    /** La matriz de la sesion de produccion, con la misma precedencia que el guardia. */
+    private static java.util.Map<String, java.util.Set<Privilegio>> matriz(
+            String cuenta, LocalDate fecha) {
+        LecturaDeLaCopiaLocalJdbc lectura = new LecturaDeLaCopiaLocalJdbc(jdbc);
+        return new TransactionTemplate(gestor)
+                .execute(estado -> lectura.permisosEfectivosDe(cuenta, fecha));
+    }
+
+    /** Como superusuario, desde otra conexion: una sola celda. */
+    private static String leerTexto(String consulta) throws SQLException {
+        try (Connection admin = base.conexionAdmin();
+                Statement s = admin.createStatement();
+                ResultSet fila = s.executeQuery(consulta)) {
+            assertThat(fila.next()).as("una fila para: " + consulta).isTrue();
+            return fila.getString(1);
+        }
     }
 
     /** El comienzo del dia en Lima, que es con lo que el guardia corta el plazo. */

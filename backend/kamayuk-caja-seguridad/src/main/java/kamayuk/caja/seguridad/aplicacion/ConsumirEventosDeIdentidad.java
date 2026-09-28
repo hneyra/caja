@@ -124,8 +124,12 @@ public class ConsumirEventosDeIdentidad {
                 }
                 resueltos.add(evento.eventoId());
             } catch (AplicarUnEventoDeIdentidad.NoSePuedeAplicar nunca) {
-                String motivo = motivoDe(nunca);
-                aplicador.apartar(evento, motivo);
+                // Se entrega el rechazo ENTERO y no solo su texto: si dice que una clave la trae
+                // un sujeto sin fila aqui, lleva la fila sin sujeto que tiene que dejar de conceder
+                // en la misma transaccion del apartado (seguimiento de #125). El motivo que vuelve
+                // es el que
+                // quedo escrito, y es el que se avisa.
+                String motivo = aplicador.apartar(evento, nunca);
                 apartados++;
                 resueltos.add(evento.eventoId());
                 alerta.hayUnEventoSinAplicar(evento, motivo, aplicador.apartados());
@@ -224,8 +228,11 @@ public class ConsumirEventosDeIdentidad {
      * entre corridas seria esconderlo. <b>Las que ya no conceden, no</b>: ya no son un riesgo, y
      * hasta la ronda 2 una linea WARN las contaba en cada corrida, cada cinco minutos y sin fin,
      * que es el canal que grita en lo corriente (#437). Ahora el WARN nombra solo las que dejaron
-     * de conceder HOY —su ultimo dia fue ayer—, asi que cada fila aparece un solo dia, calculado
-     * con el reloj inyectado; las demas solo entran como cuenta en el ERROR, si lo hay.
+     * de conceder HOY —su ultimo dia fue ayer—, calculado con el reloj inyectado: cada fila sale en
+     * cada corrida de ese dia —el {@code CronJob} corre cada cinco minutos, asi que hasta 288
+     * veces— y en ninguna del dia siguiente; las demas solo entran como cuenta en el ERROR, si lo
+     * hay. Una fila retirada al apartar un alta (seguimiento de #125) no pasa por aqui: pierde la
+     * fecha, asi que no «cruza» ningun dia; la nombra el aviso de ese apartado.
      *
      * @return cuantas se avisaron; cero, que es lo corriente en una base implantada despues de #111
      */
@@ -240,9 +247,12 @@ public class ConsumirEventosDeIdentidad {
             log.warn(
                     "HOY ({}) dejan de conceder {} fila(s) de usuario o grupo sin sujeto de"
                             + " `identidad`, al cumplirse su plazo de {} dias desde V6 (#125): {}."
-                            + " No se vuelve a decir manana. Si alguna era legitima, se recupera"
-                            + " cuando `identidad` la toque, comprobando antes que es el MISMO"
-                            + " sujeto y no una clave reasignada",
+                            + " Se repite en cada corrida de hoy y no se vuelve a decir manana. Si"
+                            + " alguna era legitima, se recupera cuando `identidad` publique un"
+                            + " evento que la nombre con esa misma clave —re-habilitarla, su misma"
+                            + " vigencia, una afiliacion o un permiso de `caja` que ya tenia—,"
+                            + " comprobando antes que es el MISMO sujeto y no una clave reasignada"
+                            + " (docs/40-datos/filas-sin-sujeto.md)",
                     hoy,
                     filas.queDejaronDeConcederHoy().size(),
                     kamayuk.caja.seguridad.dominio.PlazoDeAdopcion.DIAS,
@@ -253,11 +263,6 @@ public class ConsumirEventosDeIdentidad {
         }
         alerta.hayFilasSinSujeto(filas.queConceden(), filas.queYaNoConceden(), hoy);
         return filas.queConceden().size();
-    }
-
-    private static String motivoDe(RuntimeException noSePudo) {
-        String mensaje = noSePudo.getMessage();
-        return mensaje == null ? noSePudo.getClass().getSimpleName() : mensaje;
     }
 
     /**

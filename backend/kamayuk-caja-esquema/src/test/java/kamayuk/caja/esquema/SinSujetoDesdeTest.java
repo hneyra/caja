@@ -18,11 +18,13 @@ import org.junit.jupiter.api.Test;
  * {@code identidad}, y NINGUNA posterior.
  *
  * <p>Lo que se mide es una propiedad del MOTOR, no del SQL que se lee: que un {@code ADD COLUMN …
- * DEFAULT} con una expresion estable guarde ese valor en las filas que ya estaban —sin reescribir
- * la tabla, y por eso sin atravesar la politica RLS, que el migrador no puede atravesar (hallazgo
- * 4)— y que el {@code DROP DEFAULT} inmediato deje en nulo las que lleguen despues. Por eso la base
- * se migra hasta {@code V5}, se le ponen filas, y se termina de migrar con el {@link Migrador} del
- * despliegue.
+ * DEFAULT} con una expresion estable guarde ese valor en las filas que ya estaban —sin un solo
+ * {@code UPDATE}, que es lo que el migrador no puede hacer: sin contexto de tenant, el DML muere
+ * bajo la politica RLS (hallazgo 4)— y que el {@code DROP DEFAULT} inmediato deje en nulo las que
+ * lleguen despues. Que no reescriba la tabla es un detalle de eficiencia, no lo que la deja pasar:
+ * medido en PostgreSQL 16, una reescritura entera de {@code ALTER TABLE} tampoco muere bajo RLS
+ * (ver el hallazgo 4). Por eso la base se migra hasta {@code V5}, se le ponen filas, y se termina
+ * de migrar con el {@link Migrador} del despliegue.
  */
 @DisplayName("#125 — V6 fecha las filas que ya estaban sin sujeto de identidad")
 class SinSujetoDesdeTest {
@@ -78,9 +80,12 @@ class SinSujetoDesdeTest {
     void seAplicaSinContextoDeTenant() {
         assertThat(aplicadas)
                 .as(
-                        "[V6 y lo que venga detras. Si el ADD COLUMN reescribiera la tabla o la"
-                                + " consultara, moriria con «unrecognized configuration parameter"
-                                + " \"app.municipalidad_id\"», como el UPDATE del hallazgo 4]")
+                        "[V6 y lo que venga detras, con el dueno, sin contexto de tenant y con"
+                                + " FORCE. Si V6 fechara las filas con un UPDATE —o con cualquier"
+                                + " DML sobre usuario o grupo—, moriria con «unrecognized"
+                                + " configuration parameter \"app.municipalidad_id\"», como el"
+                                + " UPDATE del hallazgo 4: la politica se aplica al DML, no a la"
+                                + " reescritura de un ALTER TABLE]")
                 .isPositive();
     }
 

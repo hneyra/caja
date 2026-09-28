@@ -376,8 +376,13 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
                 // con la regla 10 aplicada alli; lo que llega aqui es la fila tal como quedo.
                 ".seguridad.aplicacion.AplicarUnEventoDeIdentidad.aplicar("
                         + "kamayuk.caja.seguridad.EventoDeIdentidadRecibido)",
+                // Desde el seguimiento de #125 recibe el rechazo entero y no solo su texto: si
+                // dice que una clave la trae un sujeto sin fila aqui, lleva la fila sin sujeto que
+                // el apartado deja de hacer conceder en su misma transaccion. Tampoco hay usuario
+                // delante.
                 ".seguridad.aplicacion.AplicarUnEventoDeIdentidad.apartar("
-                        + "kamayuk.caja.seguridad.EventoDeIdentidadRecibido, java.lang.String)");
+                        + "kamayuk.caja.seguridad.EventoDeIdentidadRecibido,"
+                        + " kamayuk.caja.seguridad.aplicacion.AplicarUnEventoDeIdentidad$NoSePuedeAplicar)");
     }
 
     /**
