@@ -14,9 +14,17 @@ name: Frontend
 # POR QUE SI LLEVA FILTRO `paths`, AL REVES QUE `publicar-imagenes.yml`: aqui no se publica nada que
 # nadie vaya a pedir por su etiqueta, y el filtro evita una instalacion de npm en cada cambio del
 # backend. Pero **las guardas de `frontend/verificaciones/` leen archivos de fuera de `frontend/`**
-# —`Api.java`, los controladores y los `Resource` que la interfaz lee, `CatalogoDelSistema.java`,
-# el compose, el descriptor, este mismo flujo y el de las imagenes—, y un cambio en uno de ellos
-# tiene que volver a medirse aqui. Por eso estan en la lista.
+# —`Api.java`, los controladores y los `Resource` que la interfaz lee, `ImporteActualizado.java`,
+# `Observacion.java`, `CatalogoDelSistema.java`, el compose, el descriptor, este mismo flujo y el de
+# las imagenes—, y un cambio en uno de ellos tiene que volver a medirse aqui. Por eso estan en la
+# lista.
+#
+# **Y lo del backend ya no se mantiene a ojo** (#136). Faltaban `ImporteActualizado.java` y
+# `Observacion.java`, y un cambio en cualquiera de los dos no hacia correr la guarda que lo lee. Hoy
+# lo vigila `frontend/verificaciones/la-ci-mira-lo-que-las-guardas-leen.test.ts`: recoge cada ruta
+# de `backend/` que un archivo de `frontend/` nombra en un literal, y sale roja si `push` o
+# `pull_request` no la cubren. Su unica excepcion —el barrido de `backend/` entero de
+# `ninguna-opcion-del-menu-se-queda-muda`— lleva su motivo dentro.
 #
 # LO QUE EL FILTRO NO PUEDE VER: un cambio en `kamayuk-lib`. Eso lo cubre la CI de la libreria,
 # que corre `yarn verificar` de este frontend antes de mezclar (su `consumidores.json`).
@@ -24,9 +32,9 @@ name: Frontend
 on:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
+    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java", "backend/kamayuk-caja-dominio-compartido/src/main/java/kamayuk/caja/dominio/Observacion.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
+    paths: ["frontend/**", ".github/workflows/frontend.yml", ".github/workflows/publicar-imagenes.yml", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java", "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ImporteActualizado.java", "backend/kamayuk-caja-dominio-compartido/src/main/java/kamayuk/caja/dominio/Observacion.java", "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/infraestructura/web/**", "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/dominio/CatalogoDelSistema.java", "despliegue/compose.yaml", "infrastructure/src/descriptor.ts", "docs/D0-desarrollo/entorno-local.md"]
 
 permissions:
   contents: read
