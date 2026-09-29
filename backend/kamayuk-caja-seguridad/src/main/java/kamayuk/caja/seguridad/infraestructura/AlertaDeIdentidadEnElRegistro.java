@@ -8,6 +8,7 @@ import java.util.StringJoiner;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FilaSinSujeto;
+import kamayuk.caja.seguridad.aplicacion.ConsumirEventosDeIdentidad;
 import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,9 +113,12 @@ public class AlertaDeIdentidadEnElRegistro implements AlertaDeEventosSinAplicar 
                         + " bien y la siguiente los vuelve a intentar—, pero mientras esten ahi"
                         + " alguien tiene en `identidad` un permiso, una cuenta o una afiliacion"
                         + " que en esta caja no rige, y ninguna cifra lo delata (ADR-0039 etapa 4,"
-                        + " ADR-0026 §4). Son: {}. Responsable: {} <{}>",
+                        + " ADR-0026 §4). El que llegue a {} desde que se emitio se apartara, con"
+                        + " su propio aviso, para que no tape el buzon (#139). Son: {}."
+                        + " Responsable: {} <{}>",
                 pospuestos.size(),
                 enMinutos(umbral),
+                enMinutos(Duration.ofMinutes(ConsumirEventosDeIdentidad.MINUTOS_QUE_SE_ESPERA)),
                 lista,
                 responsable,
                 canal);

@@ -120,8 +120,11 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li><b>No se podra aplicar NUNCA</b> ({@link NoSePuedeAplicar}): un tipo que esta copia no
  *       conoce, un cuerpo que no es JSON, un cuerpo al que le falta la clave con la que se casa, un
  *       ALTA cuya clave ya es de otro sujeto (no hay fila propia que actualizar conservando su
- *       clave), o una afiliacion/permiso cuya clave ya es de otro sujeto. Mandarlo otra vez da lo
- *       mismo; quien lo llama lo aparta y avisa.
+ *       clave), una afiliacion/permiso cuya clave ya es de otro sujeto, o —desde <a
+ *       href="https://github.com/hneyra/caja/issues/139">#139</a>— una afiliacion/permiso que
+ *       nombra a un sujeto sin fila aqui cuya alta esta apartada ({@code
+ *       exigirQueNoDependaDeUnAltaApartada}). Mandarlo otra vez da lo mismo; quien lo llama lo
+ *       aparta y avisa.
  *   <li><b>No se puede aplicar TODAVIA</b> ({@link TodaviaNo}): el evento nombra un grupo, una
  *       cuenta o un acceso que esta copia no tiene aun. Casi siempre es orden —la afiliacion que
  *       llego en la misma pagina que el alta del usuario, y en esta copia el alta fallo por otra
@@ -129,7 +132,10 @@ import tools.jackson.databind.json.JsonMapper;
  *       se acusa</b>: el buzon lo vuelve a servir y la siguiente vuelta lo encuentra con su
  *       dependencia puesta. Descartarlo en silencio fue el defecto que el instrumento de {@code
  *       identidad} (R1 de su etapa 2) tuvo que corregir: un {@code INSERT … SELECT} que no
- *       encuentra a quien nombra escribe cero filas sin protestar.
+ *       encuentra a quien nombra escribe cero filas sin protestar. <b>Pero no para siempre</b>
+ *       (#139): esta clase dice «todavia no» y no mira el reloj; quien decide que lo que lleva
+ *       {@value ConsumirEventosDeIdentidad#MINUTOS_QUE_SE_ESPERA} minutos esperando ya no va a
+ *       llegar, y lo aparta, es {@link ConsumirEventosDeIdentidad}.
  * </ul>
  *
  * <h2>{@code PERMISO_FIJADO} de otro sistema</h2>
@@ -786,7 +792,9 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *       AQUI MISMO, estampandole el id, salvo que el alta de ese sujeto este apartada (ronda 2
      *       de #125: {@code exigirQueSuAltaNoSeHayaApartado}): una afiliacion o un permiso no
      *       tienen por que esperar al evento del propio sujeto para cerrar esa ventana (ronda 1 de
-     *       #111).
+     *       #111). Y si tampoco hay ninguna con esa clave, todavia no esta —{@code null}—, salvo
+     *       que su alta este apartada aqui: entonces no va a estar nunca, y se aparta ({@code
+     *       exigirQueNoDependaDeUnAltaApartada}, #139).
      *   <li>Pero si esa fila YA es de OTRO sujeto, no se adopta ni se usa: es un choque, no una
      *       ausencia. {@code identidad} nombra un sujeto por un id que en esta copia ya es de otro,
      *       y aplicar esto encima le pondria los permisos o la afiliacion de un sujeto a la fila de
@@ -830,6 +838,7 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
             return porId.id();
         }
         if (porClave == null) {
+            exigirQueNoDependaDeUnAltaApartada(sujeto, identidadId, clave);
             return null;
         }
         if (porClave.identidadId() != null) {
@@ -856,6 +865,70 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                 .param("id", porClave.id())
                 .update();
         return porClave.id();
+    }
+
+    /**
+     * Aparta la afiliacion o el permiso que nombra a un sujeto SIN fila aqui —ni por su id ni por
+     * su clave— cuando el alta de ese sujeto esta en {@code identidad_evento_muerto} (<a
+     * href="https://github.com/hneyra/caja/issues/139">#139</a>).
+     *
+     * <p>Hasta aqui eso era {@link TodaviaNo}: «el sujeto no llego todavia, se vuelve a intentar».
+     * Pero su alta SI llego, y se aparto —un cuerpo roto, una fecha que no es fecha, un sobre que
+     * no cuadra con el cuerpo—, y un evento apartado <b>se acusa</b>: el buzon no lo vuelve a
+     * servir, asi que la dependencia que el pospuesto espera no va a llegar nunca. {@code
+     * identidad} sirve primero lo mas viejo sin acusar ({@code ORDER BY e.id LIMIT} en su {@code
+     * BuzonDeIdentidadJdbc}), y un pospuesto no se acusa: con {@value
+     * ConsumirEventosDeIdentidad#POR_VUELTA} de estos en cabeza la pagina entera se pospone, la
+     * vuelta no progresa, la corrida se para ahi, y lo que viene detras —la inhabilitacion de un
+     * cajero, por ejemplo— no se lee jamas. Es lo mismo que la ronda 2 de #125 ya hacia cuando la
+     * clave la tenia una huerfana ({@code exigirQueSuAltaNoSeHayaApartado}), generalizado al caso
+     * sin huerfana, que era el que quedaba esperando para siempre.
+     *
+     * <p><b>Falla cerrado.</b> El sujeto no tiene fila en esta copia, asi que no hay miembro ni
+     * permiso suyo que este evento pudiera quitar: apartarlo no deja nada concedido que no lo
+     * estuviera. El remedio esta en {@code identidad}: un {@code *_MODIFICADO} del sujeto que se
+     * pueda aplicar le da fila aqui ({@code casarParaEscribir} inserta cuando no casa con nada), y
+     * lo que dependia de el se vuelve a publicar —re-afiliarlo, volver a fijar el permiso—. Lo que
+     * se aparto ANTES de ese {@code *_MODIFICADO} no vuelve solo: su cuerpo entero queda en {@code
+     * identidad_evento_muerto}.
+     *
+     * <p>Casa por {@code sujeto_id}, que en un alta es el del sobre, contrastado con el cuerpo: si
+     * el alta se aparto justo porque el sobre y el cuerpo no coincidian, el id por el que la
+     * nombran sus dependientes puede no ser el del sobre, y entonces esto no la encuentra; ese
+     * pospuesto lo aparta el plazo de {@link ConsumirEventosDeIdentidad#MINUTOS_QUE_SE_ESPERA}.
+     */
+    private void exigirQueNoDependaDeUnAltaApartada(Sujeto sujeto, long identidadId, String clave) {
+        List<String> altas =
+                jdbc().sql(
+                                "SELECT evento_id, secuencia FROM identidad_evento_muerto"
+                                        + " WHERE sujeto_id = :identidadId AND tipo = :tipo"
+                                        + " ORDER BY secuencia LIMIT 1")
+                        .param("identidadId", identidadId)
+                        .param("tipo", sujeto.tipoDeSuAlta)
+                        .query(
+                                (fila, n) ->
+                                        "evento "
+                                                + fila.getObject("evento_id", java.util.UUID.class)
+                                                + ", secuencia "
+                                                + fila.getLong("secuencia"))
+                        .list();
+        if (!altas.isEmpty()) {
+            throw new NoSePuedeAplicar(
+                    "`identidad` nombra "
+                            + sujeto.articulado
+                            + " "
+                            + identidadId
+                            + " («"
+                            + clave
+                            + "»), que no tiene fila en esta copia porque su "
+                            + sujeto.tipoDeSuAlta
+                            + " se aparto aqui ("
+                            + altas.getFirst()
+                            + ", en identidad_evento_muerto). Un apartado no se vuelve a servir,"
+                            + " asi que esperarlo es esperar para siempre y tapar el buzon (#139)."
+                            + " Se remedia en `identidad`: darle fila con un evento que se pueda"
+                            + " aplicar y volver a publicar lo que dependia de el");
+        }
     }
 
     // ------------------------------------------------------------------

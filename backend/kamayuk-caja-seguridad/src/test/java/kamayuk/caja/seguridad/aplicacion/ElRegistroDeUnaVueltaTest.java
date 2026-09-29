@@ -227,6 +227,11 @@ class ElRegistroDeUnaVueltaTest {
                                 "sin el tipo, el sujeto y la secuencia, quien lo reciba no puede ir a mirarlo")
                         .contains("MIEMBRO_AFILIADO sujeto 7, secuencia 41, lleva 23 min")
                         .contains("mas de 15 min")
+                        .as(
+                                "[#139: y cuando dejan de esperar. «Siguen en el buzon» a secas"
+                                        + " callaba que a la hora se apartan, y quien lo recibe tiene"
+                                        + " que saber cuanto le queda para traer la dependencia]")
+                        .contains("El que llegue a 60 min desde que se emitio se apartara")
                         .contains("Jefe de rentas <jefe@example.pe>");
             } finally {
                 suLogger.detachAppender(deLaAlerta);

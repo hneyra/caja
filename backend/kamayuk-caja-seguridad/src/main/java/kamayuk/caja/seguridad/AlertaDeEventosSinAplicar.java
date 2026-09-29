@@ -41,12 +41,14 @@ public interface AlertaDeEventosSinAplicar {
      * Los que llevan POSPUESTOS mas de lo que se admite, una vez por corrida.
      *
      * <p>Un evento pospuesto no es un fallo —le falta su dependencia y la vuelta siguiente lo
-     * encuentra puesta—, asi que no se aparta y no se acusa. Lo que si es un defecto es que se
-     * quede ahi: medido con las cinco aplicaciones levantadas (informe de AC-5/AC-6, hallazgo H7),
-     * un pospuesto sobrevivio DOS corridas enteras produciendo un WARN por vuelta y <b>cero</b>
-     * avisos — o sea que la copia estaba desatrasada, se sabia dentro del proceso, y no salia de
-     * ahi. Por eso este metodo existe aparte del de arriba: aquel dice «esto no entrara nunca» y
-     * este, «esto lleva demasiado sin entrar».
+     * encuentra puesta—, asi que no se aparta y no se acusa, <b>hasta el plazo</b> de {@code
+     * ConsumirEventosDeIdentidad.MINUTOS_QUE_SE_ESPERA} desde que se emitio: pasado ese, se aparta
+     * y se avisa por {@link #hayUnEventoSinAplicar}, para que no tape el buzon (#139). Lo que si es
+     * un defecto es que se quede ahi sin que nadie lo sepa: medido con las cinco aplicaciones
+     * levantadas (informe de AC-5/AC-6, hallazgo H7), un pospuesto sobrevivio DOS corridas enteras
+     * produciendo un WARN por vuelta y <b>cero</b> avisos — o sea que la copia estaba desatrasada,
+     * se sabia dentro del proceso, y no salia de ahi. Por eso este metodo existe aparte del de
+     * arriba: aquel dice «esto no entrara nunca» y este, «esto lleva demasiado sin entrar».
      *
      * <p>Se llama <b>una vez por corrida</b> y con la lista entera, no una vez por evento: cuatro
      * pospuestos permanentes por cuatro ticks a la hora son 96 avisos al dia diciendo lo mismo, y
