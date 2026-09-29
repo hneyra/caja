@@ -2,13 +2,12 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { TEXTOS_DEL_ARMAZON, type TextosDelArmazon } from '@kamayuk/shell';
-import { ProveedorDeTema, TEXTOS_DE_LA_UI } from '@kamayuk/ui';
+import { IDENTIDADES, MODOS, TEXTOS_DEL_MANDO_DE_TEMA, TEXTOS_DE_LA_UI } from '@kamayuk/ui';
 import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RAIZ } from './raiz.ts';
 
-import { MandoDeTema } from '../src/preferencias/MandoDeTema.tsx';
 import { Aplicacion, CONSULTAS } from '../src/aplicacion.tsx';
 import { CATALOGO } from '../src/catalogo.ts';
 import {
@@ -24,6 +23,7 @@ import {
   FRASES_DE_LAS_LECTURAS,
   FRASES_DEL_MARCO,
   useTextosDelInterprete,
+  useTextosDelMandoDeTema,
   useTextosDelMarco,
 } from '../src/i18n/textosDelMarco.ts';
 import { pantallaDe } from '../src/pantallas/definiciones/index.ts';
@@ -161,31 +161,6 @@ describe('ninguna cadena llega al DOM sin pasar por `t()`', () => {
       ).toEqual([]);
     },
   );
-
-  /**
-   * **El mando de preferencias tambien** (#111).
-   *
-   * Es la unica pieza que este repositorio dibuja fuera del interprete, asi que es la unica que el
-   * recorrido de las pantallas **no** puede ver: no es una pantalla y no esta en el catalogo. Sus
-   * once cadenas —los rotulos de los dos ejes, las tres identidades, los tres modos y las tres
-   * notas— llegarian al DOM sin que nadie mirase.
-   *
-   * Se lee de `document.body` y no del contenedor porque el cajon sale en un portal: lo que se
-   * dibuja no cuelga de lo que `render` devuelve.
-   */
-  it('y el mando de preferencias, que no es una pantalla y por eso se le olvida a todo el mundo', () => {
-    render(
-      <ProveedorDeTema configuracion={{ identidadPorOmision: 'institucional', prefijoDeClaves: 'kamayuk.prueba' }}>
-        <MandoDeTema abierto alCerrar={() => {}} />
-      </ProveedorDeTema>,
-    );
-    const escapadas = sinTraducir(document.body);
-    expect(
-      escapadas,
-      'El mando de preferencias dibuja texto que no paso por «t()»:\n' +
-        `${escapadas.map((e) => `  «${e}»`).join('\n')}`,
-    ).toEqual([]);
-  });
 
   it('y el CENTINELA de la otra direccion: con el idioma normal NO hay marcas', async () => {
     // Sin esta mitad, la de arriba pasaria igual con un locale que envolviera SIEMPRE — incluso en
@@ -461,7 +436,106 @@ describe('y el marco tampoco: las treinta y dos palabras del armazon (#133)', ()
         `${escapadas.map((e) => `  «${e}»`).join('\n')}`,
     ).toEqual([]);
   });
+
+  /**
+   * **El mando de preferencias, ABIERTO COMO LO ABRE UNA PERSONA** (#111; #144).
+   *
+   * Es la unica pieza que la aplicacion monta fuera del armazon y fuera del interprete, asi que ni
+   * el recorrido de las pantallas ni el montaje de arriba la ven: no es una pantalla, no esta en el
+   * catalogo y el cajon no existe hasta que se pulsa «Preferencias».
+   *
+   * Hasta #144 esta prueba montaba la copia de `src/preferencias/` **suelta**, y eso medía la pieza,
+   * no la costura. Desde que la pieza es de `@kamayuk/ui`, lo que este repositorio puede olvidar es
+   * **pasarle las palabras**: sin `textos`, el mando se dibuja entero y bien, en el castellano de
+   * la libreria. Montado suelto eso no se ve; abierto desde el menu de `<Aplicacion />`, si.
+   *
+   * Se lee de `document.body` porque el cajon sale en un portal.
+   *
+   * **Y lleva treinta segundos de margen**, como las demas que abren algo sobre la aplicacion
+   * montada, por un motivo medido —con `--cpu-prof`— que no es de este repositorio: el menu de
+   * sesion se coloca con `@floating-ui`, que pregunta `matches(':modal')` por cada antecesor, y el
+   * `nwsapi` 2.2.27 de `jsdom` lo resuelve con una recursion `:modal` -> `:fullscreen` -> `matches`
+   * que solo para al desbordar la pila. Abrir el menu cuesta asi unos ocho segundos en jsdom.
+   */
+  it('y el MANDO DE PREFERENCIAS tampoco, abierto desde el menu de sesion (#111, #144)', { timeout: 30_000 }, async () => {
+    window.location.hash = '#/cierre-caja';
+    render(<Aplicacion />);
+    const abrirLaSesion = await waitFor(() => {
+      const boton = document.querySelector<HTMLElement>('[data-slot="abrir-la-sesion"]');
+      expect(boton, 'el armazon no dibujo el boton de la sesion').not.toBeNull();
+      return boton as HTMLElement;
+    });
+    // Con el teclado, que es una de las dos formas en que una persona abre el menu.
+    fireEvent.keyDown(abrirLaSesion, { key: 'Enter' });
+    // Por el texto marcado, que es lo que la opcion dice en el idioma que marca.
+    const preferencias = await waitFor(() => {
+      const opcion = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (e) => e.textContent === `${ABRE}Preferencias${CIERRA}`,
+      );
+      expect(opcion, 'el menu de sesion no ofrece «Preferencias»').toBeDefined();
+      return opcion as HTMLElement;
+    });
+    fireEvent.click(preferencias);
+
+    // EL CENTINELA: el cajon esta abierto y ofrece TODAS las opciones. Sin esto, un menu que no
+    // abriera nada dejaria la comprobacion de abajo en verde sobre un documento sin mando.
+    const mando = await waitFor(() => {
+      const abierto = document.querySelector('[data-slot="mando-de-tema"]');
+      expect(abierto, 'el cajon no se abrio').not.toBeNull();
+      return abierto as HTMLElement;
+    });
+    expect(mando.querySelectorAll('input[type="radio"]')).toHaveLength(IDENTIDADES.length + MODOS.length + 1);
+
+    const escapadas = sinTraducir(document.body, ROTULOS_DEL_BACKEND);
+    expect(
+      escapadas,
+      'El mando de preferencias dibuja texto que no paso por «t()»:\n' +
+        `${escapadas.map((e) => `  «${e}»`).join('\n')}\n\n` +
+        '  Si son sus palabras, van por `useTextosDelMandoDeTema` —`src/i18n/textosDelMarco.ts`— y\n' +
+        '  `aplicacion.tsx` se las pasa en `textos`: sin ellas sale el castellano de la libreria.',
+    ).toEqual([]);
+  });
+
+  it('y el saco del mando trae las MISMAS trece que la libreria, y las trece pasan por `t()` (#144)', () => {
+    // La mitad que no se ve montando: el montaje de arriba ve lo que el cajon dibuja hoy, y esto
+    // mide el saco entero —las anidadas incluidas— contra el que publica `@kamayuk/ui`.
+    const { result } = renderHook(() => useTextosDelMandoDeTema());
+    const pasado = plano(result.current);
+    const publicado = plano(TEXTOS_DEL_MANDO_DE_TEMA);
+
+    expect([...pasado.keys()].sort(), 'el saco del mando dejo de cuadrar con el de la libreria').toEqual(
+      [...publicado.keys()].sort(),
+    );
+    expect(publicado.size, 'EL CENTINELA: la libreria publica trece palabras').toBe(13);
+    const escapadas = [...pasado]
+      .filter(([, dice]) => !dice.startsWith(ABRE))
+      .map(([clave, dice]) => `  «${clave}» dice «${dice}»`);
+    expect(
+      escapadas,
+      'Hay entradas del saco del mando escritas como literal en vez de pasar por «t()»:\n' +
+        `${escapadas.join('\n')}`,
+    ).toEqual([]);
+  });
 });
+
+/**
+ * Un saco de textos con sus anidados aplanados: `identidades.sepia` -> «Sepia».
+ *
+ * El del mando es el primero anidado (`kamayuk-lib`#53). Con `Object.entries` a secas, `identidades`
+ * saldria como UN objeto y no como cuatro palabras, y la comprobacion de `t()` miraria el objeto.
+ */
+function plano(saco: object, camino = ''): ReadonlyMap<string, string> {
+  const salida = new Map<string, string>();
+  for (const [clave, valor] of Object.entries(saco) as readonly (readonly [string, unknown])[]) {
+    const donde = `${camino}${clave}`;
+    if (typeof valor === 'object' && valor !== null) {
+      for (const [dentro, dice] of plano(valor, `${donde}.`)) salida.set(dentro, dice);
+    } else {
+      salida.set(donde, String(valor));
+    }
+  }
+  return salida;
+}
 
 /** Todos los `.ts`/`.tsx` de produccion bajo `src/`. */
 function fuentesDeProduccion(desde = join(RAIZ, 'src')): readonly string[] {

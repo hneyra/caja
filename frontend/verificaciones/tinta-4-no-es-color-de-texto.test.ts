@@ -60,7 +60,10 @@ import {
  * Y `src/` entero, no `src/preferencias`: es lo que
  * `docs/00-gobierno/verificar-fila-del-registro.mjs` declara como codigo de produccion de este
  * frontend, y acotarla al archivo del defecto la dejaria sin sujeto en cuanto alguien escriba la
- * clase en otro sitio.
+ * clase en otro sitio. Y se vio en #144: `src/preferencias` **ya no existe** —el mando se mudo a
+ * `@kamayuk/ui` (`kamayuk-lib`#53)—, y esta guarda sigue teniendo sujeto. Las dos notas del mando
+ * quedan del lado que no se barre, por lo de arriba; las sigue midiendo en el navegador
+ * `e2e/los-temas-llegan-al-navegador.spec.ts`, sobre el cajon que la aplicacion abre.
  *
  * <h2>Por que el token no esta escrito aqui</h2>
  *

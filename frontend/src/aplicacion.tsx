@@ -2,10 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Armazon, useHoja, useNavegacion, type AccionesDelSistema } from '@kamayuk/shell';
-import { ProveedorDeTema, type ConfiguracionDeTema } from '@kamayuk/ui';
+import { MandoDeTema, ProveedorDeTema, type ConfiguracionDeTema } from '@kamayuk/ui';
 
 import escudo from '../recursos/escudo-catacaos.png';
-import { MandoDeTema } from './preferencias/MandoDeTema.tsx';
 import { useCatalogoPermitido } from './datos/useCatalogoPermitido.ts';
 import { useCuentaDeLaSesion } from './datos/useCuentaDeLaSesion.ts';
 import { traducirCatalogo } from './catalogo.ts';
@@ -19,7 +18,7 @@ import { olvidarLosBorradores } from './datos/borradorDeLaAnulacion.ts';
 import type { FallaDeLaPuerta } from './api/identidad.ts';
 import { abrirLaCuenta, salir } from './api/identidad.ts';
 import { fallaDeLaPuerta } from './arranque.ts';
-import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
+import { useTextosDelMandoDeTema, useTextosDelMarco } from './i18n/textosDelMarco.ts';
 
 /**
  * **`caja-web`: la costura de la ventanilla con las librerias comunes** (#74).
@@ -53,7 +52,7 @@ import { useTextosDelMarco } from './i18n/textosDelMarco.ts';
  *
  *     Mi perfil               -> la consola de cuenta del EMISOR, en otra pestana
  *     Cambiar la contrasena   -> la misma consola, en su pagina de credenciales
- *     Preferencias            -> el cajon de los temas (#111)
+ *     Preferencias            -> el cajon de los temas (#111): `MandoDeTema`, de `@kamayuk/ui` desde #144
  *     Cerrar sesion           -> `salir()`
  *
  * Las dos primeras **no se resuelven aqui a proposito**, y no por falta de backend: la
@@ -209,6 +208,10 @@ function ArmazonDelSistema() {
   // dentro del `<Armazon>`— porque el armazon no sabe que existe un tema: lo suyo es ofrecer la
   // opcion y avisar de que se pulso.
   const [preferencias, setPreferencias] = useState(false);
+  // Sus trece palabras, por el `t()` de este sistema (#144). El mando es de `@kamayuk/ui` desde
+  // `kamayuk-lib`#53 y sin ellas se dibuja en el castellano de la libreria: en un segundo idioma
+  // seria el unico cajon sin traducir. Ver `i18n/textosDelMarco.ts`.
+  const textosDelMando = useTextosDelMandoDeTema();
 
   /*
    * **No se monta el armazon hasta saber que puede abrir la cuenta.** Se queda, y por lo que se
@@ -308,6 +311,7 @@ function ArmazonDelSistema() {
         alCerrar={() => {
           setPreferencias(false);
         }}
+        textos={textosDelMando}
       />
     </>
   );

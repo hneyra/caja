@@ -68,11 +68,13 @@ import {
 /**
  * Las piezas que dibujan: las de la libreria, las del interprete y las de la costura.
  *
- * `src/preferencias` entra con #111. Es la unica pieza que este repositorio dibuja fuera del
- * interprete, y llego escribiendo clases que ninguna otra usa —`accent-azul` entre ellas—: dejarla
- * fuera de esta lista seria dejar sin vigilar justo la unica que estrena utilidades.
+ * `src/preferencias` entro con #111 y **salio con #144**: era la copia del mando de los temas, que
+ * llego escribiendo clases que ninguna otra pieza usa —`accent-azul` entre ellas—. El mando es de
+ * `@kamayuk/ui` desde `kamayuk-lib`#53, y sus clases las trae `fuentesDe(RAIZ_DE_UI)` como las de
+ * cualquier otra pieza de la libreria. Que no se pierdan en la mudanza lo dice el centinela, que
+ * pide `accent-azul` por su nombre.
  */
-const FUENTES = [...fuentesDe(RAIZ_DE_UI), ...fuentesDe('src/pantallas'), ...fuentesDe('src/preferencias')];
+const FUENTES = [...fuentesDe(RAIZ_DE_UI), ...fuentesDe('src/pantallas')];
 const CLASES = [...new Set(FUENTES.flatMap((f) => clasesDe(readFileSync(f, 'utf8'))))].sort();
 
 /**
@@ -106,6 +108,10 @@ describe('Tailwind emite lo que las piezas piden', () => {
     expect(FUENTES.length, 'no se leyo ni una pieza').toBeGreaterThanOrEqual(15);
     expect(CLASES.length, 'no se extrajo ni una clase').toBeGreaterThanOrEqual(60);
     expect(COLORES_DEL_ARTBOARD.length, 'el artboard no declaro ni un color').toBe(38);
+    // El mando de los temas se sigue barriendo despues de mudarse a la libreria (#144): es la
+    // unica pieza que escribe `accent-azul`, y sin ella en la lista su utilidad dejaria de
+    // vigilarse sin que nada lo dijera.
+    expect(CLASES, 'las clases del mando de los temas ya no se barren').toContain('accent-azul');
 
     const css = await compilar(['bg-azul']);
     expect(css.length, 'Tailwind no emitio CSS: la hoja no compila').toBeGreaterThan(500);

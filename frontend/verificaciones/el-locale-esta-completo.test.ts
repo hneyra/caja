@@ -70,22 +70,10 @@ const LITERALES = [
   'No se pudo llegar al emisor de identidad, asi que no se mando a nadie a identificarse.',
   'El emisor es {{emisor}}, y la peticion a {{url}} no llego a completarse: {{motivo}}.',
   'Si esto es un puesto de desarrollo, levante la plataforma; si no, avise a quien la administra. Despues vuelva a cargar la pagina.',
-  // Las doce del mando de preferencias (#111). Los rotulos de las cuatro identidades y de los tres
-  // modos se leen por variable —`t(ROTULO_DE_LA_IDENTIDAD[identidad])`—, asi que `i18next-cli`
-  // no los ve: son de la misma familia que las 747 de las definiciones, y por eso estan aqui.
-  'Se guarda en este navegador y solo aqui: no viaja al servidor ni cambia lo que ven las demas personas.',
-  'Identidad visual',
-  'La paleta con que se dibuja este servicio.',
-  'Apariencia',
-  'Sin elegir, se sigue lo que el equipo tenga puesto.',
-  'Institucional',
-  'Alto contraste',
-  'Sepia',
-  // La cuarta identidad, `clasico`, que publica `@kamayuk/ui` desde kamayuk-lib#56.
-  'Clásico',
-  'Claro',
-  'Oscuro',
-  'El del sistema',
+  // Las del mando de preferencias (#111) YA NO estan aqui (#144): el mando es de `@kamayuk/ui`
+  // desde `kamayuk-lib`#53 y sus trece palabras entran DERIVADAS de `FRASES_DEL_MANDO_DE_TEMA`
+  // (`textosDelMarco.ts`), como las del marco. Escritas aqui a mano, la quinta identidad que
+  // publicara la libreria se quedaria fuera del locale sin que nada lo dijera.
   // Las diez del rechazo de la anulacion (#100). Son `t('…')` de verdad —`i18next-cli` las ve—, y
   // estan aqui por lo mismo que las cuatro del catalogo: se dicen desde la costura y no desde una
   // definicion, asi que `catalogoDeClaves()` no las puede derivar. El DETALLE no esta y no puede
