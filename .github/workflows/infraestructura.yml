@@ -19,11 +19,17 @@ name: Infraestructura
 #   · `frontend/Dockerfile`, porque `runAsNonRoot` solo lo puede comprobar el kubelet si el `USER`
 #     de la imagen es un numero;
 #   · `Api.java`, porque la ruta que NO se le quita a la API es su `RAIZ`;
+#   · desde #136 `PublicadorDelBuzon.java`, porque el `Deployment` del publicador arranca el perfil
+#     que ese archivo declara (`PERFIL = "publicador"`) y la prueba lo lee de alli. Lo leia desde #79
+#     y no estaba en esta lista: renombrar el perfil no hacia correr la prueba que lo mira;
 #   · y desde #42 `despliegue/compose.yaml`, porque es el tercer sitio donde estaba escrito quien
 #     quita el prefijo —y el que lo decia mal— y hay una guarda que lo lee.
 #
 # Sin estas lineas, editar solo uno de esos archivos dejaria la comprobacion vieja **en verde**: la
-# guarda no se rompe, deja de correr. Es el mismo modo de fallo silencioso que la fila que nadie
+# guarda no se rompe, deja de correr. **Y desde #136 la lista no se mantiene a ojo**:
+# `infrastructure/verificaciones/la-ci-mira-lo-que-el-descriptor-lee.test.ts` recoge cada ruta de
+# `backend/`, `frontend/` y `despliegue/` que una prueba de aqui nombra en un literal, y sale roja si
+# `push` o `pull_request` no la cubren. Es el mismo modo de fallo silencioso que la fila que nadie
 # escribe (`registro.yml`) o la tabla que falta en el reparto (#27).
 #
 # La lista va escrita dos veces, y no por descuido: GitHub Actions **no admite anclas de YAML**
@@ -39,6 +45,7 @@ on:
       - "frontend/src/**"
       - "frontend/public/configuracion.js"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/PublicadorDelBuzon.java"
       - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"
   pull_request:
@@ -50,6 +57,7 @@ on:
       - "frontend/src/**"
       - "frontend/public/configuracion.js"
       - "backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/Api.java"
+      - "backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/PublicadorDelBuzon.java"
       - "despliegue/compose.yaml"
       - ".github/workflows/infraestructura.yml"
 
