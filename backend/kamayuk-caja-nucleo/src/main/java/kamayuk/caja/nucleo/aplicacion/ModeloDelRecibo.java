@@ -1,10 +1,14 @@
 package kamayuk.caja.nucleo.aplicacion;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import kamayuk.caja.documentos.Campo;
 import kamayuk.caja.documentos.ModeloDeDocumento;
 import kamayuk.caja.documentos.Tabla;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.nucleo.dominio.LineaDeRecibo;
 import kamayuk.caja.nucleo.dominio.MovimientoDeRecibo;
 import kamayuk.caja.nucleo.dominio.Recibo;
@@ -37,10 +41,65 @@ import org.jspecify.annotations.Nullable;
  * de ortografia en el nombre, el duplicado de un recibo de marzo saldra con el nombre corregido.
  * Congelarlo exigiria una columna nueva en {@code recibo}, que es una tabla que ya no se toca.
  *
+ * <h2>La hora de emision, en Lima (#141)</h2>
+ *
+ * <p>Hasta #141 la cabecera escribia {@code recibo.emitidoEn().toString()}, que es UTC: un cobro de
+ * las 22:30 del 27 salia «Emitido: 2026-09-28T03:30:00Z» encima de un «Importes actualizados al
+ * 2026-09-27» —dos dias en el mismo papel—. Ahora la escribe {@link ZonaHoraria#textoConSuDesfase}:
+ * «2026-09-27T22:30:00-05:00», el ISO de {@code LocalDate.toString()} que ya usan las otras fechas
+ * del papel, con la hora de Lima y su desfase a la vista. <b>Al segundo</b>: los microsegundos que
+ * {@code timestamptz} devuelve de un reloj de verdad no los lee nadie en una ventanilla, y el ISO
+ * los escribiria. Pero la forma de antes no se borra: los recibos que ya salieron con ella se
+ * siguen dibujando con ella, y el porque esta en {@link Forma}.
+ *
  * <p>Es una funcion pura sobre lo que se le pasa: sin base de datos, sin reloj y sin Spring. Asi se
  * puede comprobar que dos llamadas con meses de diferencia dan los mismos bytes sin levantar nada.
+ * La zona no es un reloj: es la constante del producto, y el instante sigue entrando con el recibo.
  */
 final class ModeloDelRecibo {
+
+    /**
+     * Las formas en que este modelo ha escrito la hora de emision (#141).
+     *
+     * <p><b>Por que la forma de antes sigue aqui.</b> Un recibo cuyo primer duplicado salio en UTC
+     * ya tiene ese papel en la calle, y el resumen que guardo es el de esos bytes. Dibujarlo ahora
+     * en Lima entregaria un segundo papel distinto con el mismo numero —exactamente lo que {@link
+     * DuplicadoDeRecibo.LaReimpresionNoCoincide} existe para impedir—, asi que ese recibo se sigue
+     * dibujando en {@link #HORA_EN_UTC}, y todo recibo que todavia no tenga duplicado sale en
+     * {@link #VIGENTE}. Lo que el papel antiguo dice no es falso: «…Z» es el mismo instante con su
+     * zona escrita; lo que tenia de malo era obligar a restar cinco horas a quien lo lee.
+     *
+     * <p>Cual de las dos le toca a cada recibo no se guarda en ningun sitio: lo dice su resumen, y
+     * {@link DuplicadoDeRecibo} explica por que basta.
+     *
+     * <p>El orden de las constantes es el orden en que {@link DuplicadoDeRecibo} las prueba: la
+     * vigente primero, porque es la de todo recibo nuevo.
+     */
+    enum Forma {
+
+        /** Desde #141: la hora de Lima con su desfase, al segundo. */
+        HORA_DE_LIMA,
+
+        /**
+         * Hasta #141: {@code Instant.toString()}, en UTC y con las fracciones que traiga.
+         *
+         * <p>Se conserva <b>byte a byte</b> —{@code AnularYDuplicarTest} guarda como literal el
+         * resumen que el codigo de antes producia, y se pone rojo si esta forma deja de
+         * reproducirlo— y solo se dibuja para un recibo cuyo primer duplicado ya salio asi.
+         */
+        HORA_EN_UTC;
+
+        /** La que dibuja todo recibo sin duplicado previo. */
+        static final Forma VIGENTE = HORA_DE_LIMA;
+
+        String emitido(Instant emitidoEn) {
+            return switch (this) {
+                case HORA_DE_LIMA ->
+                        ZonaHoraria.textoConSuDesfase(emitidoEn.truncatedTo(ChronoUnit.SECONDS));
+                case HORA_EN_UTC -> emitidoEn.toString();
+            };
+        }
+    }
 
     /** El titulo del documento; el numero impreso va detras. */
     private static final String TITULO = "RECIBO DE CAJA N.° ";
@@ -60,12 +119,16 @@ final class ModeloDelRecibo {
      *     nombre con el que se cobro y no el de entonces —que es lo que {@code
      *     recibo_movimiento.resumen} existe para garantizar (#34)—.
      * @param anulacion la anulacion del recibo, si la hubo; con ella el papel lo dice
+     * @param forma como se escribe la hora de emision: {@link Forma#VIGENTE} salvo para un recibo
+     *     que ya se duplico con otra (#141)
      */
-    static ModeloDeDocumento de(Recibo recibo, @Nullable MovimientoDeRecibo anulacion) {
+    static ModeloDeDocumento de(
+            Recibo recibo, @Nullable MovimientoDeRecibo anulacion, Forma forma) {
+        Objects.requireNonNull(forma, "Hay que decir como se escribe la hora de emision (#141)");
 
         List<Campo> cabecera = new ArrayList<>();
         cabecera.add(Campo.de("Numero", recibo.numero().impreso()));
-        cabecera.add(Campo.de("Emitido", recibo.emitidoEn().toString()));
+        cabecera.add(Campo.de("Emitido", forma.emitido(recibo.emitidoEn())));
         cabecera.add(Campo.de("Cajero", recibo.cajero()));
         cabecera.add(Campo.de("Forma de pago", recibo.formaDePago().name()));
         cabecera.add(Campo.de("Tipo de pago", recibo.tipoDePago().name()));

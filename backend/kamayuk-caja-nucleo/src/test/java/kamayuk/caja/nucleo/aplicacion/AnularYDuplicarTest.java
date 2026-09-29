@@ -284,8 +284,9 @@ class AnularYDuplicarTest {
             byte[] enSetiembre = duplicadoDe(cobrado, HOY.plusMonths(6)).contenido();
 
             // Las dos lineas de fecha enteras, no una subcadena suelta: el instante de
-            // emision tambien contiene «2026-03-15», asi que buscar solo eso dejaria pasar
-            // un aLaFecha resuelto con el reloj del dia de la reimpresion.
+            // emision tambien lleva un dia —hasta #141, en UTC, era justo «2026-03-15»—, asi
+            // que buscar solo eso dejaria pasar un aLaFecha resuelto con el reloj del dia de
+            // la reimpresion.
             assertThat(texto(enSetiembre, FormatoDeDocumento.PDF))
                     .as("y la fecha del papel sigue siendo la del cobro, no la de hoy (regla 9)")
                     .contains("Datos al " + HOY)
@@ -387,6 +388,112 @@ class AnularYDuplicarTest {
             assertThat(papel)
                     .as("un recibo de la marcha blanca sin marca es un papel que alguien cobra")
                     .contains(ModeloDeDocumento.MARCA_DE_DEMOSTRACION);
+        }
+    }
+
+    /**
+     * #141 — El papel dice la hora de Lima, y el que ya circula se sigue pudiendo reimprimir.
+     *
+     * <p>Hasta #141 la cabecera escribia {@code recibo.emitidoEn().toString()}, que es UTC: un
+     * cobro de las 22:30 del 27 salia «Emitido: 2026-09-28T03:30:00Z» encima de un «Importes
+     * actualizados al 2026-09-27». Cambiarlo cambia los bytes, y con ellos el SHA-256 que el primer
+     * duplicado de cada recibo guardo: sin mas, todo recibo ya duplicado contestaria 409.
+     */
+    @Nested
+    @DisplayName("#141 — La hora de emision, en Lima; y el duplicado ya emitido, igual que era")
+    class LaHoraDeEmision {
+
+        /** El dia de Lima del cobro nocturno del issue. */
+        private static final LocalDate EL_27 = LocalDate.of(2026, 9, 27);
+
+        /** Las 22:30 del 27 en Lima, que en UTC son las 03:30 del 28: el caso del issue. */
+        private static final Instant A_LAS_22_30_EN_LIMA = Instant.parse("2026-09-28T03:30:00Z");
+
+        /**
+         * El resumen que el codigo de antes de #141 ({@code 7bae757}) guardo en el primer duplicado
+         * del recibo que {@link #emitidoA} deja para {@link #A_LAS_22_30_EN_LIMA}: el SHA-256 del
+         * PDF que decia «Emitido: 2026-09-28T03:30:00Z».
+         *
+         * <p><b>Es un literal, y a proposito.</b> Calculado aqui con el codigo de hoy, la prueba
+         * compararia la forma antigua consigo misma y seguiria verde el dia que esa forma dejara de
+         * dibujarse como entonces, que es justo cuando los recibos ya duplicados empezarian a
+         * contestar 409. Se midio corriendo el caso de uso de {@code 7bae757} sobre este mismo
+         * recibo.
+         */
+        private static final String RESUMEN_DE_ANTES_DE_141 =
+                "ddd250b34dcb37f44a95eefdd5516f853bd7592bc34fce2df1474bcb491fbfda";
+
+        @Test
+        @DisplayName("un cobro de las 22:30 de Lima dice el 27 a las 22:30, no el 28 a las 03:30")
+        void elCobroNocturnoDiceSuHoraDeLima() {
+            // Con los microsegundos que timestamptz devuelve de un reloj de verdad: el papel
+            // dice la hora al segundo.
+            Recibo nocturno = emitidoA(A_LAS_22_30_EN_LIMA.plusNanos(482_913_000L), EL_27);
+
+            String papel = texto(duplicadoDe(nocturno, EL_27).contenido(), FormatoDeDocumento.PDF);
+
+            assertThat(papel)
+                    .as(
+                            "la hora de Lima con su desfase, en el ISO de las demas fechas del"
+                                    + " papel, y el mismo dia que sus importes")
+                    .contains("Emitido: 2026-09-27T22:30:00-05:00")
+                    .contains("Importes actualizados al 2026-09-27")
+                    .doesNotContain("2026-09-28");
+        }
+
+        @Test
+        @DisplayName("un recibo cuyo primer duplicado salio en UTC se reimprime sin 409, y en UTC")
+        void elDuplicadoYaEmitidoSeSigueReimprimiendo() {
+            Recibo deAntes = emitidoA(A_LAS_22_30_EN_LIMA, EL_27);
+            movimientos.conDuplicadoDeResumen(
+                    deAntes.id(),
+                    EL_27,
+                    deAntes.cajaId(),
+                    deAntes.turnoId(),
+                    RESUMEN_DE_ANTES_DE_141);
+
+            DuplicadoDeRecibo.Duplicado segundo = duplicadoDe(deAntes, EL_27.plusMonths(1));
+            DuplicadoDeRecibo.Duplicado tercero = duplicadoDe(deAntes, EL_27.plusMonths(2));
+
+            assertThat(segundo.cual()).isEqualTo(2);
+            assertThat(tercero.cual()).isEqualTo(3);
+            assertThat(texto(segundo.contenido(), FormatoDeDocumento.PDF))
+                    .as(
+                            "el mismo papel que su primer duplicado: con el mismo numero no"
+                                    + " circulan dos papeles distintos")
+                    .contains("Emitido: 2026-09-28T03:30:00Z")
+                    .doesNotContain("-05:00");
+            assertThat(movimientos.registrados())
+                    .extracting(MovimientoDeRecibo::resumen)
+                    .as("y cada reimpresion guarda el resumen de la forma que dibujo")
+                    .containsExactly(
+                            RESUMEN_DE_ANTES_DE_141,
+                            RESUMEN_DE_ANTES_DE_141,
+                            RESUMEN_DE_ANTES_DE_141);
+        }
+
+        @Test
+        @DisplayName("el mismo recibo sin duplicado previo sale en Lima desde el primero")
+        void sinDuplicadoPrevioSaleEnLima() {
+            Recibo sinDuplicar = emitidoA(A_LAS_22_30_EN_LIMA, EL_27);
+
+            DuplicadoDeRecibo.Duplicado primero = duplicadoDe(sinDuplicar, EL_27);
+            DuplicadoDeRecibo.Duplicado segundo = duplicadoDe(sinDuplicar, EL_27.plusMonths(1));
+
+            assertThat(List.of(primero, segundo))
+                    .as("la forma de UTC solo se dibuja para un recibo que ya salio con ella")
+                    .allSatisfy(
+                            duplicado ->
+                                    assertThat(texto(duplicado.contenido(), FormatoDeDocumento.PDF))
+                                            .contains("Emitido: 2026-09-27T22:30:00-05:00"));
+            assertThat(movimientos.registrados())
+                    .extracting(MovimientoDeRecibo::resumen)
+                    .as(
+                            "el resumen de la forma de Lima no es el de la de UTC: es lo que deja"
+                                    + " saber, sin columna nueva, con cual salio cada recibo")
+                    .hasSize(2)
+                    .doesNotContain(RESUMEN_DE_ANTES_DE_141)
+                    .containsOnly(movimientos.registrados().getFirst().resumen());
         }
     }
 
@@ -504,6 +611,48 @@ class AnularYDuplicarTest {
                                         null,
                                         null,
                                         Dinero.de("10.00"),
+                                        Dinero.CERO,
+                                        Dinero.CERO,
+                                        Dinero.CERO))),
+                null);
+    }
+
+    /**
+     * Un recibo emitido en un instante dado y con importes a un dia dado (#141).
+     *
+     * <p>Por fuera de {@link CobrarOrdenes}, que toma el instante del reloj y abre turno: aqui lo
+     * unico que importa es lo que el recibo congela, que es lo que el duplicado dibuja. Todo lo
+     * demas es fijo, para que el resumen del papel sea el mismo en cada corrida.
+     */
+    private Recibo emitidoA(Instant emitidoEn, LocalDate actualizadoA) {
+        return recibos.emitir(
+                new Recibo(
+                        null,
+                        recibos.siguienteNumero(CAJA),
+                        1L,
+                        141L,
+                        "cajero.nocturno",
+                        PAGADOR,
+                        emitidoEn,
+                        FormaDePago.EFECTIVO,
+                        TipoDePago.NORMAL,
+                        null,
+                        actualizadoA,
+                        Observacion.de("Cobro de las 22:30, prueba de #141"),
+                        List.of(
+                                new kamayuk.caja.nucleo.dominio.LineaDeRecibo(
+                                        "RENTAS",
+                                        "IMPUESTO PREDIAL 2026",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        "REF-141",
+                                        null,
+                                        null,
+                                        null,
+                                        Dinero.de("141.00"),
                                         Dinero.CERO,
                                         Dinero.CERO,
                                         Dinero.CERO))),
