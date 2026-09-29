@@ -126,6 +126,10 @@ export const ARBOL = [
           { verbo: 'GET', ruta: '/conciliacion', controlador: 'ConciliacionController' },
           { verbo: 'POST', ruta: '/turnos/cierre', controlador: 'CierreController' },
           { verbo: 'POST', ruta: '/pagos/{pagoId}/explicacion', controlador: 'PagoController' },
+          // La otra salida de un pago MUERTO (#131): volver a ponerlo en camino, con el mismo
+          // `pagoId`, cuando la causa se arreglo. Mismo acceso y privilegio que la explicacion;
+          // declarada y sin llamarse, como ella.
+          { verbo: 'POST', ruta: '/pagos/{pagoId}/reintento', controlador: 'PagoController' },
         ],
       },
       {

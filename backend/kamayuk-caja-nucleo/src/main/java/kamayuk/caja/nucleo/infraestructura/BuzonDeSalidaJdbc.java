@@ -3,6 +3,7 @@ package kamayuk.caja.nucleo.infraestructura;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -15,6 +16,7 @@ import kamayuk.caja.nucleo.dominio.EventoDePago;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.persistencia.RepositorioJdbc;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -24,7 +26,8 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
 
     private static final String COLUMNAS =
             "id, evento_id, tipo, sistema_destino, recibo_id, turno_id, cuerpo::text AS cuerpo,"
-                    + " estado, intentos, ultimo_error, creado_en, entregado_en, explicacion";
+                    + " estado, intentos, ultimo_error, creado_en, entregado_en, explicacion,"
+                    + " no_antes_de, fallando_desde";
 
     public BuzonDeSalidaJdbc(JdbcClient jdbc) {
         super(jdbc);
@@ -76,14 +79,22 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
      * <b>entreguen</b> el mismo evento: el receptor deduplica por {@code pagoId}, que es la razon
      * de que lo genere la caja al cobrar, y el despliegue corre uno solo ({@code replicas: 1},
      * {@code maxSurge: 0}).
+     *
+     * <p><b>Y desde #131 solo lo que ya toca</b>: un PENDIENTE que fallo espera a su {@code
+     * no_antes_de}. El instante lo pone Java con el reloj inyectado y no el {@code now()} de la
+     * base, por la regla 6 y para que una prueba con un reloj fijo mida lo mismo que produccion. El
+     * indice parcial {@code pago_evento_pendiente_ix} sigue sirviendo: el filtro nuevo se evalua
+     * sobre las filas que el ya recorta.
      */
     @Override
-    public List<EventoDePago> pendientes(int cuantos) {
+    public List<EventoDePago> pendientes(Instant ahora, int cuantos) {
         return jdbc().sql(
                         "SELECT "
                                 + COLUMNAS
                                 + " FROM pago_evento WHERE estado = 'PENDIENTE'"
+                                + " AND (no_antes_de IS NULL OR no_antes_de <= :ahora)"
                                 + " ORDER BY id LIMIT :cuantos")
+                .param("ahora", Timestamp.from(ahora))
                 .param("cuantos", cuantos)
                 .query(BuzonDeSalidaJdbc::mapear)
                 .list();
@@ -93,23 +104,44 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
     public void marcarEntregado(long id, Instant cuando) {
         jdbc().sql(
                         "UPDATE pago_evento SET estado = 'ENTREGADO', entregado_en = :cuando,"
-                                + " intentos = intentos + 1, ultimo_error = NULL"
+                                + " intentos = intentos + 1, ultimo_error = NULL,"
+                                + " no_antes_de = NULL, fallando_desde = NULL"
                                 + " WHERE id = :id AND estado = 'PENDIENTE'")
                 .param("cuando", Timestamp.from(cuando))
                 .param("id", id)
                 .update();
     }
 
+    /**
+     * Cuenta el intento y lo aplaza o lo mata, en un solo {@code UPDATE}.
+     *
+     * <p>{@code no_antes_de} se escribe nulo cuando muere: {@code pago_evento_no_antes_de_ck} no
+     * deja que un MUERTO espere a un intento que no va a llegar. {@code fallando_desde} se conserva
+     * si ya lo tenia —la racha sigue— y si no, empieza en este fallo (#131).
+     */
     @Override
-    public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
+    public void marcarFallido(
+            long id,
+            int intentosLeidos,
+            String error,
+            Instant cuando,
+            @Nullable Instant noAntesDe) {
         jdbc().sql(
                         "UPDATE pago_evento SET intentos = intentos + 1, ultimo_error = :error,"
+                                + " fallando_desde = coalesce(fallando_desde, :cuando),"
+                                + " no_antes_de = :noAntesDe,"
                                 + " estado = CASE WHEN :muerto THEN 'MUERTO' ELSE estado END"
                                 + " WHERE id = :id AND estado = 'PENDIENTE'"
                                 + " AND intentos = :leidos")
                 .param("error", error)
+                .param("cuando", Timestamp.from(cuando))
+                // Con su tipo: un nulo sin tipo obliga al driver a preguntarselo a la base.
+                .param(
+                        "noAntesDe",
+                        noAntesDe == null ? null : Timestamp.from(noAntesDe),
+                        Types.TIMESTAMP)
+                .param("muerto", noAntesDe == null)
                 .param("leidos", intentosLeidos)
-                .param("muerto", seAgotaron)
                 .param("id", id)
                 .update();
     }
@@ -132,6 +164,32 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
                             + id
                             + " no lo esta: o ya se entrego, o sigue en camino, o alguien ya lo"
                             + " explico");
+        }
+    }
+
+    /**
+     * MUERTO a PENDIENTE, sin espera y sin racha (#131).
+     *
+     * <p>Es el unico {@code UPDATE} que devuelve una fila a la cola, y solo desde MUERTO: la guarda
+     * va en el {@code WHERE} y no en una lectura previa, para que dos personas que lo pongan en
+     * camino a la vez no puedan pasar las dos.
+     */
+    @Override
+    public void reencolar(long id) {
+        int filas =
+                jdbc().sql(
+                                "UPDATE pago_evento SET estado = 'PENDIENTE',"
+                                        + " no_antes_de = NULL, fallando_desde = NULL"
+                                        + " WHERE id = :id AND estado = 'MUERTO'")
+                        .param("id", id)
+                        .update();
+        if (filas == 0) {
+            throw new IllegalStateException(
+                    "Solo se vuelve a poner en camino un evento MUERTO. El "
+                            + id
+                            + " no lo esta: o sigue en camino, o ya se entrego, o alguien lo"
+                            + " explico por escrito —y entonces entregarlo podria asentar dos"
+                            + " veces el mismo dinero—");
         }
     }
 
@@ -240,6 +298,8 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
 
     private static EventoDePago mapear(ResultSet fila, int numero) throws SQLException {
         Timestamp entregado = fila.getTimestamp("entregado_en");
+        Timestamp noAntesDe = fila.getTimestamp("no_antes_de");
+        Timestamp fallandoDesde = fila.getTimestamp("fallando_desde");
         return new EventoDePago(
                 fila.getLong("id"),
                 UUID.fromString(fila.getString("evento_id")),
@@ -253,6 +313,8 @@ public class BuzonDeSalidaJdbc extends RepositorioJdbc implements BuzonDeSalida 
                 fila.getString("ultimo_error"),
                 fila.getTimestamp("creado_en").toInstant(),
                 entregado == null ? null : entregado.toInstant(),
-                fila.getString("explicacion"));
+                fila.getString("explicacion"),
+                noAntesDe == null ? null : noAntesDe.toInstant(),
+                fallandoDesde == null ? null : fallandoDesde.toInstant());
     }
 }

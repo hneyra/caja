@@ -13,9 +13,13 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntSupplier;
@@ -24,10 +28,12 @@ import kamayuk.caja.nucleo.dobles.BuzonEnMemoria;
 import kamayuk.caja.nucleo.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.EstadoDelEvento;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
+import kamayuk.caja.nucleo.dominio.ReintentosDeLaEntrega;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.nucleo.infraestructura.BuzonHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen;
+import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen.Veredicto;
 import kamayuk.caja.nucleo.infraestructura.CredencialDeServicio;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -214,6 +220,8 @@ class UnPagoNoMuereSinCredencialTest {
                 null,
                 AHORA,
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -341,12 +349,14 @@ class UnPagoNoMuereSinCredencialTest {
 
         private void conDestino(BuzonDelSistemaDeOrigen destino) {
             buzon = new BuzonEnMemoria();
+            Clock reloj = Clock.fixed(AHORA, ZoneOffset.UTC);
             entrega =
                     new EntregarEventos(
-                            new AnotarLaEntrega(buzon, Clock.fixed(AHORA, ZoneOffset.UTC)),
+                            new AnotarLaEntrega(buzon, reloj),
                             destino,
                             muertos -> {},
-                            8);
+                            new ReintentosDeLaEntrega(Duration.ofMinutes(10), Duration.ofHours(24)),
+                            reloj);
         }
 
         private EventoDePago encolado() {
@@ -354,7 +364,7 @@ class UnPagoNoMuereSinCredencialTest {
         }
 
         @Test
-        @DisplayName("con 401 queda REINTENTABLE y PENDIENTE, con UN intento gastado de ocho")
+        @DisplayName("con 401 queda REINTENTABLE y PENDIENTE, con UN intento gastado")
         void conCuatrocientosUnoSigueVivo() {
             estado = 401;
             conDestino(destino(""));
@@ -397,6 +407,148 @@ class UnPagoNoMuereSinCredencialTest {
             // exista, y eso solo lo dice haber llamado dos veces.
             assertThat(llamadas.get()).isEqualTo(2);
             assertThat(buzon.porId(evento.idGuardado()).orElseThrow().intentos()).isEqualTo(2);
+        }
+    }
+
+    /**
+     * #131 — <b>la raya entera</b>: #21 saco de {@code Rechazado} al 401 y al 403, y los demas 4xx
+     * seguian matando el pago al primer intento. Entre ellos, los que el HTTP define como pasajeros
+     * —408, 425, 429— y los que dicen que la DIRECCION esta mal —un 404 con {@code
+     * KAMAYUK_CAJA_ORIGENES} sin {@code /rentas/api/v1}—, que no rechazan un pago: rechazan todos.
+     *
+     * <p>La expectativa se escribe aqui, aparte de {@code veredictoDe}, y se recorre codigo a
+     * codigo: una lista de «los que mueren» copiada del codigo que se prueba no podria fallar.
+     */
+    @Nested
+    @DisplayName("#131 — que codigo mata un pago y cual no, y lo que cada uno dice")
+    class LaRayaEntera {
+
+        /** Los 4xx que NO matan un pago. Todos los demas 4xx —menos el 409— lo matan. */
+        private static final Set<Integer> CUATROCIENTOS_QUE_SE_REINTENTAN =
+                Set.of(401, 403, 404, 405, 408, 415, 421, 425, 429);
+
+        private static final Set<Integer> ACUSES = Set.of(200, 201, 202, 409);
+
+        @Test
+        @DisplayName("del 100 al 599, codigo a codigo: solo muere un 4xx que habla del cuerpo")
+        void codigoACodigo() {
+            List<String> distintos = new ArrayList<>();
+            for (int codigo = 100; codigo <= 599; codigo++) {
+                Veredicto esperado;
+                if (ACUSES.contains(codigo)) {
+                    esperado = Veredicto.ENTREGADO;
+                } else if (codigo >= 400
+                        && codigo < 500
+                        && !CUATROCIENTOS_QUE_SE_REINTENTAN.contains(codigo)) {
+                    esperado = Veredicto.RECHAZADO;
+                } else {
+                    esperado = Veredicto.REINTENTAR;
+                }
+                Veredicto dado = ClienteHttpDelSistemaDeOrigen.veredictoDe(codigo);
+                if (dado != esperado) {
+                    distintos.add(codigo + ": " + dado + ", y tocaba " + esperado);
+                }
+            }
+            assertThat(distintos)
+                    .as(
+                            "[matar un pago que se habria entregado solo le cuesta a una persona un"
+                                    + " acto a mano; no matar un rechazo, un aviso un dia tarde]")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("un 429 y un 408 se reintentan: el HTTP los define como «ahora no»")
+        void losPasajerosSeReintentan() {
+            estado = 429;
+            cuerpoDeRespuesta = "{\"detail\":\"demasiadas peticiones\"}";
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("429")
+                    .hasMessageContaining("NO es un rechazo del pago")
+                    .hasMessageContaining("demasiadas peticiones");
+
+            estado = 408;
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("408");
+        }
+
+        @Test
+        @DisplayName(
+                "un 404 y un 405 hablan de la direccion: se reintentan, y dicen que linea mirar")
+        void laRutaSeReintentaYDiceDondeMirar() {
+            for (int codigo : new int[] {404, 405}) {
+                estado = codigo;
+                cuerpoDeRespuesta = "<html>Not Found</html>";
+                assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                        .as("[%d: la ruta mal puesta rechaza TODOS los pagos, no este]", codigo)
+                        .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                        .hasMessageContaining(String.valueOf(codigo))
+                        .hasMessageContaining("kamayuk.caja.origenes.rentas")
+                        .hasMessageContaining("/rentas/api/v1")
+                        .hasMessageContaining("NO es un rechazo del pago");
+            }
+        }
+
+        @Test
+        @DisplayName("un 5xx se reintenta, y dice lo que contesto el receptor")
+        void unCincoCientosDiceLoQueContesto() {
+            estado = 503;
+            cuerpoDeRespuesta =
+                    "{\"codigo\":\"SERVICIO_NO_DISPONIBLE\",\"detail\":\"la anulacion llego"
+                            + " antes que su cobro\"}";
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.NoContesta.class)
+                    .hasMessageContaining("503")
+                    .hasMessageContaining("antes que su cobro");
+        }
+
+        @Test
+        @DisplayName("un 400 SI es un rechazo, y dice como volver a ponerlo en camino")
+        void unCuatrocientosEsUnRechazo() {
+            estado = 400;
+            cuerpoDeRespuesta = "{\"detail\":\"cuerpo ilegible\"}";
+            assertThatThrownBy(() -> destino("Bearer el-token").entregar(unPagoPorEntregar()))
+                    .isInstanceOf(BuzonDelSistemaDeOrigen.Rechazado.class)
+                    .hasMessageContaining("NO se reintenta")
+                    .hasMessageContaining("/pagos/{pagoId}/reintento")
+                    .hasMessageContaining("cuerpo ilegible");
+        }
+
+        @Test
+        @DisplayName("y en el evento: con 429 o 404 queda PENDIENTE y aplazado; con 400, MUERTO")
+        void loQueLeHaceAlEvento() {
+            Clock reloj = Clock.fixed(AHORA, ZoneOffset.UTC);
+            for (int codigo : new int[] {429, 404, 400}) {
+                estado = codigo;
+                BuzonEnMemoria buzon = new BuzonEnMemoria();
+                EntregarEventos entrega =
+                        new EntregarEventos(
+                                new AnotarLaEntrega(buzon, reloj),
+                                destino("Bearer el-token"),
+                                muertos -> {},
+                                new ReintentosDeLaEntrega(
+                                        Duration.ofMinutes(10), Duration.ofHours(24)),
+                                reloj);
+                EventoDePago evento = buzon.encolar(unPagoPorEntregar());
+
+                EntregarEventos.Resultado resultado = entrega.entregarUno(evento);
+
+                EventoDePago despues = buzon.porId(evento.idGuardado()).orElseThrow();
+                if (codigo == 400) {
+                    assertThat(resultado).isEqualTo(EntregarEventos.Resultado.MUERTO);
+                    assertThat(despues.estado()).isEqualTo(EstadoDelEvento.MUERTO);
+                } else {
+                    assertThat(resultado)
+                            .as("[%d]", codigo)
+                            .isEqualTo(EntregarEventos.Resultado.REINTENTABLE);
+                    assertThat(despues.estado()).isEqualTo(EstadoDelEvento.PENDIENTE);
+                    assertThat(despues.fallandoDesde())
+                            .as("[%d: el primer fallo abre la racha]", codigo)
+                            .isEqualTo(AHORA);
+                    assertThat(despues.noAntesDe()).isNotNull();
+                }
+            }
         }
     }
 }

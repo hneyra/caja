@@ -1,13 +1,16 @@
 package kamayuk.caja.nucleo.aplicacion;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import kamayuk.caja.nucleo.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
+import kamayuk.caja.nucleo.dominio.ReintentosDeLaEntrega;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,18 +39,35 @@ import org.springframework.stereotype.Service;
  *
  * <table>
  *   <tr><th>Que paso</th><th>Que se hace</th><th>Por que</th></tr>
- *   <tr><td>El origen no contesta</td><td>se cuenta el intento y se reintenta</td>
- *       <td>Se arregla levantando un despliegue, y va a arreglarse solo</td></tr>
- *   <tr><td>El origen rechaza</td><td>se mata en el acto</td>
- *       <td>Reintentar un rechazo gasta los intentos hasta morir por un motivo que no es el
- *           suyo</td></tr>
+ *   <tr><td>El origen no contesta, o contesta que ahora no (408, 429, 5xx), o la ruta o la
+ *       credencial no valen (401, 403, 404, 405…)</td>
+ *       <td>se cuenta el intento y se aplaza: el siguiente, no antes de lo que el pago lleva
+ *           fallando, con tope ({@link ReintentosDeLaEntrega})</td>
+ *       <td>Se arregla levantando un despliegue o corrigiendo la configuracion, y entonces el pago
+ *           sale solo. La raya entre esto y un rechazo la pone {@code
+ *           ClienteHttpDelSistemaDeOrigen.veredictoDe} (#131)</td></tr>
+ *   <tr><td>El origen rechaza el pago</td><td>se mata en el acto</td>
+ *       <td>El cuerpo esta congelado: reintentarlo da la misma respuesta hasta agotar el plazo, y
+ *           avisa un dia tarde por un motivo que ya se sabia</td></tr>
  *   <tr><td>Cualquier otra excepcion al entregar</td><td>se cuenta el intento, como si no
  *       contestara</td>
  *       <td>Si no gastara intento no llegaria nunca a MUERTO ni avisaria, y como va primero en
  *           la cola, atascaria el buzon de su municipalidad (#109)</td></tr>
- *   <tr><td>Se agotaron los intentos</td><td>MUERTO, y alerta a una persona con nombre</td>
+ *   <tr><td>Se agoto el plazo</td><td>MUERTO, y alerta a una persona con nombre</td>
  *       <td>Es dinero cobrado sin registrar. No se queda en un registro (ADR-0026 §4)</td></tr>
  * </table>
+ *
+ * <h2>El presupuesto es un tiempo, no un numero de vueltas (#131)</h2>
+ *
+ * <p>Hasta #131 eran ocho intentos, uno por vuelta, y una vuelta cada diez segundos: con el origen
+ * caido un pago moria a los ~80 s, antes de que acabara el despliegue de dos minutos que {@code
+ * application.yaml} decia cubrir. Ahora cada fallo que no mata deja escrito cuando se puede volver
+ * a intentar ({@code pago_evento.no_antes_de}), {@link AnotarLaEntrega#pendientes} solo devuelve lo
+ * que ya toca, y se muere cuando se agota {@code kamayuk.caja.entrega.plazo} desde el primer fallo
+ * de la racha. Los numeros y su porque, en {@link ReintentosDeLaEntrega}.
+ *
+ * <p>Y MUERTO deja de ser para siempre: si la causa se arregla, una persona lo vuelve a poner en
+ * camino con {@link ReintentarPagoMuerto}, con su observacion y con el mismo {@code pagoId}.
  *
  * <p>Lo que <b>no</b> se atrapa es un fallo al <i>anotar</i>: si la base no deja marcar, no hay
  * donde contar el intento. Esa excepcion corta la vuelta de esa municipalidad —el recorrido la
@@ -68,21 +88,25 @@ public class EntregarEventos {
     private final AnotarLaEntrega anotar;
     private final BuzonDelSistemaDeOrigen destino;
     private final AlertaDeCobrosSinImputar alerta;
-    private final int intentosMaximos;
+    private final ReintentosDeLaEntrega reintentos;
+    private final Clock reloj;
 
+    /**
+     * @param reintentos cuando se vuelve a intentar y cuando se deja de intentar. Lo arma {@code
+     *     ConfiguracionDeLaEntrega} con {@code kamayuk.caja.entrega.espera-maxima} y {@code .plazo}
+     * @param reloj el del contexto, con la zona del producto (#112). Solo se lee su instante
+     */
     public EntregarEventos(
             AnotarLaEntrega anotar,
             BuzonDelSistemaDeOrigen destino,
             AlertaDeCobrosSinImputar alerta,
-            @Value("${kamayuk.caja.entrega.intentos:8}") int intentosMaximos) {
+            ReintentosDeLaEntrega reintentos,
+            Clock reloj) {
         this.anotar = anotar;
         this.destino = destino;
         this.alerta = alerta;
-        this.intentosMaximos = intentosMaximos;
-        if (intentosMaximos < 1) {
-            throw new IllegalArgumentException(
-                    "Con cero intentos todo pago nace muerto: " + intentosMaximos);
-        }
+        this.reintentos = Objects.requireNonNull(reintentos, "La entrega sabe cuando reintentar");
+        this.reloj = Objects.requireNonNull(reloj, "La entrega mide el plazo con un reloj");
     }
 
     /**
@@ -95,7 +119,7 @@ public class EntregarEventos {
      * @return cuantos se entregaron y cuantos murieron en esta vuelta
      */
     public Vuelta entregarPendientes() {
-        List<EventoDePago> pendientes = anotar.pendientes(POR_VUELTA);
+        List<EventoDePago> pendientes = anotar.pendientes(reloj.instant(), POR_VUELTA);
         int entregados = 0;
         int muertos = 0;
         for (EventoDePago evento : pendientes) {
@@ -131,8 +155,8 @@ public class EntregarEventos {
         try {
             destino.entregar(evento);
         } catch (BuzonDelSistemaDeOrigen.Rechazado rechazado) {
-            // No se reintenta: el motivo no va a cambiar solo.
-            anotar.fallido(evento, recortar(rechazado.getMessage()), true);
+            // No se reintenta: el cuerpo esta congelado y la respuesta no va a cambiar sola.
+            anotar.muerto(evento, recortar(rechazado.getMessage()), reloj.instant());
             return Resultado.MUERTO;
         } catch (BuzonDelSistemaDeOrigen.NoContesta noContesta) {
             return fallar(evento, noContesta.getMessage());
@@ -152,10 +176,21 @@ public class EntregarEventos {
         return Resultado.ENTREGADO;
     }
 
+    /**
+     * Un fallo que no es un rechazo: se aplaza, o muere si ya se agoto el plazo (#131).
+     *
+     * <p>El instante se lee una vez y sirve para las dos cosas —decidir y anotar—: leido dos veces,
+     * la fila podria decir que empezo a fallar despues de lo que se uso para decidir.
+     */
     private Resultado fallar(EventoDePago evento, @Nullable String motivo) {
-        boolean seAgotaron = evento.intentos() + 1 >= intentosMaximos;
-        anotar.fallido(evento, recortar(motivo), seAgotaron);
-        return seAgotaron ? Resultado.MUERTO : Resultado.REINTENTABLE;
+        Instant ahora = reloj.instant();
+        Optional<Instant> siguiente = reintentos.siguienteIntento(evento.fallandoDesde(), ahora);
+        if (siguiente.isEmpty()) {
+            anotar.muerto(evento, recortar(motivo), ahora);
+            return Resultado.MUERTO;
+        }
+        anotar.aplazado(evento, recortar(motivo), ahora, siguiente.get());
+        return Resultado.REINTENTABLE;
     }
 
     /** El largo de {@code pago_evento.ultimo_error}. */

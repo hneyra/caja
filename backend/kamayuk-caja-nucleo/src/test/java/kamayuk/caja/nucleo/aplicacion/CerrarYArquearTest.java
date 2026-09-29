@@ -427,6 +427,8 @@ class CerrarYArquearTest {
                 estado == EstadoDelEvento.MUERTO ? "el origen no contesta" : null,
                 MOMENTO,
                 estado == EstadoDelEvento.ENTREGADO ? MOMENTO : null,
+                null,
+                null,
                 null);
     }
 
@@ -444,7 +446,9 @@ class CerrarYArquearTest {
                 "el origen no contesta",
                 MOMENTO,
                 null,
-                "Se registro a mano en rentas con el memorando 014-2026-TES");
+                "Se registro a mano en rentas con el memorando 014-2026-TES",
+                null,
+                null);
     }
 
     private static Observacion porQue() {

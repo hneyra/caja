@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /** El buzon de salida de la caja (ADR-0026 §3). */
 public interface BuzonDeSalida {
@@ -17,25 +18,55 @@ public interface BuzonDeSalida {
      */
     EventoDePago encolar(EventoDePago evento);
 
-    /** Lo que falta por entregar, en el orden en que se cobro. */
-    List<EventoDePago> pendientes(int cuantos);
+    /**
+     * Lo que toca intentar a esa hora, en el orden en que se cobro.
+     *
+     * <p>Los PENDIENTES cuyo {@link EventoDePago#noAntesDe()} es nulo o ya paso (#131). Hasta #131
+     * eran todos los PENDIENTES, en cada vuelta: sin espera propia, un pago moria en ocho vueltas.
+     * Y dejar fuera a los que esperan evita tambien que cincuenta pagos de una caida larga ocupen
+     * el lote entero de la vuelta y dejen detras a los que acaban de cobrarse.
+     *
+     * @param ahora el instante de la vuelta, del reloj inyectado (regla 6)
+     */
+    List<EventoDePago> pendientes(Instant ahora, int cuantos);
 
     /** Marca la entrega, con su hora. */
     void marcarEntregado(long id, Instant cuando);
 
     /**
-     * Cuenta un intento fallido, y mata el evento si se agotaron.
+     * Cuenta un intento fallido, y lo aplaza o lo mata.
      *
      * <p>Solo cuenta si el evento sigue PENDIENTE <b>y</b> sus intentos siguen siendo {@code
      * intentosLeidos}: dos publicadores que leyeron el mismo evento y fallaron los dos cuentan una
      * caida, no dos (#109). Si otro ya lo conto, no hace nada.
      *
+     * <p>Si es el primer fallo de la racha, {@code cuando} pasa a ser su {@code fallandoDesde}; si
+     * no, el que tenia se conserva (#131).
+     *
      * @param intentosLeidos los intentos que tenia el evento cuando se leyo para entregarlo
+     * @param cuando el instante del fallo
+     * @param noAntesDe cuando se puede volver a intentar; <b>nulo si con este fallo muere</b>
      */
-    void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron);
+    void marcarFallido(
+            long id, int intentosLeidos, String error, Instant cuando, @Nullable Instant noAntesDe);
 
     /** Alguien se hizo cargo por escrito. */
     void explicar(long id, String explicacion);
+
+    /**
+     * Un MUERTO vuelve a estar en camino (#131): PENDIENTE, sin espera y sin racha.
+     *
+     * <p>Conserva su {@code pagoId} —el receptor deduplica por el, asi que si el pago ya habia
+     * llegado, el reintento lo encuentra— y sus {@code intentos}, que siguen contando las llamadas
+     * de verdad. Lo que se vacia es {@code no_antes_de} y {@code fallando_desde}: el plazo empieza
+     * de nuevo, porque quien lo pone en camino dice que la causa se arreglo.
+     *
+     * @throws IllegalStateException si el evento no esta MUERTO. Uno PENDIENTE ya esta en camino,
+     *     uno ENTREGADO ya llego, y uno EXPLICADO lo resolvio alguien por escrito —quiza
+     *     registrandolo a mano en el origen, con otro identificador—: entregarlo seria el segundo
+     *     asiento del mismo dinero
+     */
+    void reencolar(long id);
 
     Optional<EventoDePago> porId(long id);
 

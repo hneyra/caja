@@ -25,6 +25,12 @@ import org.jspecify.annotations.Nullable;
  *     generara quien entrega, dos entregas del mismo cobro serian dos pagos y habria dos asientos —
  *     que es exactamente el criterio 3 del encargo, visto desde el lado que lo hace posible
  * @param cuerpo el evento entero, congelado. No se recompone al entregar
+ * @param noAntesDe cuando se puede volver a intentar un evento que fallo (#131); nulo, en la vuelta
+ *     que toque. Solo lo lleva un PENDIENTE ({@code pago_evento_no_antes_de_ck}): uno entregado o
+ *     muerto no tiene intento siguiente
+ * @param fallandoDesde el primer fallo de la racha en curso (#131), de donde se mide el plazo con
+ *     que {@link ReintentosDeLaEntrega} decide cuando muere; nulo si el ultimo intento no fallo o
+ *     si nunca se intento, y tambien despues de volver a ponerlo en camino
  */
 public record EventoDePago(
         @Nullable Long id,
@@ -39,7 +45,9 @@ public record EventoDePago(
         @Nullable String ultimoError,
         Instant creadoEn,
         @Nullable Instant entregadoEn,
-        @Nullable String explicacion) {
+        @Nullable String explicacion,
+        @Nullable Instant noAntesDe,
+        @Nullable Instant fallandoDesde) {
 
     public EventoDePago {
         Objects.requireNonNull(eventoId, "Un evento del buzon lleva su pagoId");
@@ -68,6 +76,13 @@ public record EventoDePago(
                             + " separa «alguien se hizo cargo» de «alguien lo apago para poder"
                             + " cerrar la caja»");
         }
+        // pago_evento_no_antes_de_ck, en Java (#131). Un evento que ya no esta en camino no tiene
+        // «siguiente intento»: si lo tuviera, volver a ponerlo en camino heredaria una espera que
+        // no le toca.
+        if (noAntesDe != null && estado != EstadoDelEvento.PENDIENTE) {
+            throw new IllegalArgumentException(
+                    "Solo un evento PENDIENTE espera a su siguiente intento: estado=" + estado);
+        }
     }
 
     /** Un evento recien nacido: pendiente, sin intentos y sin hora de entrega. */
@@ -91,6 +106,8 @@ public record EventoDePago(
                 0,
                 null,
                 creadoEn,
+                null,
+                null,
                 null,
                 null);
     }

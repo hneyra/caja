@@ -37,9 +37,9 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>{@link BuzonDelSistemaDeOrigen.NoContesta} se reintenta y se arregla levantando un despliegue;
  * {@link BuzonDelSistemaDeOrigen.Rechazado} no se reintenta y se arregla mirando por que el
- * receptor no acepta ese pago. Confundirlas hace que un rechazo consuma los ocho intentos y acabe
- * MUERTO por un motivo que no es el suyo — y un evento muerto dispara una alerta a una persona, asi
- * que confundirlas cuesta el tiempo de alguien.
+ * receptor no acepta ese pago. Confundirlas en un sentido hace que un rechazo gaste el plazo entero
+ * y acabe MUERTO un dia tarde; en el otro, que una caida mate pagos que habrian salido solos — y un
+ * evento muerto dispara una alerta a una persona, asi que confundirlas cuesta el tiempo de alguien.
  *
  * <h2>El token, y por que un 401 NO es un rechazo (#21)</h2>
  *
@@ -61,7 +61,8 @@ import tools.jackson.databind.json.JsonMapper;
  * 401 o un 403 <b>si</b> cambia solo —en cuanto la credencial se emite, se renueva o se le concede
  * el acceso—, y se arregla del lado del despliegue, que es literalmente la definicion de {@link
  * BuzonDelSistemaDeOrigen.NoContesta}. Un 422 no cambia solo: ese sigue siendo un rechazo, y
- * seguirlo reintentando gastaria los ocho intentos para acabar en el mismo sitio.
+ * seguirlo reintentando gastaria el plazo entero —los ocho intentos, hasta #131— para acabar en el
+ * mismo sitio.
  *
  * <h2>El 401 y el 403 se CLASIFICAN igual y se DICEN distinto (#96)</h2>
  *
@@ -78,6 +79,44 @@ import tools.jackson.databind.json.JsonMapper;
  * negocio sigue siendo {@link BuzonDelSistemaDeOrigen.Rechazado}. Quien clasifica es {@link
  * #esDeCredencial}, que mira el codigo de estado y no el cuerpo, a proposito: el cuerpo lo escribe
  * el otro sistema y cambiar de redaccion no puede cambiar si un pago se reintenta.
+ *
+ * <h2>Y desde #131, la raya entera: que 4xx mata un pago y cual no</h2>
+ *
+ * <p>#21 saco de {@code Rechazado} al 401 y al 403; los demas 4xx seguian matando el pago al primer
+ * intento. Entre ellos, tres que el propio HTTP declara pasajeros —408, 425 y 429: «ahora no,
+ * vuelve luego»— y los que dicen que <b>la direccion</b> esta mal —404 con un {@code
+ * KAMAYUK_CAJA_ORIGENES} al que le falta {@code /rentas/api/v1}, 405 contra una raiz que no acepta
+ * {@code POST}—. Una direccion mal puesta no rechaza un pago: rechaza <b>todos</b>, y mataba cada
+ * uno en su primer intento, dejando a una persona un acto a mano por pago cuando lo que habia que
+ * hacer era corregir una linea de configuracion.
+ *
+ * <p>El criterio, escrito una vez en {@link #veredictoDe}: <b>es un rechazo lo que habla del cuerpo
+ * de ESTE pago</b>, porque el cuerpo esta congelado y reintentarlo da la misma respuesta. Lo que
+ * habla de la ruta, de quien llama o del momento se reintenta, con las esperas y el plazo de {@code
+ * ReintentosDeLaEntrega}, y cuando se arregla los pagos salen solos.
+ *
+ * <table>
+ *   <tr><th>Codigo</th><th>Veredicto</th><th>Por que</th></tr>
+ *   <tr><td>200, 201, 202, 409</td><td>entregado</td><td>el 409 es «ya lo tengo»</td></tr>
+ *   <tr><td>401, 403</td><td>se reintenta</td><td>habla de la credencial (#21, #96)</td></tr>
+ *   <tr><td>404, 405, 415, 421</td><td>se reintenta</td>
+ *       <td>habla de la ruta: el mismo codigo le tocaria a cualquier pago, y se arregla con la
+ *           configuracion o con el despliegue del receptor. El 415 esta aqui porque la caja manda
+ *           siempre {@code application/json}: si no lo acepta, no lo acepta para ninguno</td></tr>
+ *   <tr><td>408, 425, 429</td><td>se reintenta</td><td>el HTTP los define como «ahora no»</td></tr>
+ *   <tr><td>el resto de 4xx —400, 410, 413, 422…—</td><td>rechazo: muere</td>
+ *       <td>hablan del cuerpo. {@code rentas} contesta 422 a lo que no puede aceptar</td></tr>
+ *   <tr><td>5xx</td><td>se reintenta</td>
+ *       <td>el receptor fallo; {@code rentas} contesta 503 a la anulacion que llega antes que su
+ *           cobro</td></tr>
+ *   <tr><td>cualquier otro (1xx, 3xx, 2xx sin acuse)</td><td>se reintenta</td>
+ *       <td>no dice que lo tenga, y tampoco que no lo quiera</td></tr>
+ * </table>
+ *
+ * <p>Un 404 de negocio —«esa orden no existe»— se reintentaria hasta agotar el plazo en vez de
+ * morir en el acto. Se acepta a sabiendas: {@code rentas} no lo usa en {@code POST /pagos}
+ * (contesta 422), y equivocarse en esa direccion cuesta un aviso un dia tarde; en la otra costaba
+ * un acto a mano por cada pago cobrado mientras la ruta estuvo mal.
  *
  * <h2>Y el mensaje cabe en la columna, porque no hay ningun otro sitio donde acabe</h2>
  *
@@ -148,30 +187,61 @@ public class ClienteHttpDelSistemaDeOrigen {
         String mandada = conCredencial(peticion);
         HttpResponse<String> respuesta = enviar(peticion, sistema, "publicar el pago");
         int estado = respuesta.statusCode();
-        if (estado == 200 || estado == 201 || estado == 202 || estado == 409) {
+        Veredicto veredicto = veredictoDe(estado);
+        if (veredicto == Veredicto.ENTREGADO) {
             // El 409 es «ya lo tengo»: el receptor deduplico por pagoId. Es EXITO y no un fallo —
             // reintentar hasta que deje de decir 409 no acabaria nunca, y matar el evento por eso
             // dispararia una alerta por un pago que SI se registro.
             return;
         }
-        if (esDeCredencial(estado)) {
-            throw new BuzonDelSistemaDeOrigen.NoContesta(
-                    laIdentidadDeServicio(
-                            sistema, estado, mandada, respuesta.body(), "publicar el pago"));
-        }
-        if (estado >= 400 && estado < 500) {
+        if (veredicto == Veredicto.RECHAZADO) {
             throw new BuzonDelSistemaDeOrigen.Rechazado(
                     cabe(
                             "«"
                                     + sistema
                                     + "» rechazo el pago con "
                                     + estado
-                                    + ". Esto NO se reintenta: el motivo no va a cambiar solo."
-                                    + " Contesto "
+                                    + ". Esto NO se reintenta solo: el cuerpo del pago esta"
+                                    + " congelado y la respuesta no va a cambiar. Si se arregla"
+                                    + " del otro lado, se vuelve a poner en camino con POST"
+                                    + " /pagos/{pagoId}/reintento. Contesto "
                                     + RespuestaAjena.de(json, respuesta.body()).comoTexto()));
         }
+        // Lo que no es ni lo uno ni lo otro se reintenta: en la duda, un pago no se mata.
         throw new BuzonDelSistemaDeOrigen.NoContesta(
-                "«" + sistema + "» contesto " + estado + " al publicar el pago");
+                porQueSeReintenta(sistema, estado, mandada, respuesta.body()));
+    }
+
+    /**
+     * Que hace la caja con cada codigo de estado del {@code POST} de un pago (#131).
+     *
+     * <p>Es la raya entera en un sitio: la tabla de la cabecera de la clase la explica fila a fila,
+     * y {@code UnPagoNoMuereSinCredencialTest} la recorre codigo a codigo, del 100 al 599, contra
+     * una expectativa escrita aparte. Lo que se mira es el codigo y nunca el cuerpo: el cuerpo lo
+     * escribe el otro sistema, y cambiar de redaccion no puede cambiar si un pago muere.
+     */
+    public static Veredicto veredictoDe(int estado) {
+        if (estado == 200 || estado == 201 || estado == 202 || estado == 409) {
+            return Veredicto.ENTREGADO;
+        }
+        if (estado >= 400
+                && estado < 500
+                && !esDeCredencial(estado)
+                && !esDeLaRuta(estado)
+                && !esDeEspera(estado)) {
+            return Veredicto.RECHAZADO;
+        }
+        return Veredicto.REINTENTAR;
+    }
+
+    /** Lo que {@link #veredictoDe} decide de un pago. */
+    public enum Veredicto {
+        /** El receptor lo tiene. */
+        ENTREGADO,
+        /** El receptor no acepta ESTE pago: muere en el acto. */
+        RECHAZADO,
+        /** No llego, y puede llegar sin tocar el pago: se aplaza y se reintenta. */
+        REINTENTAR
     }
 
     /** Pide un JSON. */
@@ -250,6 +320,55 @@ public class ClienteHttpDelSistemaDeOrigen {
      */
     private static boolean esDeCredencial(int estado) {
         return estado == 401 || estado == 403;
+    }
+
+    /**
+     * 404, 405, 415 y 421 no hablan de este pago: hablan de a donde se llama (#131).
+     *
+     * <p>El mismo codigo le tocaria a cualquier pago que se mandara ahi, y se arregla corrigiendo
+     * {@code kamayuk.caja.origenes} o desplegando el receptor, no mirando el pago.
+     */
+    private static boolean esDeLaRuta(int estado) {
+        return estado == 404 || estado == 405 || estado == 415 || estado == 421;
+    }
+
+    /** 408, 425 y 429: el HTTP los define como «ahora no; vuelve luego» (#131). */
+    private static boolean esDeEspera(int estado) {
+        return estado == 408 || estado == 425 || estado == 429;
+    }
+
+    /**
+     * Por que se reintenta un pago que no llego, y donde se arregla, en el mensaje que acaba en
+     * {@code pago_evento.ultimo_error}. El remedio va delante y el cuerpo detras, como siempre.
+     */
+    private String porQueSeReintenta(
+            SistemaDeOrigen sistema, int estado, String mandada, String cuerpo) {
+        if (esDeCredencial(estado)) {
+            return laIdentidadDeServicio(sistema, estado, mandada, cuerpo, "publicar el pago");
+        }
+        String porque;
+        if (esDeLaRuta(estado)) {
+            porque =
+                    "la direccion no lleva a su buzon de pagos: revise kamayuk.caja.origenes."
+                            + sistema
+                            + " (tiene que acabar en /"
+                            + sistema
+                            + "/api/v1) y que el receptor este desplegado";
+        } else if (esDeEspera(estado)) {
+            porque = "el receptor pide que se vuelva luego";
+        } else {
+            porque = "el receptor no pudo atenderlo";
+        }
+        return cabe(
+                "«"
+                        + sistema
+                        + "» contesto "
+                        + estado
+                        + " al publicar el pago: "
+                        + porque
+                        + ". NO es un rechazo del pago: se REINTENTA solo, con esperas"
+                        + " crecientes. Contesto "
+                        + RespuestaAjena.de(json, cuerpo).comoTexto());
     }
 
     /**

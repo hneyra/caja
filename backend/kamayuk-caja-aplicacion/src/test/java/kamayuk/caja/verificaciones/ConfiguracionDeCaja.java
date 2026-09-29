@@ -362,14 +362,21 @@ public final class ConfiguracionDeCaja implements ConfiguracionDeLasVerificacion
     @Override
     public Set<String> escriturasSinUsuarioQueObserve() {
         return Set.of(
-                // Las dos marcas del publicador. Hasta #109 era una sola entrada,
+                // Las marcas del publicador. Hasta #109 era una sola entrada,
                 // `EntregarEventos.entregarUno`, cuyo `REQUIRES_NEW` no se aplicaba por
                 // autoinvocacion; la transaccion de cada evento vive ahora en otro bean, y la
-                // exencion sigue a la escritura.
+                // exencion sigue a la escritura. Desde #131 el fallo son dos —se aplaza o
+                // muere—, y los dos siguen sin usuario delante. Lo que SI lo tiene, sacar un pago
+                // de MUERTO, exige observacion: `ReintentarPagoMuerto` y
+                // `ExplicarPagoSinEntregar` no estan en esta lista.
                 ".nucleo.aplicacion.AnotarLaEntrega.entregado("
                         + "kamayuk.caja.nucleo.dominio.EventoDePago)",
-                ".nucleo.aplicacion.AnotarLaEntrega.fallido("
-                        + "kamayuk.caja.nucleo.dominio.EventoDePago, java.lang.String, boolean)",
+                ".nucleo.aplicacion.AnotarLaEntrega.aplazado("
+                        + "kamayuk.caja.nucleo.dominio.EventoDePago, java.lang.String,"
+                        + " java.time.Instant, java.time.Instant)",
+                ".nucleo.aplicacion.AnotarLaEntrega.muerto("
+                        + "kamayuk.caja.nucleo.dominio.EventoDePago, java.lang.String,"
+                        + " java.time.Instant)",
                 // Las dos escrituras del consumidor del buzon de `identidad` (etapa 4). No hay
                 // usuario delante por el mismo motivo que arriba: es un proceso. Y la observacion
                 // de cada hecho EXISTE, solo que la escribio quien lo decidio, en `identidad`,

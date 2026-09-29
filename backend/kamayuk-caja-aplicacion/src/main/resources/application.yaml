@@ -49,12 +49,30 @@ kamayuk:
       # no puede haber uno solo para todas (ADR-0028 §2).
       cliente: ${KAMAYUK_CAJA_IDENTIDAD_CLIENTE:}
     entrega:
-      # Cuantas veces se reintenta antes de dar el pago por MUERTO. Un evento muerto es
-      # dinero cobrado sin registrar y dispara alerta a una persona; con este numero
-      # demasiado bajo, un despliegue de dos minutos del sistema de origen despierta a
-      # alguien de madrugada por nada.
-      intentos: ${KAMAYUK_CAJA_ENTREGA_INTENTOS:8}
+      # Cada cuanto mira el publicador su buzon. Es la espera MINIMA entre dos intentos
+      # del mismo pago, no la unica.
       intervalo: ${KAMAYUK_CAJA_ENTREGA_INTERVALO:PT10S}
+      # EL PRESUPUESTO SE MIDE EN TIEMPO, NO EN INTENTOS (#131). Hasta #131 eran ocho
+      # intentos, uno por vuelta: con el origen caido un pago moria a los ~80 s, antes de
+      # que acabara el despliegue de dos minutos que este comentario decia cubrir, y
+      # morir era para siempre. `KAMAYUK_CAJA_ENTREGA_INTENTOS` se retiro, y si alguien
+      # lo sigue poniendo la aplicacion NO arranca (ConfiguracionDeLaEntrega): ignorarlo
+      # en silencio le haria creer que compro mas intentos.
+      #
+      # Tras un fallo, el siguiente intento de ESE pago espera lo que el pago lleva
+      # fallando, con este tope: a los 0, 10, 20, 40, 80, 160, 320 y 640 s de caida, y
+      # desde ahi cada diez minutos. Un origen que vuelve a los T segundos recibe el pago
+      # a mas tardar a los 2T: el despliegue de dos minutos, a los 160 s.
+      espera-maxima: ${KAMAYUK_CAJA_ENTREGA_ESPERA_MAXIMA:PT10M}
+      # Cuanto se sigue intentando desde el primer fallo antes de darlo por MUERTO, que
+      # es dinero cobrado sin registrar y despierta a una persona con nombre, y que le
+      # pide un acto con observacion POR PAGO (volver a ponerlo en camino o explicarlo).
+      # Un dia: una hora de caida el ultimo dia de vencimiento no le deja cientos de
+      # actos a mano, y esperar no esconde nada, porque un pago PENDIENTE impide cerrar
+      # el turno igual que uno MUERTO. El porque entero, en ReintentosDeLaEntrega.
+      # Un rechazo del receptor (un 4xx que habla del cuerpo del pago: 400, 422...) no
+      # espera a nada: muere en el acto. Que codigo es cual, en ClienteHttpDelSistemaDeOrigen.
+      plazo: ${KAMAYUK_CAJA_ENTREGA_PLAZO:PT24H}
     conciliacion:
       # QUIEN recibe el aviso cuando hay dinero cobrado sin registrar (ADR-0026 §4).
       # SIN VALOR POR OMISION A PROPOSITO: la aplicacion no arranca sin las dos

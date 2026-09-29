@@ -21,7 +21,9 @@ public interface BuzonDelSistemaDeOrigen {
      *     excepcion que no sea {@link Rechazado}, que el publicador cuenta como intento en vez de
      *     dejar el evento atascado primero en la cola
      * @throws Rechazado si el receptor dijo que no. NO se reintenta: reintentar un rechazo es
-     *     gastar los intentos hasta matar el evento por un motivo que no va a cambiar
+     *     gastar el plazo entero hasta matar el evento por un motivo que no va a cambiar. Que
+     *     respuesta es un rechazo lo decide {@code ClienteHttpDelSistemaDeOrigen.veredictoDe}
+     *     (#131)
      */
     void entregar(EventoDePago evento);
 
