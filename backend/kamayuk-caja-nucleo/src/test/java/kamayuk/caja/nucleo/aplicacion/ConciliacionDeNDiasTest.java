@@ -145,7 +145,10 @@ class ConciliacionDeNDiasTest {
                                 new BuzonHttpDelSistemaDeOrigen(cliente),
                                 muertos -> {},
                                 8));
-        conciliacion = envolver(new ConciliacionDelDia(buzon, new AbonosAplicadosHttp(cliente)));
+        // Sin envolver: desde #133 el caso de uso no lleva transaccion; la lleva su lectura.
+        conciliacion =
+                new ConciliacionDelDia(
+                        envolver(new LeerElRecuento(buzon)), new AbonosAplicadosHttp(cliente));
         sembrarVentanilla();
         cobrarDeCadaDia(jdbc, auditoria, eventos);
     }
