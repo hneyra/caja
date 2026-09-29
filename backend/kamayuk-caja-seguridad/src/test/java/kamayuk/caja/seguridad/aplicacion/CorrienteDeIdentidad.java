@@ -1,6 +1,7 @@
 package kamayuk.caja.seguridad.aplicacion;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.UUID;
 import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
+import org.jspecify.annotations.Nullable;
 
 /**
  * El buzon de {@code identidad} de mentira, sirviendo <b>la corriente de eventos de verdad</b>: la
@@ -44,6 +46,15 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
     static final String GRUPO_DE_ADMINISTRACION = "Administracion del sistema";
     static final String GRUPO_DE_CONSUMIDORES = "Consumidores del buzon";
     static final String QUIEN = "implantacion";
+
+    /**
+     * Los ids de {@code identidad} del administrador y de su grupo en {@link #deUnaImplantacion}.
+     * Un evento posterior que hable de ellos tiene que llevar ESTOS: la copia casa por el sujeto
+     * (#111), y con otro id seria otra cuenta que se llama igual.
+     */
+    static final long ADMINISTRADOR_ID = 1;
+
+    static final long GRUPO_DE_ADMINISTRACION_ID = 1;
 
     private final List<EventoDeIdentidadRecibido> corriente;
     private final Set<UUID> acusados = new HashSet<>();
@@ -155,6 +166,113 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
         return new CorrienteDeIdentidad(eventos);
     }
 
+    /**
+     * Lo que la municipalidad hace DESPUES en {@code identidad} con su administracion (#138):
+     * inhabilitar una cuenta, dejarla vencer, darle una excepcion, desafiliarla o dar de alta a
+     * otra. Son los mismos cuerpos que {@code HechoDeIdentidad} compone para esos actos.
+     *
+     * <p>Se sirven en una corriente <b>aparte</b>, como los sirve el emisor: lo de la implantacion
+     * ya esta acusado y no vuelve.
+     */
+    static Despues despues(Instant cuando) {
+        return new Despues(cuando);
+    }
+
+    /** Los actos de la administracion de {@code identidad}, en el orden en que se hacen. */
+    static final class Despues {
+
+        private final List<EventoDeIdentidadRecibido> eventos = new ArrayList<>();
+        private final Instant cuando;
+
+        /** Por encima de cualquier corriente de implantacion, como en el emisor. */
+        private long secuencia = 1000;
+
+        private Despues(Instant cuando) {
+            this.cuando = cuando;
+        }
+
+        /** {@code inhabilitarUsuario}: la cuenta sigue en la copia, y el guardia le niega todo. */
+        Despues inhabilita(long usuarioId, String cuenta) {
+            eventos.add(
+                    usuario(
+                            ++secuencia,
+                            "USUARIO_MODIFICADO",
+                            usuarioId,
+                            cuenta,
+                            "Administrador del Sistema",
+                            false,
+                            null,
+                            cuando));
+            return this;
+        }
+
+        /** {@code PUT …/vigencia}: la cuenta concede hasta {@code hasta}, inclusive. */
+        Despues leVence(long usuarioId, String cuenta, LocalDate hasta) {
+            eventos.add(
+                    usuario(
+                            ++secuencia,
+                            "USUARIO_MODIFICADO",
+                            usuarioId,
+                            cuenta,
+                            "Administrador del Sistema",
+                            true,
+                            hasta,
+                            cuando));
+            return this;
+        }
+
+        /** Una cuenta nueva, afiliada a un grupo que la copia ya tiene. */
+        Despues daDeAltaYAfilia(long usuarioId, String cuenta, long grupoId, String grupo) {
+            daDeAlta(usuarioId, cuenta);
+            eventos.add(miembro(++secuencia, grupoId, grupo, usuarioId, cuenta, true, cuando));
+            return this;
+        }
+
+        /** Una cuenta nueva, sin grupo: lo que pueda se lo daran sus excepciones. */
+        Despues daDeAlta(long usuarioId, String cuenta) {
+            eventos.add(
+                    usuario(
+                            ++secuencia,
+                            "USUARIO_DADO_DE_ALTA",
+                            usuarioId,
+                            cuenta,
+                            "Cuenta nominal " + cuenta,
+                            true,
+                            null,
+                            cuando));
+            return this;
+        }
+
+        /**
+         * Una excepcion de la cuenta sobre una opcion de {@code caja}: concede los siete
+         * privilegios MENOS {@code niega}. Por la precedencia del guardia, en esa opcion sustituye
+         * a sus grupos — que es como se separan funciones sin sacar a nadie del grupo.
+         */
+        Despues fijaUnaExcepcion(long usuarioId, String cuenta, String codigo, Privilegio niega) {
+            eventos.add(
+                    permiso(
+                            ++secuencia,
+                            "USUARIO",
+                            usuarioId,
+                            cuenta,
+                            "caja",
+                            codigo,
+                            niega,
+                            cuando));
+            return this;
+        }
+
+        /** {@code MIEMBRO_DESAFILIADO}: la pertenencia queda, inactiva. */
+        Despues desafilia(long grupoId, String grupo, long usuarioId, String cuenta) {
+            eventos.add(miembro(++secuencia, grupoId, grupo, usuarioId, cuenta, false, cuando));
+            return this;
+        }
+
+        CorrienteDeIdentidad corriente() {
+            return new CorrienteDeIdentidad(eventos);
+        }
+    }
+
     /** Cuantos eventos trae la corriente entera. */
     int total() {
         return corriente.size();
@@ -206,6 +324,19 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
 
     private static EventoDeIdentidadRecibido usuario(
             long secuencia, long usuarioId, String cuenta, String nombre, Instant creadoEn) {
+        return usuario(
+                secuencia, "USUARIO_DADO_DE_ALTA", usuarioId, cuenta, nombre, true, null, creadoEn);
+    }
+
+    private static EventoDeIdentidadRecibido usuario(
+            long secuencia,
+            String tipo,
+            long usuarioId,
+            String cuenta,
+            String nombre,
+            boolean habilitado,
+            @Nullable LocalDate vigenciaHasta,
+            Instant creadoEn) {
         String cuerpo =
                 "{\"usuarioId\":"
                         + usuarioId
@@ -213,9 +344,12 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
                         + cuenta
                         + "\",\"nombre\":\""
                         + nombre
-                        + "\",\"correo\":null,\"habilitado\":true,\"vigenciaDesde\":null,"
-                        + "\"vigenciaHasta\":null}";
-        return evento(secuencia, "USUARIO_DADO_DE_ALTA", usuarioId, cuerpo, creadoEn);
+                        + "\",\"correo\":null,\"habilitado\":"
+                        + habilitado
+                        + ",\"vigenciaDesde\":null,\"vigenciaHasta\":"
+                        + (vigenciaHasta == null ? "null" : "\"" + vigenciaHasta + "\"")
+                        + "}";
+        return evento(secuencia, tipo, usuarioId, cuerpo, creadoEn);
     }
 
     private static EventoDeIdentidadRecibido miembro(
@@ -225,6 +359,19 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
             long usuarioId,
             String cuenta,
             Instant creadoEn) {
+        return miembro(secuencia, grupoId, grupoNombre, usuarioId, cuenta, true, creadoEn);
+    }
+
+    private static EventoDeIdentidadRecibido miembro(
+            long secuencia,
+            long grupoId,
+            String grupoNombre,
+            long usuarioId,
+            String cuenta,
+            boolean activo,
+            Instant creadoEn) {
+        // `usuarioAlta` o `usuarioBaja`, el que corresponda y el otro nulo: como el emisor.
+        String quien = "\"" + QUIEN + "\"";
         String cuerpo =
                 "{\"grupoId\":"
                         + grupoId
@@ -234,11 +381,20 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
                         + usuarioId
                         + ",\"usuarioCuenta\":\""
                         + cuenta
-                        + "\",\"activo\":true,\"usuarioAlta\":\""
-                        + QUIEN
-                        + "\",\"usuarioBaja\":null}";
+                        + "\",\"activo\":"
+                        + activo
+                        + ",\"usuarioAlta\":"
+                        + (activo ? quien : "null")
+                        + ",\"usuarioBaja\":"
+                        + (activo ? "null" : quien)
+                        + "}";
         // El sujeto de una afiliacion es el GRUPO, como en el emisor.
-        return evento(secuencia, "MIEMBRO_AFILIADO", grupoId, cuerpo, creadoEn);
+        return evento(
+                secuencia,
+                activo ? "MIEMBRO_AFILIADO" : "MIEMBRO_DESAFILIADO",
+                grupoId,
+                cuerpo,
+                creadoEn);
     }
 
     private static EventoDeIdentidadRecibido permiso(
@@ -248,6 +404,19 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
             String sistema,
             String codigo,
             Instant creadoEn) {
+        return permiso(secuencia, "GRUPO", grupoId, grupoNombre, sistema, codigo, null, creadoEn);
+    }
+
+    /** La matriz ENTERA, como la publica el emisor: los siete, y {@code niega} en falso. */
+    private static EventoDeIdentidadRecibido permiso(
+            long secuencia,
+            String sujeto,
+            long sujetoId,
+            String sujetoNombre,
+            String sistema,
+            String codigo,
+            @Nullable Privilegio niega,
+            Instant creadoEn) {
         StringBuilder privilegios = new StringBuilder("{");
         boolean primero = true;
         for (Privilegio privilegio : Privilegio.values()) {
@@ -255,14 +424,20 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
                 privilegios.append(',');
             }
             primero = false;
-            privilegios.append('"').append(privilegio.columna()).append("\":true");
+            privilegios
+                    .append('"')
+                    .append(privilegio.columna())
+                    .append("\":")
+                    .append(privilegio != niega);
         }
         privilegios.append('}');
         String cuerpo =
-                "{\"sujeto\":\"GRUPO\",\"sujetoId\":"
-                        + grupoId
+                "{\"sujeto\":\""
+                        + sujeto
+                        + "\",\"sujetoId\":"
+                        + sujetoId
                         + ",\"sujetoNombre\":\""
-                        + grupoNombre
+                        + sujetoNombre
                         + "\",\"sistema\":\""
                         + sistema
                         + "\",\"codigo\":\""
@@ -272,7 +447,7 @@ final class CorrienteDeIdentidad implements FuenteDeEventosDeIdentidad {
                         + ",\"usuarioRegistro\":\""
                         + QUIEN
                         + "\"}";
-        return evento(secuencia, "PERMISO_FIJADO", grupoId, cuerpo, creadoEn);
+        return evento(secuencia, "PERMISO_FIJADO", sujetoId, cuerpo, creadoEn);
     }
 
     private static EventoDeIdentidadRecibido evento(
