@@ -135,6 +135,22 @@ const CONSUMIDOR_DE_IDENTIDAD = {
   url: 'http://identidad-sistema:8080/identidad/api/v1',
 };
 
+/** El `id` DECLARADO de la municipalidad (#132, la mitad de caja de infrastructure#73), que
+    la implantacion escribe en vez de pedirlo a la secuencia. Del mismo numero sale el claim
+    `municipalidad_id` de cada token, asi que el compose tiene que pasarlo, y pasar EL QUE
+    SE DECLARA: `levantar-todo.sh` de `infrastructure` exporta `KAMAYUK_MUNICIPALIDAD_ID`
+    derivado de `municipalidades/<ubigeo>.json`. Sin ella, 1 —lo que una base recien creada
+    daba—, como en el compose de `identidad`. Se comprueban las dos mitades porque un `1`
+    escrito a mano cumpliria la primera y es justo la coincidencia que #132 deja de dar por
+    buena. */
+const ID_DECLARADO = {
+  servicio: 'caja-implantacion',
+  propiedad: 'KAMAYUK_IMPLANTACION_MUNICIPALIDADID',
+  variable: 'KAMAYUK_MUNICIPALIDAD_ID',
+  porOmision: '1',
+  declarado: '42',
+};
+
 /** La red de la plataforma, que este compose USA y no crea. Sin `external: true`
     Compose crearia una segunda con el mismo nombre y los servicios no verian a `base`;
     el sintoma seria «Connection refused», que se lee como que el motor no esta
@@ -151,7 +167,10 @@ console.log(`Compose: ${compose.join(' ')} (${version(compose)})`);
 console.log(`Archivo: ${COMPOSE}`);
 console.log('');
 
-laFormaDelArchivo(resolver(elContratoConElEntorno()));
+const conTodas = elContratoConElEntorno();
+const resuelto = resolver(conTodas);
+laFormaDelArchivo(resuelto);
+elIdDeclaradoDeLaMunicipalidad(resuelto, conTodas);
 
 console.log('');
 if (fallos.length > 0) {
@@ -308,6 +327,35 @@ function elConsumidorDeIdentidad(config) {
       + ` publicador. Lo que cambia en la etapa 5 es lo que cuesta no ponerla: la pasada del`
       + ` consumidor recibe 401, y la implantacion FALLA en vez de terminar callando`,
     `llega con valor «${entorno.KAMAYUK_IDENTIDAD_CREDENCIAL}» sin que nadie la haya puesto`,
+  );
+}
+
+/** El id declarado de la municipalidad (#132): sin la variable, el de por omision; con
+    ella, el que diga. La segunda mitad resuelve el archivo otra vez, con la variable puesta. */
+function elIdDeclaradoDeLaMunicipalidad(config, entorno) {
+  const { servicio, propiedad, variable, porOmision, declarado } = ID_DECLARADO;
+  const sinDeclarar = config.services?.[servicio]?.environment?.[propiedad];
+  anotar(
+    sinDeclarar === porOmision,
+    `«${servicio}» pasa ${propiedad}, y sin ${variable} vale ${porOmision} (#132)`,
+    sinDeclarar === undefined
+      ? 'no la pasa: la fila de `municipalidad` saldria con el id que diera la secuencia, y el'
+        + ' claim `municipalidad_id` de cada token con otro — 403 a cada cajero con la fila delante'
+      : `vale «${sinDeclarar}»`,
+  );
+
+  const conElDeclarado = ejecutar(['config', '--format', 'json'], {
+    ...entorno,
+    [variable]: declarado,
+  });
+  const valor =
+    conElDeclarado.codigo === 0
+      ? JSON.parse(conElDeclarado.salida).services?.[servicio]?.environment?.[propiedad]
+      : undefined;
+  anotar(
+    valor === declarado,
+    `y con ${variable}=${declarado} vale ${declarado}: sigue al declarado, no a un numero escrito`,
+    conElDeclarado.codigo === 0 ? `vale «${valor}»` : `no resuelve: ${conElDeclarado.salida.trim()}`,
   );
 }
 

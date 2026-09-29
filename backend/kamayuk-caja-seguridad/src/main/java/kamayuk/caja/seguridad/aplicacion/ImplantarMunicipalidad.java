@@ -49,8 +49,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>Corre en el perfil {@code batch}: sin servidor web, sin puerto expuesto y con vida corta. Las
  * credenciales de {@code kamayuk_owner} entran <b>solo</b> en el paso 1, para <b>un</b> {@code
- * INSERT}, en una conexion que se abre y se cierra. Todo lo demas va por el camino normal de la
- * aplicacion, como {@code kamayuk_app} y con su auditoria.
+ * INSERT} —con el id DECLARADO, y el {@code setval} que eso obliga a hacer (#132)—, en una conexion
+ * que se abre y se cierra. Todo lo demas va por el camino normal de la aplicacion, como {@code
+ * kamayuk_app} y con su auditoria.
  *
  * <h2>Ni un grupo, ni un usuario, ni un permiso: eso es de {@code identidad} (ADR-0039, etapa 5)
  * </h2>
@@ -140,13 +141,23 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
         // que empieza a escribir para descubrirlo al final deja la municipalidad a medias.
         CorrerElConsumidorDeIdentidad pasada = exigirElConsumidor();
 
-        long municipalidadId =
-                registro.darDeAltaSiFalta(
-                        datos.ubigeo(), datos.nombre(), datos.tipo(), datos.esDemostracion());
+        registro.darDeAltaSiFalta(
+                datos.ubigeo(),
+                datos.municipalidadId(),
+                datos.nombre(),
+                datos.tipo(),
+                datos.esDemostracion());
 
         // El perfil batch no tiene filtros HTTP, asi que los dos contextos que en una peticion
         // salen del token se fijan aqui a mano. `Origen.deProceso` existe para esto: una escritura
         // sin peticion detras, que aun asi tiene que decir quien.
+        //
+        // Y el de municipalidad se fija con el id DECLARADO, no con el que la base tenga (#132):
+        // es el que lleva el claim de cada token, asi que la siembra y la postcondicion miran la
+        // municipalidad desde donde la va a mirar el primer cajero. Hasta #132 se fijaba con el
+        // que devolvia el registro, y un desacuerdo entre los dos pasaba la postcondicion en
+        // verde —comprobada bajo el id de la fila— y daba 403 en la primera peticion.
+        long municipalidadId = datos.municipalidadId();
         TenantContext.fijar(new MunicipalidadId(municipalidadId));
         OrigenContext.fijar(Origen.deProceso(datos.usuarioDelProceso()));
         try {

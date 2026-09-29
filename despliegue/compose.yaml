@@ -120,6 +120,16 @@ services:
       # impide ahora apuntar esta implantacion con las variables de otro no es que el
       # nombre difiera, sino la guarda que compara cada descriptor con SU Java.
       KAMAYUK_IMPLANTACION_UBIGEO: ${KAMAYUK_UBIGEO:?falta KAMAYUK_UBIGEO en el .env de la plataforma}
+      # El `id` con el que se escribe la fila de `municipalidad`, DECLARADO y no pedido a
+      # la secuencia (#132, la mitad de caja de infrastructure#73). De el sale el claim
+      # `municipalidad_id` de todo token, y con la secuencia la base elegia el suyo sin
+      # que nada lo comparara: el sintoma era 403 a cada cajero CON LA FILA DELANTE.
+      #
+      # Por omision 1, como en `identidad`: es lo que una base recien creada asignaba, asi
+      # que una instalacion local no tiene que declararlo, y una que ya exista con otro id
+      # falla diciendolo en vez de seguir con el claim desalineado. `levantar-todo.sh` de
+      # `infrastructure` lo exporta derivado de `municipalidades/<ubigeo>.json`.
+      KAMAYUK_IMPLANTACION_MUNICIPALIDADID: ${KAMAYUK_MUNICIPALIDAD_ID:-1}
       KAMAYUK_IMPLANTACION_NOMBRE: ${KAMAYUK_MUNICIPALIDAD:?falta KAMAYUK_MUNICIPALIDAD en el .env de la plataforma}
       KAMAYUK_IMPLANTACION_TIPO: ${KAMAYUK_TIPO_DE_MUNICIPALIDAD:-DISTRITAL}
       # La cuenta TIENE que ser la misma que el usuario de Keycloak: es lo unico

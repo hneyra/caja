@@ -125,6 +125,14 @@ class ImplantacionDeCeroJdbcTest {
         arnes.implantacion().run(new DefaultApplicationArguments());
 
         long municipalidad = idDe(ubigeo);
+        assertThat(municipalidad)
+                .as(
+                        "[#132: la fila se escribio con el id que asigno la SECUENCIA y no con el"
+                                + " declarado. El claim `municipalidad_id` de cada token lleva el"
+                                + " declarado, asi que todo lo de abajo —comprobado bajo el id de la"
+                                + " fila— sale verde y el primer cajero recibe 403 con la fila"
+                                + " delante]")
+                .isEqualTo(declaradoPara(ubigeo));
         assertThat(contar(municipalidad, "usuario", "true"))
                 .as(
                         "[AC-2: el administrador y las cuatro cuentas de servicio, TODOS del buzon."
@@ -316,6 +324,53 @@ class ImplantacionDeCeroJdbcTest {
     }
 
     // ------------------------------------------------------------------
+    //  #132 — el id de la municipalidad es el DECLARADO
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "#132: una municipalidad que la secuencia dio de alta con OTRO id no se implanta: falla"
+                    + " nombrando los dos numeros, sin sembrar nada ni leer el buzon")
+    void unaFilaConOtroIdNoSeImplanta() throws SQLException {
+        String ubigeo = "209919";
+        long legado = altaComoAntesDe132(ubigeo);
+        long declarado = declaradoPara(ubigeo);
+        assertThat(legado)
+                .as("premisa: la secuencia dio un id distinto del declarado, o esto no mide nada")
+                .isNotEqualTo(declarado);
+        CorrienteDeIdentidad buzon =
+                CorrienteDeIdentidad.deUnaImplantacion(ubigeo, ADMINISTRADOR, codigos(), AHORA);
+
+        Throwable rojo =
+                catchThrowable(
+                        () ->
+                                new Arnes(ubigeo, buzon)
+                                        .implantacion()
+                                        .run(new DefaultApplicationArguments()));
+
+        // `catchThrowable` y no `assertThatThrownBy`: si no se lanza nada, la descripcion tiene
+        // que llegar a leerse (la leccion de `rentas`#40).
+        assertThat(rojo)
+                .as(
+                        "[#132: la fila la dio de alta la secuencia, como hacia la implantacion"
+                                + " hasta ahora, y el ambiente declara otro id. Seguir deja el claim"
+                                + " de cada token apuntando a un inquilino sin una sola fila —403 a"
+                                + " cada cajero— y la postcondicion no lo veia, porque se comprobaba"
+                                + " bajo el id de la fila]")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ya esta dada de alta en caja con el id " + legado)
+                .hasMessageContaining("lo declarado es " + declarado)
+                .hasMessageContaining("kamayuk.implantacion.municipalidad-id");
+        assertThat(idDe(ubigeo)).as("y la fila no se toco").isEqualTo(legado);
+        assertThat(contar(legado, "acceso", "true") + contar(declarado, "acceso", "true"))
+                .as("ni se sembro el catalogo, bajo ninguno de los dos ids")
+                .isZero();
+        assertThat(buzon.lecturas)
+                .as("ni se leyo el buzon: la copia local no se trae a un inquilino equivocado")
+                .isZero();
+    }
+
+    // ------------------------------------------------------------------
     //  Lo que sostiene a los de arriba
     // ------------------------------------------------------------------
 
@@ -437,6 +492,7 @@ class ImplantacionDeCeroJdbcTest {
                     sembrador,
                     new DatosDeImplantacion(
                             ubigeo,
+                            declaradoPara(ubigeo),
                             "Municipalidad de la prueba " + ubigeo,
                             "DISTRITAL",
                             ADMINISTRADOR,
@@ -587,6 +643,35 @@ class ImplantacionDeCeroJdbcTest {
                 return consumidor;
             }
         };
+    }
+
+    /**
+     * El id que el ambiente declara para ese ubigeo (#132): los dos ultimos digitos, en miles.
+     *
+     * <p>Dos condiciones, y las dos importan. Uno que la secuencia <b>no</b> habria dado —en una
+     * base recien creada tambien da 1, y afirmar «vale 1» no distinguiria un id declarado de uno
+     * asignado—. Y multiplos de mil porque las pruebas comparten base: la fila que {@link
+     * #altaComoAntesDe132} pide a la secuencia recibe el mayor id que haya mas uno, que nunca es
+     * multiplo de mil, asi que no puede quitarle el suyo a otra prueba sea cual sea el orden.
+     */
+    private static long declaradoPara(String ubigeo) {
+        return Long.parseLong(ubigeo.substring(4)) * 1000;
+    }
+
+    /** La fila como la dejaba la implantacion hasta #132: sin id, el que diera la secuencia. */
+    private static long altaComoAntesDe132(String ubigeo) throws SQLException {
+        try (Connection admin = base.conexionAdmin();
+                PreparedStatement sentencia =
+                        admin.prepareStatement(
+                                "INSERT INTO municipalidad (ubigeo, nombre, tipo)"
+                                        + " VALUES (?, ?, 'DISTRITAL') RETURNING id")) {
+            sentencia.setString(1, ubigeo);
+            sentencia.setString(2, "Municipalidad implantada antes de #132");
+            try (ResultSet fila = sentencia.executeQuery()) {
+                fila.next();
+                return fila.getLong(1);
+            }
+        }
     }
 
     private static long idDe(String ubigeo) throws SQLException {

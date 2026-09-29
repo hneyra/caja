@@ -15,7 +15,9 @@
 # cobranza del dia falla con CajaInexistente (#430).
 #
 # El municipalidad-id se obtiene de municipalidad.id (lo deja implantacion en el log, o
-# se consulta con "SELECT id FROM municipalidad WHERE ubigeo = ...").
+# se consulta con "SELECT id FROM municipalidad WHERE ubigeo = ..."). Desde #132 es el que
+# el ambiente declara (kamayuk:municipalidadId): la implantacion lo escribe en vez de
+# pedirlo a la secuencia, y falla si la fila ya esta con otro.
 #
 #
 # ESTE GUION VIVE EN EL REPOSITORIO DE SU PROCESO, y no es una preferencia (C-6): un guion
