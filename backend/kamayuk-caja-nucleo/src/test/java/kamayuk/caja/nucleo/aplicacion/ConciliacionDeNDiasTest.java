@@ -12,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
 import kamayuk.caja.nucleo.dominio.OrdenDeCobroRepository;
 import kamayuk.caja.nucleo.dominio.Pagador;
+import kamayuk.caja.nucleo.dominio.ReintentosDeLaEntrega;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.AbonosAplicadosHttp;
 import kamayuk.caja.nucleo.infraestructura.BuzonDeSalidaJdbc;
@@ -144,7 +146,9 @@ class ConciliacionDeNDiasTest {
                                 envolver(new AnotarLaEntrega(buzon, relojDe(PRIMER_DIA))),
                                 new BuzonHttpDelSistemaDeOrigen(cliente),
                                 muertos -> {},
-                                8));
+                                new ReintentosDeLaEntrega(
+                                        Duration.ofMinutes(10), Duration.ofHours(24)),
+                                relojDe(PRIMER_DIA)));
         conciliacion = envolver(new ConciliacionDelDia(buzon, new AbonosAplicadosHttp(cliente)));
         sembrarVentanilla();
         cobrarDeCadaDia(jdbc, auditoria, eventos);

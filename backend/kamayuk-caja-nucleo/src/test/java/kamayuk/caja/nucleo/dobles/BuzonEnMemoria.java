@@ -23,10 +23,12 @@ import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
  * un evento que todavia esta en camino, el turno cerraria y el pago no llegaria nunca.
  *
  * <p>Reproduce tambien la guarda de {@link #marcarFallido} sobre los intentos leidos (#109), que es
- * lo que impide que dos publicadores cuenten dos veces la misma caida. Lo que <b>no</b> puede
- * demostrar es que cada evento se marque en su propia transaccion —aqui no hay transacciones— ni
- * que la fila del buzon y la del recibo se escriban en la misma, que es la razon entera de que el
- * buzon exista. Las dos se prueban contra PostgreSQL.
+ * lo que impide que dos publicadores cuenten dos veces la misma caida; el filtro de {@link
+ * #pendientes} por {@code no_antes_de} y la racha de {@code fallando_desde} (#131); y la guarda de
+ * {@link #reencolar}, que solo saca de MUERTO y lanza si no, como el {@code UPDATE} de la tabla. Lo
+ * que <b>no</b> puede demostrar es que cada evento se marque en su propia transaccion —aqui no hay
+ * transacciones— ni que la fila del buzon y la del recibo se escriban en la misma, que es la razon
+ * entera de que el buzon exista. Las dos se prueban contra PostgreSQL.
  *
  * <p>{@link #recuentoDe} <b>no agrega nada</b>: devuelve lo que se le declara, igual que {@code
  * RecaudacionEnMemoria} y por lo mismo. La cuenta real cruza {@code pago_evento} con {@code
@@ -75,15 +77,18 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
                         evento.ultimoError(),
                         evento.creadoEn(),
                         evento.entregadoEn(),
-                        evento.explicacion());
+                        evento.explicacion(),
+                        evento.noAntesDe(),
+                        evento.fallandoDesde());
         porId.put(id, guardado);
         return guardado;
     }
 
     @Override
-    public List<EventoDePago> pendientes(int cuantos) {
+    public List<EventoDePago> pendientes(Instant ahora, int cuantos) {
         return porId.values().stream()
                 .filter(evento -> evento.estado() == EstadoDelEvento.PENDIENTE)
+                .filter(evento -> evento.noAntesDe() == null || !evento.noAntesDe().isAfter(ahora))
                 .sorted(Comparator.comparing(EventoDePago::idGuardado))
                 .limit(cuantos)
                 .toList();
@@ -101,11 +106,14 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
                                 evento.intentos() + 1,
                                 null,
                                 cuando,
-                                evento.explicacion()));
+                                evento.explicacion(),
+                                null,
+                                null));
     }
 
     @Override
-    public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
+    public void marcarFallido(
+            long id, int intentosLeidos, String error, Instant cuando, Instant noAntesDe) {
         EventoDePago leido = porId.get(id);
         if (leido == null || leido.intentos() != intentosLeidos) {
             // La misma guarda que el `AND intentos = :leidos` de la tabla: otro ya lo conto.
@@ -117,11 +125,37 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
                 evento ->
                         rehacer(
                                 evento,
-                                seAgotaron ? EstadoDelEvento.MUERTO : EstadoDelEvento.PENDIENTE,
+                                noAntesDe == null
+                                        ? EstadoDelEvento.MUERTO
+                                        : EstadoDelEvento.PENDIENTE,
                                 evento.intentos() + 1,
                                 error,
                                 evento.entregadoEn(),
-                                evento.explicacion()));
+                                evento.explicacion(),
+                                noAntesDe,
+                                // El `coalesce(fallando_desde, :cuando)` de la tabla.
+                                evento.fallandoDesde() == null ? cuando : evento.fallandoDesde()));
+    }
+
+    /** Solo desde MUERTO, y si no lanza: el {@code WHERE estado = 'MUERTO'} de la tabla. */
+    @Override
+    public void reencolar(long id) {
+        EventoDePago evento = porId.get(id);
+        if (evento == null || evento.estado() != EstadoDelEvento.MUERTO) {
+            throw new IllegalStateException(
+                    "Solo se vuelve a poner en camino un evento MUERTO. El " + id + " no lo esta");
+        }
+        porId.put(
+                id,
+                rehacer(
+                        evento,
+                        EstadoDelEvento.PENDIENTE,
+                        evento.intentos(),
+                        evento.ultimoError(),
+                        evento.entregadoEn(),
+                        evento.explicacion(),
+                        null,
+                        null));
     }
 
     /**
@@ -150,7 +184,9 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
                         evento.intentos(),
                         evento.ultimoError(),
                         evento.entregadoEn(),
-                        explicacion));
+                        explicacion,
+                        null,
+                        evento.fallandoDesde()));
     }
 
     @Override
@@ -215,7 +251,9 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
             int intentos,
             String ultimoError,
             Instant entregadoEn,
-            String explicacion) {
+            String explicacion,
+            Instant noAntesDe,
+            Instant fallandoDesde) {
         return new EventoDePago(
                 evento.id(),
                 evento.eventoId(),
@@ -232,6 +270,8 @@ public final class BuzonEnMemoria implements BuzonDeSalida {
                 // entrego antes de cobrarse.
                 evento.creadoEn(),
                 entregadoEn,
-                explicacion);
+                explicacion,
+                noAntesDe,
+                fallandoDesde);
     }
 }

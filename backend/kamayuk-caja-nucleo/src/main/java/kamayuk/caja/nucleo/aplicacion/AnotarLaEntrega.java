@@ -1,6 +1,7 @@
 package kamayuk.caja.nucleo.aplicacion;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
@@ -32,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <h2>Ninguna transaccion abierta mientras se habla con el origen</h2>
  *
- * <p>Los cuatro metodos abren y cierran la suya ({@link Propagation#REQUIRES_NEW}): la de fuera, la
+ * <p>Los cinco metodos abren y cierran la suya ({@link Propagation#REQUIRES_NEW}): la de fuera, la
  * del recorrido, queda suspendida y sin candados. Ni siquiera la lectura de lo pendiente se hace en
  * la de fuera: un {@code SELECT} deja un {@code ACCESS SHARE} sobre {@code pago_evento} hasta que
  * su transaccion acaba, y una migracion que quisiera alterar la tabla esperaria detras de todos los
@@ -49,10 +50,14 @@ public class AnotarLaEntrega {
         this.reloj = reloj;
     }
 
-    /** Lo pendiente, leido y soltado: al volver no queda ninguna fila tomada. */
+    /**
+     * Lo que toca intentar a esa hora, leido y soltado: al volver no queda ninguna fila tomada.
+     *
+     * @param ahora el instante de la vuelta; lo que espera a un intento posterior se queda (#131)
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public List<EventoDePago> pendientes(int cuantos) {
-        return buzon.pendientes(cuantos);
+    public List<EventoDePago> pendientes(Instant ahora, int cuantos) {
+        return buzon.pendientes(ahora, cuantos);
     }
 
     /** El evento llego. */
@@ -63,19 +68,33 @@ public class AnotarLaEntrega {
     }
 
     /**
-     * El evento no llego: cuenta su intento y, si se agotaron, lo mata.
+     * El evento no llego y se vuelve a intentar: cuenta su intento y lo aplaza (#131).
      *
      * <p>Cuenta solo si nadie lo conto desde que se leyo —ver {@link BuzonDeSalida#marcarFallido}—,
      * que es lo que antes daba el {@code FOR UPDATE SKIP LOCKED}.
      *
      * @param evento tal como se leyo al empezar la vuelta: sus {@code intentos} son los esperados
      * @param error por que, ya recortado al largo de la columna
-     * @param seAgotaron si con este intento muere
+     * @param cuando el instante del fallo: si es el primero de la racha, desde aqui corre el plazo
+     * @param noAntesDe cuando se puede volver a intentar
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void fallido(EventoDePago evento, String error, boolean seAgotaron) {
+    public void aplazado(EventoDePago evento, String error, Instant cuando, Instant noAntesDe) {
         Objects.requireNonNull(evento, "No se anota un evento nulo");
-        buzon.marcarFallido(evento.idGuardado(), evento.intentos(), error, seAgotaron);
+        Objects.requireNonNull(noAntesDe, "Un evento aplazado dice hasta cuando");
+        buzon.marcarFallido(evento.idGuardado(), evento.intentos(), error, cuando, noAntesDe);
+    }
+
+    /**
+     * El evento no llego y no se vuelve a intentar solo: cuenta su intento y lo mata.
+     *
+     * <p>Por un rechazo del receptor, o porque se agoto el plazo. Salir de aqui exige a una persona
+     * y una observacion: {@code ReintentarPagoMuerto} o {@code ExplicarPagoSinEntregar}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void muerto(EventoDePago evento, String error, Instant cuando) {
+        Objects.requireNonNull(evento, "No se anota un evento nulo");
+        buzon.marcarFallido(evento.idGuardado(), evento.intentos(), error, cuando, null);
     }
 
     /** Los muertos, para la alerta. */

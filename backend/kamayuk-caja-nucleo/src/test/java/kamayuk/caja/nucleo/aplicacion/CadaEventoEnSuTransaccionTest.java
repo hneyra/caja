@@ -1,6 +1,7 @@
 package kamayuk.caja.nucleo.aplicacion;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.sql.Connection;
@@ -8,6 +9,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -28,6 +30,7 @@ import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.esquema.ContextoDeTenant;
+import kamayuk.caja.nucleo.dobles.RelojQueAvanza;
 import kamayuk.caja.nucleo.dominio.BuzonDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
@@ -36,16 +39,19 @@ import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.BuzonDeSalidaJdbc;
 import kamayuk.caja.nucleo.infraestructura.CajaRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
+import kamayuk.caja.nucleo.infraestructura.ConfiguracionDeLaEntrega;
 import kamayuk.caja.nucleo.infraestructura.OrdenDeCobroRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.PublicadorDelBuzon;
 import kamayuk.caja.nucleo.infraestructura.ReciboRepositoryJdbc;
 import kamayuk.caja.nucleo.infraestructura.TurnoDeCajaRepositoryJdbc;
 import kamayuk.caja.plataforma.RecorridoPorMunicipalidades;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -90,15 +96,23 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("#109 — cada evento del buzon se entrega en su propia transaccion")
 class CadaEventoEnSuTransaccionTest {
 
-    private static final Clock RELOJ =
-            Clock.fixed(Instant.parse("2026-03-16T14:00:00Z"), ZoneOffset.UTC);
+    /**
+     * Un reloj que la prueba mueve: desde #131 un evento muere al agotar un PLAZO, y con un reloj
+     * parado no se agota nunca.
+     */
+    private static final RelojQueAvanza RELOJ =
+            new RelojQueAvanza(Instant.parse("2026-03-16T14:00:00Z"), ZoneOffset.UTC);
 
     private static final LocalDate HOY = LocalDate.of(2026, 3, 16);
 
     private static final SistemaDeOrigen RENTAS = SistemaDeOrigen.de("rentas");
 
-    /** Dos, para que la segunda vuelta que falla mate el evento. */
-    private static final int INTENTOS = 2;
+    /**
+     * El plazo de la entrega en esta prueba (#131). Corto, para que la segunda vuelta que falla
+     * —con el reloj movido esto— mate el evento; va por las propiedades de verdad, que lee {@link
+     * ConfiguracionDeLaEntrega}, y no construido a mano.
+     */
+    private static final Duration PLAZO = Duration.ofMinutes(1);
 
     private static BaseDeDatosDePrueba base;
     private static long municipalidad;
@@ -126,7 +140,12 @@ class CadaEventoEnSuTransaccionTest {
                 .getPropertySources()
                 .addFirst(
                         new MapPropertySource(
-                                "prueba", Map.of("kamayuk.caja.entrega.intentos", INTENTOS)));
+                                "prueba",
+                                Map.of(
+                                        "kamayuk.caja.entrega.espera-maxima",
+                                        "PT10S",
+                                        "kamayuk.caja.entrega.plazo",
+                                        PLAZO.toString())));
         contexto.registerBean(DataSource.class, () -> pool);
         contexto.registerBean(
                 PlatformTransactionManager.class, () -> new TenantTransactionManager(pool));
@@ -147,6 +166,7 @@ class CadaEventoEnSuTransaccionTest {
                 RegistrarOrdenDeCobro.class,
                 AbrirCaja.class,
                 CobrarOrdenes.class,
+                ReintentarPagoMuerto.class,
                 RecorridoPorMunicipalidades.class);
         registrarLaEntrega(contexto);
         contexto.refresh();
@@ -161,7 +181,8 @@ class CadaEventoEnSuTransaccionTest {
 
     /** Lo que entrega, tal como lo cablearia el perfil {@code publicador}. */
     private static void registrarLaEntrega(AnnotationConfigApplicationContext contexto) {
-        contexto.register(AnotarLaEntrega.class, EntregarEventos.class);
+        contexto.register(
+                ConfiguracionDeLaEntrega.class, AnotarLaEntrega.class, EntregarEventos.class);
     }
 
     @AfterAll
@@ -226,15 +247,16 @@ class CadaEventoEnSuTransaccionTest {
     }
 
     @Test
-    @DisplayName("agotados los intentos por un fallo inesperado, el evento MUERE y avisa")
+    @DisplayName("agotado el plazo por un fallo inesperado, el evento MUERE y avisa")
     void elFalloInesperadoTambienMata() {
         List<UUID> pagos = cobrarTres("B");
         destino.queFallan.add(pagos.get(0));
 
         publicador.publicar();
+        RELOJ.avanzar(PLAZO);
         publicador.publicar();
 
-        assertThat(estadoDe(pagos.get(0))).isEqualTo(new Fila("MUERTO", INTENTOS));
+        assertThat(estadoDe(pagos.get(0))).isEqualTo(new Fila("MUERTO", 2));
         assertThat(alerta.avisados())
                 .as("es dinero cobrado sin registrar: se avisa como a cualquier otro muerto")
                 .contains(pagos.get(0));
@@ -251,12 +273,12 @@ class CadaEventoEnSuTransaccionTest {
 
         TenantContext.fijar(new MunicipalidadId(municipalidad));
         EventoDePago leidoPorLosDos =
-                anotar.pendientes(500).stream()
+                anotar.pendientes(RELOJ.instant(), 500).stream()
                         .filter(evento -> evento.eventoId().equals(pago))
                         .findFirst()
                         .orElseThrow();
-        anotar.fallido(leidoPorLosDos, "el primero no pudo", false);
-        anotar.fallido(leidoPorLosDos, "el segundo tampoco", false);
+        anotar.aplazado(leidoPorLosDos, "el primero no pudo", RELOJ.instant(), RELOJ.instant());
+        anotar.aplazado(leidoPorLosDos, "el segundo tampoco", RELOJ.instant(), RELOJ.instant());
 
         assertThat(estadoDe(pago))
                 .as(
@@ -264,6 +286,123 @@ class CadaEventoEnSuTransaccionTest {
                                 + " caida es que la marca solo cuenta si intentos sigue valiendo"
                                 + " lo que valia al leerlo")
                 .isEqualTo(new Fila("PENDIENTE", 1));
+    }
+
+    /**
+     * #131 — <b>el plazo vive en la fila</b>, y lo que el buzon en memoria de {@code
+     * UnaCaidaNoMataElPagoTest} da por hecho se mide aqui contra PostgreSQL, como {@code
+     * kamayuk_app}: que {@code pendientes} deje fuera lo que todavia espera, que la racha no se
+     * reinicie a cada fallo, y que volver a poner en camino un MUERTO pase la guarda del {@code
+     * UPDATE}, deje su auditoria y empiece una racha nueva.
+     *
+     * <p>Van aqui y no en una clase propia porque necesitan exactamente este contexto: el
+     * publicador de verdad, sus proxies, el recorrido por municipalidades y un destino que falla a
+     * voluntad. En esta prueba la espera maxima es de diez segundos y el plazo, {@link #PLAZO}.
+     */
+    @Nested
+    @DisplayName("#131 — el plazo en la base, y la vuelta de un MUERTO")
+    class ElPlazoEnLaBase {
+
+        @Test
+        @DisplayName(
+                "un aplazado no vuelve a salir antes de su hora, y la racha se cuenta desde el"
+                        + " primer fallo")
+        void unAplazadoEsperaASuHora() {
+            UUID pago = cobrarTres("D").get(0);
+            destino.queFallan.add(pago);
+            Instant primerFallo = RELOJ.instant();
+
+            publicador.publicar();
+            RELOJ.avanzar(Duration.ofSeconds(10));
+            publicador.publicar();
+
+            assertThat(plazoDe(pago))
+                    .as(
+                            "[dos fallos, a los 0 y a los 10 s: la racha empezo en el primero, y el"
+                                    + " siguiente intento espera lo que lleva fallando]")
+                    .isEqualTo(new Plazo("PENDIENTE", 2, primerFallo.plusSeconds(20), primerFallo));
+
+            publicador.publicar();
+            assertThat(destino.llamadas.get(pago))
+                    .as("[otra vuelta en el mismo instante: el pago espera y no se llama]")
+                    .isEqualTo(2);
+
+            RELOJ.avanzar(Duration.ofSeconds(10));
+            publicador.publicar();
+            assertThat(destino.llamadas.get(pago)).as("[llegada su hora, sale]").isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName(
+                "un MUERTO vuelve a ponerse en camino con su observacion, empieza otra racha y"
+                        + " llega con el MISMO pagoId")
+        void unMuertoVuelveAlCamino() throws SQLException {
+            UUID pago = cobrarTres("E").get(0);
+            destino.queFallan.add(pago);
+            publicador.publicar();
+            RELOJ.avanzar(PLAZO);
+            publicador.publicar();
+            assertThat(estadoDe(pago)).isEqualTo(new Fila("MUERTO", 2));
+
+            EventoDePago enCamino =
+                    reintentar(pago, "la ruta de rentas se corrigio en el despliegue de las 10");
+
+            assertThat(enCamino.eventoId()).isEqualTo(pago);
+            assertThat(plazoDe(pago))
+                    .as("[PENDIENTE, sin espera y sin racha; los intentos siguen contando]")
+                    .isEqualTo(new Plazo("PENDIENTE", 2, null, null));
+            assertThat(
+                            auditoriasDe(
+                                    pago,
+                                    "la ruta de rentas se corrigio en el despliegue de las 10"))
+                    .as("[el acto queda en la auditoria, con su observacion (regla 10)]")
+                    .isEqualTo(1);
+
+            publicador.publicar();
+            assertThat(estadoDe(pago))
+                    .as(
+                            "[sigue fallando: con la racha vieja, este primer fallo lo mataria otra"
+                                    + " vez sin haber esperado nada]")
+                    .isEqualTo(new Fila("PENDIENTE", 3));
+
+            destino.queFallan.remove(pago);
+            RELOJ.avanzar(Duration.ofSeconds(10));
+            publicador.publicar();
+            assertThat(estadoDe(pago)).isEqualTo(new Fila("ENTREGADO", 4));
+            assertThat(destino.llamadas.get(pago))
+                    .as("[siempre el mismo pagoId: el receptor deduplica por el]")
+                    .isEqualTo(4);
+        }
+
+        @Test
+        @DisplayName(
+                "solo desde MUERTO: la guarda esta en el UPDATE, y lo que no se hizo no se audita")
+        void soloDesdeMuerto() throws SQLException {
+            UUID pago = cobrarTres("F").get(0);
+
+            assertThatThrownBy(() -> reintentar(pago, "por si acaso se atasco"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("MUERTO");
+            assertThat(auditoriasDe(pago, "por si acaso se atasco")).isZero();
+
+            publicador.publicar();
+            assertThat(estadoDe(pago).estado()).isEqualTo("ENTREGADO");
+            assertThatThrownBy(() -> reintentar(pago, "que llegue otra vez"))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(estadoDe(pago).estado()).isEqualTo("ENTREGADO");
+        }
+
+        private EventoDePago reintentar(UUID pago, String porque) {
+            TenantContext.fijar(new MunicipalidadId(municipalidad));
+            OrigenContext.fijar(new Origen("responsable.conciliacion", null, null));
+            try {
+                return contexto.getBean(ReintentarPagoMuerto.class)
+                        .reintentar(pago, Observacion.de(porque));
+            } finally {
+                TenantContext.limpiar();
+                OrigenContext.limpiar();
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -313,6 +452,62 @@ class CadaEventoEnSuTransaccionTest {
     }
 
     private record Fila(String estado, int intentos) {}
+
+    /** La fila con sus dos columnas de #131. */
+    private record Plazo(
+            String estado,
+            int intentos,
+            @Nullable Instant noAntesDe,
+            @Nullable Instant fallandoDesde) {}
+
+    private static Plazo plazoDe(UUID pago) {
+        try (Connection app = base.conexion(BaseDeDatosDePrueba.APP)) {
+            ContextoDeTenant.fijar(app, municipalidad);
+            try (PreparedStatement sentencia =
+                    app.prepareStatement(
+                            "SELECT estado, intentos, no_antes_de, fallando_desde"
+                                    + " FROM pago_evento WHERE evento_id = ?")) {
+                sentencia.setObject(1, pago);
+                try (ResultSet fila = sentencia.executeQuery()) {
+                    fila.next();
+                    java.sql.Timestamp noAntesDe = fila.getTimestamp("no_antes_de");
+                    java.sql.Timestamp fallandoDesde = fila.getTimestamp("fallando_desde");
+                    Plazo leido =
+                            new Plazo(
+                                    fila.getString("estado"),
+                                    fila.getInt("intentos"),
+                                    noAntesDe == null ? null : noAntesDe.toInstant(),
+                                    fallandoDesde == null ? null : fallandoDesde.toInstant());
+                    app.rollback();
+                    return leido;
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Cuantas filas de auditoria de {@code pago_evento} llevan esa observacion, para ese pago. */
+    private static int auditoriasDe(UUID pago, String observacion) throws SQLException {
+        try (Connection app = base.conexion(BaseDeDatosDePrueba.APP)) {
+            ContextoDeTenant.fijar(app, municipalidad);
+            try (PreparedStatement sentencia =
+                    app.prepareStatement(
+                            "SELECT count(*) FROM auditoria a"
+                                    + " JOIN pago_evento e ON a.clave = e.id::text"
+                                    + " WHERE a.tabla = 'pago_evento' AND e.evento_id = ?"
+                                    + " AND a.observacion = ? AND a.operacion = 'MODIFICACION'")) {
+                sentencia.setObject(1, pago);
+                sentencia.setString(2, observacion);
+                try (ResultSet fila = sentencia.executeQuery()) {
+                    fila.next();
+                    int cuantas = fila.getInt(1);
+                    app.rollback();
+                    return cuantas;
+                }
+            }
+        }
+    }
 
     private static Fila estadoDe(UUID pago) {
         try (Connection app = base.conexion(BaseDeDatosDePrueba.APP)) {
@@ -440,6 +635,9 @@ class CadaEventoEnSuTransaccionTest {
 
         private final Set<UUID> queFallan = ConcurrentHashMap.newKeySet();
 
+        /** Cuantas veces se llamo por cada pago (#131): lo que dice si un aplazado salio o no. */
+        private final Map<UUID, Integer> llamadas = new ConcurrentHashMap<>();
+
         /** Los tres pagos de la prueba que espia: al llegar el 2, mira el 1 y el candado. */
         private final AtomicReference<List<UUID>> espiado = new AtomicReference<>(List.of());
 
@@ -448,6 +646,7 @@ class CadaEventoEnSuTransaccionTest {
 
         @Override
         public void entregar(EventoDePago evento) {
+            llamadas.merge(evento.eventoId(), 1, Integer::sum);
             List<UUID> pagos = espiado.get();
             if (pagos.size() == 3 && evento.eventoId().equals(pagos.get(1))) {
                 visto.set(estadoDe(pagos.get(0)).estado());

@@ -930,8 +930,8 @@ class CajaJdbcTest {
         }
 
         @Override
-        public List<EventoDePago> pendientes(int cuantos) {
-            return real.pendientes(cuantos);
+        public List<EventoDePago> pendientes(Instant ahora, int cuantos) {
+            return real.pendientes(ahora, cuantos);
         }
 
         @Override
@@ -940,13 +940,19 @@ class CajaJdbcTest {
         }
 
         @Override
-        public void marcarFallido(long id, int intentosLeidos, String error, boolean seAgotaron) {
-            real.marcarFallido(id, intentosLeidos, error, seAgotaron);
+        public void marcarFallido(
+                long id, int intentosLeidos, String error, Instant cuando, Instant noAntesDe) {
+            real.marcarFallido(id, intentosLeidos, error, cuando, noAntesDe);
         }
 
         @Override
         public void explicar(long id, String explicacion) {
             real.explicar(id, explicacion);
+        }
+
+        @Override
+        public void reencolar(long id) {
+            real.reencolar(id);
         }
 
         @Override

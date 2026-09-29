@@ -15,8 +15,10 @@ import java.util.stream.Collectors;
 import kamayuk.caja.KamayukAplicacion;
 import kamayuk.caja.autorizacion.ComprobadorDeAcceso;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
+import kamayuk.caja.nucleo.dominio.ReintentosDeLaEntrega;
 import kamayuk.caja.nucleo.infraestructura.ClienteHttpDelSistemaDeOrigen;
 import kamayuk.caja.nucleo.infraestructura.ComponedorDeEventosJson;
+import kamayuk.caja.nucleo.infraestructura.ConfiguracionDeLaEntrega;
 import kamayuk.caja.nucleo.infraestructura.PublicadorDelBuzon;
 import kamayuk.caja.nucleo.infraestructura.web.CierreController;
 import kamayuk.caja.web.Api;
@@ -160,6 +162,13 @@ class ArranqueDeLaAplicacionTest {
                 .singleElement()
                 .extracting(java.time.Clock::getZone)
                 .isEqualTo(kamayuk.caja.dominio.ZonaHoraria.DEL_PRODUCTO);
+
+        // #131: el plazo y la espera de la entrega que el contexto VIVO resuelve de
+        // `application.yaml` son los que miden las pruebas de la entrega. Si el yaml cambiara uno,
+        // esas pruebas seguirian midiendo el viejo; aqui se pone rojo.
+        assertThat(contexto.getBean(ReintentosDeLaEntrega.class))
+                .as("los reintentos de la entrega que se despliegan son los que se prueban")
+                .isEqualTo(ConfiguracionDeLaEntrega.porOmision());
 
         assertThat(contexto.getBeanNamesForType(PublicadorDelBuzon.class))
                 .as(

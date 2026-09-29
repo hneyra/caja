@@ -39,8 +39,8 @@ import org.springframework.stereotype.Component;
  * tres veces —el receptor lo deduplica por {@code pagoId}— y, desde #109, no le cuentan de mas
  * intentos: la marca solo cuenta si {@code intentos} sigue valiendo lo que valia al leerlo. Hasta
  * #109 eso lo decia de un {@code FOR UPDATE SKIP LOCKED} que duraba la vuelta entera, con los
- * {@code POST} dentro. Aun asi sobran: los intentos son lo que separa un evento vivo de uno MUERTO,
- * y el descriptor despliega uno solo.
+ * {@code POST} dentro. Aun asi sobran: la racha de fallos es lo que separa un evento vivo de uno
+ * MUERTO, y el descriptor despliega uno solo.
  *
  * <p><b>Y no va en {@code batch}, que es donde estuvo hasta #79.</b> En {@code stg}, el 2026-09-14,
  * {@code pago_evento} valia 0 en la base de {@code rentas}: ningun pago habia llegado. Lo que habia
@@ -59,7 +59,8 @@ import org.springframework.stereotype.Component;
  *       cluster no resuelve, y cada {@code NoContesta} le cuenta un intento al pago. Con {@code
  *       kamayuk.caja.entrega.intentos} = 8, por el codigo un pago cobrado moria sin entregarse en a
  *       lo sumo ocho corridas del {@code CronJob}. Que corria se midio en #79; lo que gastaba no se
- *       midio en {@code stg}, donde no habia ni un pago.
+ *       midio en {@code stg}, donde no habia ni un pago. (Esa propiedad se retiro en #131: el
+ *       presupuesto es ahora un tiempo, {@code kamayuk.caja.entrega.plazo}.)
  *   <li>Y ningun proceso de larga vida lo llevaba: el perfil {@code web} no, y el descriptor no
  *       desplegaba otro.
  * </ol>
@@ -106,6 +107,10 @@ public class PublicadorDelBuzon {
      * <p>El intervalo es {@code fixedDelayString} y no {@code fixedRate}: con {@code fixedRate},
      * una vuelta lenta —el destino tardando treinta segundos por evento— se solaparia con la
      * siguiente y las dos competirian por el mismo lote.
+     *
+     * <p>Y es la espera <b>minima</b> entre dos intentos del mismo pago, no la unica (#131): un
+     * pago que fallo no vuelve a salir hasta su {@code no_antes_de}, que crece con lo que lleva
+     * fallando. La vuelta solo lee lo que ya toca.
      */
     @Scheduled(fixedDelayString = "${kamayuk.caja.entrega.intervalo:PT10S}")
     public void publicar() {

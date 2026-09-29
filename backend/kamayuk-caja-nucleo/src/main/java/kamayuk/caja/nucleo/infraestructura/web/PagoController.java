@@ -7,6 +7,7 @@ import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.autorizacion.RequiereAcceso;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.nucleo.aplicacion.ExplicarPagoSinEntregar;
+import kamayuk.caja.nucleo.aplicacion.ReintentarPagoMuerto;
 import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
 import kamayuk.caja.web.Api;
@@ -24,7 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Los pagos en transito y los que no se pudieron entregar (ADR-0026 §4).
  *
- * <p>Es la pantalla del responsable de la conciliacion: lo que la alerta le dice que mire.
+ * <p>Es la pantalla del responsable de la conciliacion: lo que la alerta le dice que mire. Y las
+ * dos salidas de un pago MUERTO: explicarlo, o volver a ponerlo en camino (#131).
  */
 @RestController
 @RequestMapping(Api.RAIZ + "/pagos")
@@ -32,10 +34,15 @@ public class PagoController {
 
     private final BuzonDeSalida buzon;
     private final ExplicarPagoSinEntregar explicar;
+    private final ReintentarPagoMuerto reintentar;
 
-    public PagoController(BuzonDeSalida buzon, ExplicarPagoSinEntregar explicar) {
+    public PagoController(
+            BuzonDeSalida buzon,
+            ExplicarPagoSinEntregar explicar,
+            ReintentarPagoMuerto reintentar) {
         this.buzon = buzon;
         this.explicar = explicar;
+        this.reintentar = reintentar;
     }
 
     /**
@@ -62,21 +69,8 @@ public class PagoController {
     @RequiereAcceso(acceso = "cierre_caja", privilegio = Privilegio.MODIFICACION)
     public PagoResource explicacion(
             @PathVariable String pagoId, @RequestBody PeticionDeExplicacion peticion) {
-        UUID identificador;
-        try {
-            identificador = UUID.fromString(pagoId);
-        } catch (IllegalArgumentException malEscrito) {
-            throw new ProblemaDeNegocio(
-                    CodigoDeError.VALIDACION, "'" + pagoId + "' no es un identificador de pago");
-        }
-        Observacion observacion;
-        try {
-            observacion =
-                    Observacion.de(CajaController.exigir(peticion.observacion(), "observacion"));
-        } catch (IllegalArgumentException invalido) {
-            throw new ProblemaDeNegocio(
-                    CodigoDeError.VALIDACION, CajaController.mensajeDe(invalido));
-        }
+        UUID identificador = identificador(pagoId);
+        Observacion observacion = observacion(peticion.observacion());
         try {
             return PagoResource.de(
                     explicar.explicar(
@@ -96,9 +90,61 @@ public class PagoController {
         }
     }
 
+    /**
+     * Un pago MUERTO vuelve a ponerse en camino, con el mismo {@code pagoId} (#131).
+     *
+     * <p>El mismo acceso y el mismo privilegio que la explicacion —{@code cierre_caja}, {@code
+     * MODIFICACION}—, porque son las dos salidas de MUERTO y las decide la misma persona: la que la
+     * alerta despierta. La diferencia es lo que afirma: explicar dice «este pago no va a llegar, y
+     * me hago cargo»; reintentar dice «ya se arreglo lo que lo impedia». Si no era verdad, vuelve a
+     * morir y a avisar cuando se agote el plazo otra vez.
+     */
+    @PostMapping("/{pagoId}/reintento")
+    @RequiereAcceso(acceso = "cierre_caja", privilegio = Privilegio.MODIFICACION)
+    public PagoResource reintento(
+            @PathVariable String pagoId, @RequestBody PeticionDeReintento peticion) {
+        UUID identificador = identificador(pagoId);
+        Observacion observacion = observacion(peticion.observacion());
+        try {
+            return PagoResource.de(reintentar.reintentar(identificador, observacion));
+        } catch (ExplicarPagoSinEntregar.PagoInexistente noExiste) {
+            throw new ProblemaDeNegocio(
+                    CodigoDeError.NO_ENCONTRADO, CajaController.mensajeDe(noExiste));
+        } catch (IllegalStateException noSePuede) {
+            // 409: la peticion esta bien, lo que no admite la operacion es el estado del evento.
+            throw new ProblemaDeNegocio(
+                    CodigoDeError.CONFLICTO, CajaController.mensajeDe(noSePuede));
+        }
+    }
+
+    private static UUID identificador(String pagoId) {
+        try {
+            return UUID.fromString(pagoId);
+        } catch (IllegalArgumentException malEscrito) {
+            throw new ProblemaDeNegocio(
+                    CodigoDeError.VALIDACION, "'" + pagoId + "' no es un identificador de pago");
+        }
+    }
+
+    private static Observacion observacion(@Nullable String texto) {
+        try {
+            return Observacion.de(CajaController.exigir(texto, "observacion"));
+        } catch (IllegalArgumentException invalido) {
+            throw new ProblemaDeNegocio(
+                    CodigoDeError.VALIDACION, CajaController.mensajeDe(invalido));
+        }
+    }
+
     /** El cuerpo de la explicacion. <b>Lista blanca</b>: lo que no esta aqui no entra. */
     public record PeticionDeExplicacion(
             @Nullable String explicacion, @Nullable String observacion) {}
+
+    /**
+     * El cuerpo del reintento: solo la observacion. <b>Lista blanca</b>: lo que no esta aqui no
+     * entra —ni un {@code pagoId} nuevo, ni un cuerpo corregido: lo que se entrega es lo que se
+     * congelo al cobrar—.
+     */
+    public record PeticionDeReintento(@Nullable String observacion) {}
 
     /**
      * Un pago del buzon.

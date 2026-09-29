@@ -16,10 +16,14 @@ public enum EstadoDelEvento {
     /** El sistema de origen lo recibio y lo acuso. Trae su hora. */
     ENTREGADO,
     /**
-     * Se agotaron los intentos.
+     * El receptor lo rechazo, o se agoto el plazo de la entrega (#131: un tiempo, no un numero de
+     * intentos).
      *
      * <p><b>Esto es dinero cobrado sin registrar</b>, y por eso no se queda en un registro: dispara
      * alerta a una persona con nombre (ADR-0026 §4). Un turno con uno de estos NO CIERRA.
+     *
+     * <p>Desde #131 no es para siempre: si la causa se arregla, {@code ReintentarPagoMuerto} lo
+     * vuelve a {@link #PENDIENTE}, con el mismo {@code pagoId} y una observacion.
      */
     MUERTO,
     /**

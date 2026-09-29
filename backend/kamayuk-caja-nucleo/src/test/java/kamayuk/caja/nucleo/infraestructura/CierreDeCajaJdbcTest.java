@@ -450,7 +450,9 @@ class CierreDeCajaJdbcTest {
 
             enTransaccion(
                     () -> {
-                        buzon.marcarFallido(eventoId, 0, "el origen no contesta", true);
+                        // Sin intento siguiente: con este fallo muere (#131).
+                        buzon.marcarFallido(
+                                eventoId, 0, "el origen no contesta", RELOJ.instant(), null);
                         return null;
                     });
 

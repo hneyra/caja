@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -23,6 +24,7 @@ import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.esquema.ContextoDeTenant;
+import kamayuk.caja.nucleo.dobles.RelojQueAvanza;
 import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
 import kamayuk.caja.nucleo.dominio.EstadoDeOrden;
 import kamayuk.caja.nucleo.dominio.EstadoDelEvento;
@@ -32,6 +34,7 @@ import kamayuk.caja.nucleo.dominio.OrdenDeCobro;
 import kamayuk.caja.nucleo.dominio.OrdenDeCobroRepository;
 import kamayuk.caja.nucleo.dominio.Pagador;
 import kamayuk.caja.nucleo.dominio.Recibo;
+import kamayuk.caja.nucleo.dominio.ReintentosDeLaEntrega;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.nucleo.infraestructura.AbonosAplicadosHttp;
@@ -83,6 +86,17 @@ class CobrarConElOrigenApagadoTest {
 
     private static final Clock RELOJ =
             Clock.fixed(Instant.parse("2026-03-16T14:00:00Z"), ZoneOffset.UTC);
+
+    /**
+     * El plazo de la entrega, corto a proposito (#131): con el de produccion —un dia— la prueba de
+     * «muere al agotarlo» tendria que mover el reloj un dia, y lo que mide es lo mismo.
+     */
+    private static final ReintentosDeLaEntrega REINTENTOS =
+            new ReintentosDeLaEntrega(Duration.ofSeconds(10), Duration.ofMinutes(1));
+
+    /** El reloj de la entrega, que la prueba mueve para agotar el plazo (#131). */
+    private static final RelojQueAvanza RELOJ_DE_LA_ENTREGA =
+            new RelojQueAvanza(RELOJ.instant(), ZoneOffset.UTC);
 
     private static final LocalDate HOY = LocalDate.of(2026, 3, 16);
 
@@ -156,7 +170,8 @@ class CobrarConElOrigenApagadoTest {
                                 envolver(new AnotarLaEntrega(buzon, RELOJ)),
                                 new BuzonHttpDelSistemaDeOrigen(cliente),
                                 alerta,
-                                2));
+                                REINTENTOS,
+                                RELOJ_DE_LA_ENTREGA));
         conciliacion = envolver(new ConciliacionDelDia(buzon, new AbonosAplicadosHttp(cliente)));
 
         sembrarVentanilla();
@@ -285,7 +300,7 @@ class CobrarConElOrigenApagadoTest {
     class ElPublicador {
 
         @Test
-        @DisplayName("reintenta mientras quedan intentos, y no pierde el pago")
+        @DisplayName("reintenta mientras no se agota el plazo, y no pierde el pago")
         void reintentaSinPerderElPago() {
             long ordenId = darDeAlta("AC2-004", "120.00");
             CobrarOrdenes.Cobrado cobrado = cobrarUna(ordenId, "idem-ac2-004");
@@ -293,7 +308,7 @@ class CobrarConElOrigenApagadoTest {
             EntregarEventos.Vuelta primera = enTransaccion(() -> entregar.entregarPendientes());
             assertThat(primera.entregados()).isZero();
             assertThat(primera.muertos())
-                    .as("con dos intentos configurados, la primera vuelta solo cuenta uno")
+                    .as("el primer fallo abre la racha: el plazo empieza ahi, no se agota ahi")
                     .isZero();
 
             EventoDePago tras = enElBuzon(cobrado);
@@ -305,12 +320,13 @@ class CobrarConElOrigenApagadoTest {
         }
 
         @Test
-        @DisplayName("agotados los intentos MUERE, y avisa a una persona con nombre")
-        void agotadosLosIntentosMuereYAvisa() {
+        @DisplayName("agotado el plazo MUERE, y avisa a una persona con nombre")
+        void agotadoElPlazoMuereYAvisa() {
             long ordenId = darDeAlta("AC2-005", "300.00");
             CobrarOrdenes.Cobrado cobrado = cobrarUna(ordenId, "idem-ac2-005");
 
             enTransaccion(() -> entregar.entregarPendientes());
+            RELOJ_DE_LA_ENTREGA.avanzar(REINTENTOS.plazo());
             enTransaccion(() -> entregar.entregarPendientes());
 
             EventoDePago tras = enElBuzon(cobrado);
