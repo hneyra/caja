@@ -12,6 +12,9 @@ import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.seguridad.dominio.CatalogoDelSistema;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
+import kamayuk.caja.seguridad.infraestructura.CuentasDeLaCopiaJdbc;
+import kamayuk.caja.seguridad.infraestructura.CuentasDeLaCopiaJdbc.FichaDeLaCuenta;
 import kamayuk.caja.seguridad.infraestructura.RegistroDeMunicipalidadesJdbc;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -75,9 +78,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Llamandolo en linea se pueden hacer las dos cosas que un vecino no puede hacer: <b>exigir</b>
  * que exista antes de tocar nada, y <b>comprobar la postcondicion</b> cuando termina. La
- * postcondicion es la unica afirmacion que importa —el administrador puede entrar—, y no se deduce
- * de que el consumidor no fallara: un buzon que contesta 200 con cero eventos es exactamente lo que
- * devuelve {@code identidad} cuando esta municipalidad todavia no se ha implantado alli.
+ * postcondicion es la unica afirmacion que importa —alguien puede entrar; en una copia recien
+ * nacida, el administrador y con todo (#138)—, y no se deduce de que el consumidor no fallara: un
+ * buzon que contesta 200 con cero eventos es exactamente lo que devuelve {@code identidad} cuando
+ * esta municipalidad todavia no se ha implantado alli.
  *
  * <h2>Y esto NO convierte el {@code CronJob} en un Job que falla cada cinco minutos</h2>
  *
@@ -88,10 +92,57 @@ import org.springframework.stereotype.Component;
  * dejarla utilizable. Una municipalidad implantada sin administrador no es una copia con retraso:
  * es una instalacion que nadie puede abrir, y sale asi de la unica corrida que iba a mirar alguien.
  *
+ * <h2>Lo que la postcondicion garantiza en CADA despliegue (#138)</h2>
+ *
+ * <p>Este Job se recrea en cada despliegue —su nombre lleva la version— y comprueba su
+ * postcondicion en cada uno. Hasta #138 era una sola, la del arranque en frio: el administrador
+ * configurado abre las siete opciones con sus siete privilegios. Pero esa cuenta es de la
+ * municipalidad desde que existe, y lo normal es que la municipalidad decida sobre ella: la
+ * inhabilita cuando ya tiene administradores nominales, la deja vencer, o le niega con una
+ * excepcion propia lo que no debe hacer quien administra. {@code identidad} no deshace ninguna de
+ * las tres al reimplantar, asi que cada una atascaba TODO despliegue de esta caja tras seis
+ * reintentos —y con un mensaje que mandaba a mirar el grupo—. La postcondicion es ahora <b>que
+ * alguien puede entrar a esta caja</b>, y lo sigue contestando el guardia de produccion:
+ *
+ * <ol>
+ *   <li><b>Si una cuenta DISTINTA del administrador configurado puede abrir al menos una opcion de
+ *       este sistema</b> —con un privilegio basta, que es lo que basta para que la ventanilla le
+ *       ofrezca la hoja—, la copia esta en uso y lo que la municipalidad haya decidido sobre el
+ *       administrador se respeta: no se exige, y se dice en un WARN con su diagnostico.
+ *   <li><b>Si no hay ninguna, el administrador configurado es la unica entrada, y tiene que poder
+ *       las siete opciones con sus siete privilegios</b>: lo que a el le falte no lo puede hacer
+ *       nadie. Si no puede, la implantacion falla diciendo por que —no esta en la copia; esta
+ *       inhabilitado o fuera de vigencia; no esta en ningun grupo vigente; o le falta un
+ *       privilegio, cuales, y si se lo niega una excepcion suya o no se lo concede ninguno de sus
+ *       grupos—.
+ * </ol>
+ *
+ * <p>Asi nace toda copia —el administrador y cuatro cuentas de servicio que aqui no abren nada—, de
+ * modo que <b>la primera implantacion sigue exigiendo la matriz entera</b>, y una copia vacia, o en
+ * la que nadie abre nada, sigue sin salir nunca en {@code Complete}. Lo que cambia es la
+ * reimplantacion de una municipalidad que ya usa esta caja: garantiza que alguien entra, no quien.
+ *
+ * <p><b>Y «primera» no se mide por la historia, a proposito.</b> Lo tentador es preguntar si la
+ * fila de {@code municipalidad} existia antes de esta corrida, o si la copia tenia usuarios antes
+ * de la pasada. Las dos las rompe el propio Job: su {@code backoffLimit: 6} existe para esperar a
+ * que {@code identidad} implante, y cada reintento vuelve a correr sobre lo que el intento anterior
+ * ya dejo con {@code commit} —la fila, y los eventos que alcanzo a aplicar—. Con esa definicion el
+ * segundo intento del MISMO despliegue ya seria una reimplantacion, y la matriz que el primero vio
+ * llegar incompleta dejaria de exigirse justo cuando {@code identidad} tarda, que en un ambiente de
+ * cero es lo normal. Una regla sobre el ESTADO da la misma respuesta en cada intento.
+ *
+ * <p><b>Lo que NO garantiza</b>, dicho: que el administrador configurado pueda entrar en una
+ * municipalidad donde ya entra otro; que cada opcion la pueda abrir alguien —dejar una sin usar es
+ * decision de la municipalidad, y {@code identidad} no lo impide—; ni que el catalogo de {@code
+ * identidad} este al dia con el de esta caja cuando ya entra otro: eso se avisa, no se exige. Y una
+ * cuenta de servicio con un permiso de esta caja contaria como «alguien»; hoy la implantacion de
+ * {@code identidad} solo les da {@code identidad:eventos}, que aqui se ignora.
+ *
  * <h2>Idempotente, entera</h2>
  *
  * <p>Se ejecuta en cada despliegue. Lo que ya existe se queda como esta —con los permisos que
- * alguien haya configurado despues—, y lo que falta se crea. Nunca borra.
+ * alguien haya configurado despues, que desde #138 tampoco la postcondicion obliga a deshacer—, y
+ * lo que falta se crea. Nunca borra.
  */
 @Component
 @Profile("batch")
@@ -118,6 +169,7 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
     private final ObjectProvider<CorrerElConsumidorDeIdentidad> consumidor;
     private final ComprobadorDeAcceso guardia;
     private final Clock reloj;
+    private final CuentasDeLaCopiaJdbc cuentas;
 
     public ImplantarMunicipalidad(
             RegistroDeMunicipalidadesJdbc registro,
@@ -125,13 +177,15 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
             DatosDeImplantacion datos,
             ObjectProvider<CorrerElConsumidorDeIdentidad> consumidor,
             ComprobadorDeAcceso guardia,
-            Clock reloj) {
+            Clock reloj,
+            CuentasDeLaCopiaJdbc cuentas) {
         this.registro = registro;
         this.sembrador = sembrador;
         this.datos = datos;
         this.consumidor = consumidor;
         this.guardia = guardia;
         this.reloj = reloj;
+        this.cuentas = cuentas;
     }
 
     @Override
@@ -169,15 +223,9 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
                     nuevos);
 
             pasada.unaPasada();
-            comprobarQueLaCopiaLlego();
+            String quienEntra = comprobarQueLaCopiaLlego();
 
-            log.info(
-                    "Municipalidad {} lista en caja: el administrador '{}' esta en la copia local"
-                            + " con sus {} privilegios sobre las {} opciones de este sistema",
-                    datos.ubigeo(),
-                    datos.administrador(),
-                    Privilegio.values().length,
-                    CatalogoDelSistema.opciones().size());
+            log.info("Municipalidad {} lista en caja: {}", datos.ubigeo(), quienEntra);
         } finally {
             OrigenContext.limpiar();
             TenantContext.limpiar();
@@ -211,7 +259,7 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
     }
 
     /**
-     * La postcondicion: el administrador puede entrar.
+     * La postcondicion: alguien puede entrar a esta caja (#138). Devuelve quien, para el registro.
      *
      * <p>Se comprueba con el <b>mismo</b> {@link ComprobadorDeAcceso} que usa el guardia en cada
      * peticion, y no contando filas: lo que decide si alguien puede abrir una pantalla es esa
@@ -219,53 +267,222 @@ public class ImplantarMunicipalidad implements ApplicationRunner {
      * {@code permiso} daria por buena una copia en la que el administrador esta deshabilitado o su
      * grupo caducado.
      *
-     * <p>Se distinguen los dos motivos porque se arreglan distinto: que no haya <b>ninguna</b> fila
-     * suya dice que el buzon no trajo su alta —casi siempre, que {@code identidad} todavia no
-     * implanto esta municipalidad—; que este y le falten privilegios dice que llego su alta y no su
-     * matriz, que es lo que pasa cuando un evento se quedo pospuesto.
+     * <p>El orden es el de la regla del javadoc de la clase. Primero el administrador configurado,
+     * que en una copia sana puede todo y acaba aqui. Si no puede, se busca <b>otra</b> cuenta que
+     * pueda abrir algo: si la hay, lo del administrador fue una decision de la municipalidad y se
+     * avisa sin exigirlo; si no la hay, el es la unica entrada y lo que le falte no lo puede hacer
+     * nadie, asi que la implantacion falla. En los dos casos se dice POR QUE no puede, porque cada
+     * motivo se arregla en otro sitio: no tener ninguna fila manda a implantar {@code identidad};
+     * estar inhabilitado o vencido, a habilitarlo; no estar en ningun grupo, a afiliarlo; y que le
+     * falte un privilegio, a mirar si se lo niega una excepcion suya o no se lo da su grupo.
      */
-    private void comprobarQueLaCopiaLlego() {
+    private String comprobarQueLaCopiaLlego() {
         String cuenta = datos.administrador();
-        if (!guardia.conoceAlUsuario(cuenta)) {
+        LocalDate hoy = LocalDate.now(reloj);
+        boolean loConoce = guardia.conoceAlUsuario(cuenta);
+        List<Par> leNiega = loConoce ? loQueLeNiega(cuenta, hoy) : List.of();
+        if (loConoce && leNiega.isEmpty()) {
+            return "el administrador '"
+                    + cuenta
+                    + "' esta en la copia local con sus "
+                    + Privilegio.values().length
+                    + " privilegios sobre las "
+                    + CatalogoDelSistema.opciones().size()
+                    + " opciones de este sistema";
+        }
+
+        @Nullable Diagnostico diagnostico = loConoce ? diagnostico(cuenta, leNiega, hoy) : null;
+        @Nullable String otra = otraCuentaQueEntra(cuenta, hoy);
+        if (otra != null) {
+            log.warn(
+                    "El administrador configurado «{}» de {} no puede abrir todo lo de esta caja:"
+                            + " {}. NO se exige (#138): la cuenta «{}» puede entrar, asi que la"
+                            + " copia esta en uso, y lo que la municipalidad haya decidido en"
+                            + " `identidad` sobre la cuenta de la implantacion se respeta. Si no"
+                            + " fue una decision, el remedio es el de siempre: {}",
+                    cuenta,
+                    datos.ubigeo(),
+                    diagnostico != null
+                            ? diagnostico.porQue()
+                            : "no esta en la copia local —se renombro en `identidad`, o"
+                                    + " kamayuk.implantacion.administrador nombra otra cuenta—",
+                    otra,
+                    diagnostico != null
+                            ? diagnostico.remedio()
+                            : "comprobar en `identidad` como se llama hoy esa cuenta");
+            return "entra «" + otra + "», y al administrador configurado no se le exige (#138)";
+        }
+
+        if (diagnostico == null) {
             throw new IllegalStateException(
                     "La implantacion de "
                             + datos.ubigeo()
                             + " corrio el consumidor del buzon y la copia local se quedo SIN"
                             + " NINGUNA fila de `usuario` para el administrador «"
                             + cuenta
-                            + "». El buzon contesto y no trajo su alta, que es lo que pasa cuando"
-                            + " esta municipalidad todavia no esta implantada en `identidad`: alli"
-                            + " no hay cola que servirle a esta caja. Dar esto por bueno dejaria el"
-                            + " Job en Complete y la ventanilla sin nadie que pueda entrar."
-                            + " Remedio: implantar `identidad` primero y volver a correr esta"
-                            + " implantacion");
+                            + "», ni ninguna otra cuenta que pueda abrir una sola opcion de esta"
+                            + " caja. El buzon contesto y no trajo su alta, que es lo que pasa"
+                            + " cuando esta municipalidad todavia no esta implantada en"
+                            + " `identidad`: alli no hay cola que servirle a esta caja. Dar esto por"
+                            + " bueno dejaria el Job en Complete y la ventanilla sin nadie que pueda"
+                            + " entrar. Remedio: implantar `identidad` primero y volver a correr"
+                            + " esta implantacion");
         }
-        LocalDate hoy = LocalDate.now(reloj);
-        List<String> faltan = new ArrayList<>();
+        throw new IllegalStateException(
+                "La implantacion de "
+                        + datos.ubigeo()
+                        + " deja la copia local sin ninguna otra cuenta que pueda abrir una sola"
+                        + " opcion de esta caja, asi que el administrador «"
+                        + cuenta
+                        + "» es la unica entrada y tiene que poder las "
+                        + CatalogoDelSistema.opciones().size()
+                        + " opciones con sus "
+                        + Privilegio.values().length
+                        + " privilegios: lo que a el le falte no lo puede hacer nadie. Y no puede: "
+                        + diagnostico.porQue()
+                        + ". Remedio: "
+                        + diagnostico.remedio()
+                        + " —o dar a otra cuenta un permiso de esta caja: con una que entre, al"
+                        + " administrador configurado no se le exige nada (#138)—, y volver a"
+                        + " correr esta implantacion");
+    }
+
+    /** Un par opcion-privilegio del catalogo de este sistema. */
+    private record Par(String opcion, Privilegio privilegio) {
+        @Override
+        public String toString() {
+            return opcion + ":" + privilegio.name();
+        }
+    }
+
+    /** Los pares del catalogo que el guardia le niega a esa cuenta hoy. Vacio es «puede todo». */
+    private List<Par> loQueLeNiega(String cuenta, LocalDate hoy) {
+        List<Par> niega = new ArrayList<>();
         for (CatalogoDelSistema.Opcion opcion : CatalogoDelSistema.opciones()) {
             for (Privilegio privilegio : Privilegio.values()) {
                 if (!guardia.autoriza(cuenta, opcion.codigo(), privilegio, hoy)) {
-                    faltan.add(opcion.codigo() + ":" + privilegio.name());
+                    niega.add(new Par(opcion.codigo(), privilegio));
                 }
             }
         }
-        if (!faltan.isEmpty()) {
-            throw new IllegalStateException(
-                    "La implantacion de "
-                            + datos.ubigeo()
-                            + " dejo al administrador «"
-                            + cuenta
-                            + "» dado de alta en la copia local y SIN poder abrir "
-                            + faltan.size()
-                            + " de las "
-                            + CatalogoDelSistema.opciones().size() * Privilegio.values().length
-                            + " cosas que este sistema le tiene que dejar hacer: "
-                            + faltan
-                            + ". Su alta llego por el buzon y su matriz de permisos no —o llego y"
-                            + " se quedo pospuesta porque le faltaba su dependencia—. Remedio:"
-                            + " comprobar en `identidad` que esa cuenta esta en el grupo de"
-                            + " administracion de esta municipalidad, y volver a correr esta"
-                            + " implantacion");
+        return niega;
+    }
+
+    /**
+     * La primera cuenta, distinta del administrador configurado, a la que el guardia le deja abrir
+     * al menos una opcion de este sistema con al menos un privilegio; o {@code null}.
+     *
+     * <p>Un privilegio basta porque es lo que basta para que la ventanilla ofrezca la hoja ({@code
+     * frontend/src/permisos.ts}): quien la tiene, entra. A quien preguntar lo acota {@link
+     * CuentasDeLaCopiaJdbc#otrasCuentasConAlgunPermiso}, que solo descarta a quien el guardia
+     * negaria seguro; quien decide es el guardia.
+     */
+    private @Nullable String otraCuentaQueEntra(String administrador, LocalDate hoy) {
+        for (String otra : cuentas.otrasCuentasConAlgunPermiso(administrador)) {
+            for (CatalogoDelSistema.Opcion opcion : CatalogoDelSistema.opciones()) {
+                for (Privilegio privilegio : Privilegio.values()) {
+                    if (guardia.autoriza(otra, opcion.codigo(), privilegio, hoy)) {
+                        return otra;
+                    }
+                }
+            }
         }
+        return null;
+    }
+
+    /** Por que no puede, y donde se arregla: el mensaje y su remedio, en el mismo orden. */
+    private record Diagnostico(String porQue, String remedio) {}
+
+    /**
+     * Por que el guardia le niega a una cuenta que la copia SI tiene lo que le niega.
+     *
+     * <p>Lo decidio el guardia; esto solo le pone nombre, leyendo los tres sitios donde el guardia
+     * puede negar: la propia cuenta —que anula todo—, sus excepciones —que sustituyen a sus grupos
+     * en su opcion— y sus grupos.
+     */
+    private Diagnostico diagnostico(String cuenta, List<Par> leNiega, LocalDate hoy) {
+        FichaDeLaCuenta ficha =
+                cuentas.ficha(cuenta, hoy)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "El guardia conoce la cuenta «"
+                                                        + cuenta
+                                                        + "» y la copia no la tiene: se borro a"
+                                                        + " mitad de la implantacion"));
+        if (!ficha.concedeEl(hoy)) {
+            return new Diagnostico(
+                    "esta INHABILITADO O FUERA DE VIGENCIA en la copia ("
+                            + String.join("; ", queLeImpideConceder(ficha, hoy))
+                            + "), y con la cuenta asi el guardia le niega todo, conceda lo que"
+                            + " conceda su grupo",
+                    "habilitar esa cuenta en `identidad`, o darle vigencia");
+        }
+        List<Par> porExcepcion = new ArrayList<>();
+        List<Par> porGrupo = new ArrayList<>();
+        for (Par par : leNiega) {
+            if (ficha.opcionesConExcepcion().contains(par.opcion())) {
+                porExcepcion.add(par);
+            } else {
+                porGrupo.add(par);
+            }
+        }
+        List<String> motivos = new ArrayList<>();
+        List<String> remedios = new ArrayList<>();
+        if (!porExcepcion.isEmpty()) {
+            motivos.add(
+                    "LE FALTA UN PRIVILEGIO que le niega una excepcion suya —un permiso fijado a la"
+                            + " cuenta, que en esa opcion sustituye a sus grupos—: "
+                            + porExcepcion);
+            remedios.add("corregir o retirar en `identidad` la excepcion de esa cuenta");
+        }
+        if (!porGrupo.isEmpty()) {
+            motivos.add(
+                    ficha.gruposVigentes() == 0
+                            ? "NO ESTA EN NINGUN GRUPO vigente de la copia —no esta afiliado, o lo"
+                                    + " esta a un grupo inhabilitado, vencido o sin adoptar—, y por"
+                                    + " eso le falta: "
+                                    + porGrupo
+                            : "LE FALTA UN PRIVILEGIO que ninguno de sus "
+                                    + ficha.gruposVigentes()
+                                    + " grupos vigentes le concede —su matriz no llego, llego"
+                                    + " pospuesta, o el catalogo de `identidad` no tiene esa"
+                                    + " opcion—: "
+                                    + porGrupo);
+            remedios.add(
+                    "comprobar en `identidad` que esa cuenta esta en el grupo de administracion de"
+                            + " esta municipalidad, y que ese grupo tiene esas opciones de `caja`");
+        }
+        return new Diagnostico(
+                "esta habilitado y vigente, y SIN poder abrir "
+                        + leNiega.size()
+                        + " de las "
+                        + CatalogoDelSistema.opciones().size() * Privilegio.values().length
+                        + " cosas que este sistema le tiene que dejar hacer. "
+                        + String.join(". Y ", motivos),
+                String.join("; y ", remedios));
+    }
+
+    /** Cuales de las cuatro condiciones de la propia cuenta no se cumplen ese dia. */
+    private static List<String> queLeImpideConceder(FichaDeLaCuenta ficha, LocalDate hoy) {
+        List<String> impide = new ArrayList<>();
+        if (!ficha.habilitado()) {
+            impide.add("esta inhabilitado en `identidad`");
+        }
+        @Nullable LocalDate desde = ficha.vigenciaDesde();
+        if (desde != null && desde.isAfter(hoy)) {
+            impide.add("su vigencia empieza el " + desde);
+        }
+        @Nullable LocalDate hasta = ficha.vigenciaHasta();
+        if (hasta != null && hasta.isBefore(hoy)) {
+            impide.add("su vigencia termino el " + hasta);
+        }
+        if (!ficha.adoptada()) {
+            impide.add(
+                    "no tiene sujeto de `identidad` y esta fuera de su plazo de adopcion de "
+                            + PlazoDeAdopcion.DIAS
+                            + " dias (#125)");
+        }
+        return impide;
     }
 }

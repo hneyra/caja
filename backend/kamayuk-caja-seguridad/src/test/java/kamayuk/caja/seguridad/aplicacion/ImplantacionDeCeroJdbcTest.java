@@ -3,6 +3,10 @@ package kamayuk.caja.seguridad.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -30,13 +34,16 @@ import kamayuk.caja.seguridad.FilaSinSujeto;
 import kamayuk.caja.seguridad.FuenteDeEventosDeIdentidad;
 import kamayuk.caja.seguridad.dominio.CatalogoDelSistema;
 import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
+import kamayuk.caja.seguridad.infraestructura.CuentasDeLaCopiaJdbc;
 import kamayuk.caja.seguridad.infraestructura.RegistroDeMunicipalidadesJdbc;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -204,6 +211,241 @@ class ImplantacionDeCeroJdbcTest {
         // mas un permiso por cada opcion de esta caja. Eran 20 con tres opciones; se compone para
         // que la cifra no vuelva a quedarse atras cuando el catalogo cambie (#74).
         assertThat(buzon.total()).isEqualTo(17 + codigos().size());
+    }
+
+    // ------------------------------------------------------------------
+    //  #138 — la reimplantacion respeta lo que la municipalidad decidio
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "#138: reimplantar con el administrador de la implantacion INHABILITADO en `identidad`"
+                    + " no atasca el despliegue si otra cuenta entra, y lo dice en un WARN")
+    void reimplantarConElAdministradorInhabilitadoNoBloquea() throws SQLException {
+        String ubigeo = "209920";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        // Lo normal cuando ya hay administradores nominales: se da de alta uno, se le mete en el
+        // grupo de administracion, y la cuenta de la implantacion se inhabilita.
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .daDeAltaYAfilia(
+                                10,
+                                "tesorera",
+                                CorrienteDeIdentidad.GRUPO_DE_ADMINISTRACION_ID,
+                                CorrienteDeIdentidad.GRUPO_DE_ADMINISTRACION)
+                        .inhabilita(CorrienteDeIdentidad.ADMINISTRADOR_ID, ADMINISTRADOR)
+                        .corriente();
+        Arnes arnes = new Arnes(ubigeo, despues);
+
+        List<ILoggingEvent> avisos = new ArrayList<>();
+        Throwable rojo =
+                escuchandoLaImplantacion(avisos, () -> arnes.implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .as(
+                        "[#138: la municipalidad inhabilito la cuenta de la implantacion, como hace"
+                                + " cuando ya tiene administradores nominales. Hasta #138 la"
+                                + " postcondicion le exigia a ESA cuenta las 7x7, asi que TODO"
+                                + " despliegue de caja moria tras seis reintentos]")
+                .isNull();
+        long municipalidad = idDe(ubigeo);
+        assertThat(loQueElGuardiaLeNiega(arnes.guardia(), municipalidad, ADMINISTRADOR))
+                .as("premisa: el guardia le niega TODO al administrador, o esto no mide nada")
+                .hasSize(CatalogoDelSistema.opciones().size() * Privilegio.values().length);
+        assertThat(loQueElGuardiaLeNiega(arnes.guardia(), municipalidad, "tesorera"))
+                .as("y la tesorera, por el grupo de administracion, puede todo")
+                .isEmpty();
+        assertThat(avisos)
+                .as(
+                        "[y no se calla: el WARN dice que al administrador no se le exige, por que"
+                                + " no puede y quien entra en su lugar]")
+                .anySatisfy(
+                        aviso -> {
+                            assertThat(aviso.getLevel()).isEqualTo(Level.WARN);
+                            assertThat(aviso.getFormattedMessage())
+                                    .contains(ADMINISTRADOR)
+                                    .contains("INHABILITADO O FUERA DE VIGENCIA")
+                                    .contains("«tesorera» puede entrar")
+                                    .contains("NO se exige");
+                        });
+    }
+
+    @Test
+    @DisplayName(
+            "#138: y tampoco lo atasca una excepcion que le niega anular al administrador"
+                    + " (separacion de funciones), si otra cuenta entra")
+    void reimplantarConUnaExcepcionQueLeNiegaAnularNoBloquea() throws SQLException {
+        String ubigeo = "209921";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        // Una cajera que solo cobra —sin grupo, por una excepcion propia— y la excepcion que le
+        // quita al administrador lo que anular exige (`ReciboController`: ELIMINACION).
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .daDeAlta(11, "cajera")
+                        .fijaUnaExcepcion(11, "cajera", "caja_tributaria", Privilegio.ESPECIAL)
+                        .fijaUnaExcepcion(
+                                CorrienteDeIdentidad.ADMINISTRADOR_ID,
+                                ADMINISTRADOR,
+                                "anulacion_recibo",
+                                Privilegio.ELIMINACION)
+                        .corriente();
+
+        Throwable rojo =
+                catchThrowable(
+                        () -> new Arnes(ubigeo, despues).implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .as(
+                        "[#138: negarle al administrador anular es una decision de la municipalidad,"
+                                + " y la cajera entra. Hasta #138 esto dejaba cada despliegue en"
+                                + " rojo nombrando anulacion_recibo:ELIMINACION como «su matriz de"
+                                + " permisos no llego»]")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName(
+            "#138: si NADIE mas entra, la reimplantacion falla — y dice que el administrador esta"
+                    + " inhabilitado, no que le falta la matriz")
+    void siNadieMasEntraElInhabilitadoFalla() throws SQLException {
+        String ubigeo = "209922";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .inhabilita(CorrienteDeIdentidad.ADMINISTRADOR_ID, ADMINISTRADOR)
+                        .corriente();
+
+        Throwable rojo =
+                catchThrowable(
+                        () -> new Arnes(ubigeo, despues).implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .as(
+                        "[la garantia de la etapa 5 no se relaja: una copia en la que nadie puede"
+                                + " abrir nada es, para la ventanilla, una copia vacia]")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("es la unica entrada")
+                .hasMessageContaining("INHABILITADO O FUERA DE VIGENCIA")
+                .hasMessageContaining("esta inhabilitado en `identidad`")
+                .hasMessageContaining("habilitar esa cuenta en `identidad`");
+        assertThat(rojo)
+                .as(
+                        "[#138: hasta aqui el mensaje decia «su matriz de permisos no llego» y"
+                                + " mandaba a mirar el grupo, con la matriz entera en la copia]")
+                .hasMessageNotContaining("SIN poder abrir")
+                .hasMessageNotContaining("NO ESTA EN NINGUN GRUPO");
+    }
+
+    @Test
+    @DisplayName("#138: la vigencia vencida se dice como vigencia, con su fecha")
+    void siNadieMasEntraElVencidoFallaDiciendoCuando() throws SQLException {
+        String ubigeo = "209923";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        LocalDate ayer = LocalDate.ofInstant(AHORA, ZoneOffset.UTC).minusDays(1);
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .leVence(CorrienteDeIdentidad.ADMINISTRADOR_ID, ADMINISTRADOR, ayer)
+                        .corriente();
+
+        Throwable rojo =
+                catchThrowable(
+                        () -> new Arnes(ubigeo, despues).implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("INHABILITADO O FUERA DE VIGENCIA")
+                .hasMessageContaining("su vigencia termino el " + ayer)
+                .hasMessageNotContaining("esta inhabilitado en `identidad`")
+                .hasMessageNotContaining("SIN poder abrir");
+    }
+
+    @Test
+    @DisplayName(
+            "#138: desafiliado y sin nadie mas, falla diciendo que NO ESTA EN NINGUN GRUPO, no que"
+                    + " le falta un privilegio")
+    void siNadieMasEntraElDesafiliadoFallaDiciendoQueNoEstaEnElGrupo() throws SQLException {
+        String ubigeo = "209924";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .desafilia(
+                                CorrienteDeIdentidad.GRUPO_DE_ADMINISTRACION_ID,
+                                CorrienteDeIdentidad.GRUPO_DE_ADMINISTRACION,
+                                CorrienteDeIdentidad.ADMINISTRADOR_ID,
+                                ADMINISTRADOR)
+                        .corriente();
+
+        Throwable rojo =
+                catchThrowable(
+                        () -> new Arnes(ubigeo, despues).implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SIN poder abrir 49 de las 49")
+                .hasMessageContaining("NO ESTA EN NINGUN GRUPO vigente")
+                .hasMessageContaining("caja_tributaria:LECTURA")
+                .hasMessageNotContaining("INHABILITADO")
+                .hasMessageNotContaining("LE FALTA UN PRIVILEGIO");
+    }
+
+    @Test
+    @DisplayName(
+            "#138: con una excepcion suya y sin nadie mas, falla nombrando el privilegio que le"
+                    + " niega ESA excepcion, y solo ese")
+    void siNadieMasEntraLaExcepcionFallaNombrandoElPrivilegio() throws SQLException {
+        String ubigeo = "209925";
+        new Arnes(ubigeo, deUnaImplantacion(ubigeo)).implantacion().run(sinArgumentos());
+        CorrienteDeIdentidad despues =
+                CorrienteDeIdentidad.despues(AHORA)
+                        .fijaUnaExcepcion(
+                                CorrienteDeIdentidad.ADMINISTRADOR_ID,
+                                ADMINISTRADOR,
+                                "anulacion_recibo",
+                                Privilegio.ELIMINACION)
+                        .corriente();
+
+        Throwable rojo =
+                catchThrowable(
+                        () -> new Arnes(ubigeo, despues).implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SIN poder abrir 1 de las 49")
+                .hasMessageContaining("LE FALTA UN PRIVILEGIO que le niega una excepcion suya")
+                .hasMessageContaining("[anulacion_recibo:ELIMINACION]")
+                .hasMessageContaining("corregir o retirar en `identidad` la excepcion")
+                .hasMessageNotContaining("NO ESTA EN NINGUN GRUPO")
+                .hasMessageNotContaining("ninguno de sus");
+    }
+
+    @Test
+    @DisplayName(
+            "#138: y la PRIMERA implantacion sigue exigiendo las 7x7: si el catalogo de `identidad`"
+                    + " no trae una opcion de esta caja, falla nombrandola")
+    void laPrimeraSigueExigiendoLaMatrizEntera() throws SQLException {
+        String ubigeo = "209926";
+        List<String> sinUna = new ArrayList<>(codigos());
+        assertThat(sinUna.remove("recaudacion_area")).as("premisa: la opcion existe").isTrue();
+        Arnes arnes =
+                new Arnes(
+                        ubigeo,
+                        CorrienteDeIdentidad.deUnaImplantacion(
+                                ubigeo, ADMINISTRADOR, sinUna, AHORA));
+
+        Throwable rojo = catchThrowable(() -> arnes.implantacion().run(sinArgumentos()));
+
+        assertThat(rojo)
+                .as(
+                        "[una copia recien nacida solo tiene al administrador y cuatro cuentas de"
+                                + " servicio que aqui no abren nada: el es la unica entrada, y lo"
+                                + " que a el le falte no lo puede hacer nadie. Si «alguien entra»"
+                                + " contara al propio administrador, esto saldria Complete con una"
+                                + " opcion que nadie puede abrir]")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SIN poder abrir 7 de las 49")
+                .hasMessageContaining("LE FALTA UN PRIVILEGIO que ninguno de sus 1 grupos")
+                .hasMessageContaining("recaudacion_area:LECTURA")
+                .hasMessageNotContaining("caja_tributaria:");
     }
 
     // ------------------------------------------------------------------
@@ -445,7 +687,8 @@ class ImplantacionDeCeroJdbcTest {
                             "implantacion"),
                     proveedor,
                     guardia,
-                    Clock.fixed(AHORA, ZoneOffset.UTC));
+                    Clock.fixed(AHORA, ZoneOffset.UTC),
+                    envolver(new CuentasDeLaCopiaJdbc(jdbc)));
         }
     }
 
@@ -539,6 +782,29 @@ class ImplantacionDeCeroJdbcTest {
             codigos.add(opcion.codigo());
         }
         return codigos;
+    }
+
+    private static CorrienteDeIdentidad deUnaImplantacion(String ubigeo) {
+        return CorrienteDeIdentidad.deUnaImplantacion(ubigeo, ADMINISTRADOR, codigos(), AHORA);
+    }
+
+    private static DefaultApplicationArguments sinArgumentos() {
+        return new DefaultApplicationArguments();
+    }
+
+    /** Corre la implantacion con el registro de {@link ImplantarMunicipalidad} escuchado. */
+    private static @Nullable Throwable escuchandoLaImplantacion(
+            List<ILoggingEvent> avisos, ThrowingCallable corrida) {
+        ListAppender<ILoggingEvent> registro = new ListAppender<>();
+        registro.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(ImplantarMunicipalidad.class);
+        logger.addAppender(registro);
+        try {
+            return catchThrowable(corrida);
+        } finally {
+            logger.detachAppender(registro);
+            avisos.addAll(registro.list);
+        }
     }
 
     /** Lo que el guardia de produccion le sigue negando al administrador. Vacio es «puede todo». */
