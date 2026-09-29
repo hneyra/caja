@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
 /**
@@ -108,5 +109,30 @@ public final class ZonaHoraria {
     public static OffsetDateTime conSuDesfase(Instant instante) {
         Objects.requireNonNull(instante, "No hay hora publicada sin instante");
         return instante.atZone(DEL_PRODUCTO).toOffsetDateTime();
+    }
+
+    /**
+     * El mismo instante, escrito como texto con el desfase de la zona del producto: {@code
+     * 2026-09-27T22:30:00-05:00}.
+     *
+     * <p>Es lo que se imprime cuando la hora no viaja en un JSON sino <b>en un documento</b>. Viene
+     * de {@code rentas}#327 —el acta de internamiento escribia {@code Instant.toString()} y un
+     * ingreso de las 20:00 del 4 constaba el 5—, con el mismo cuerpo, y llega aqui con #141 por el
+     * mismo defecto en el unico papel que la caja imprime: el duplicado del recibo decia «Emitido:
+     * 2026-09-28T03:30:00Z» para un cobro de las 22:30 del 27 cuyos importes estaban «actualizados
+     * al 2026-09-27».
+     *
+     * <p><b>Por que el formato ISO y no {@code 27/09/2026 22:30}.</b> Es el que ya imprimen las
+     * demas fechas de los documentos —{@code LocalDate.toString()}—, asi que el dia se escribe
+     * igual en todas las lineas del papel, y es el texto que Jackson escribe para {@link
+     * #conSuDesfase(Instant)}. Un formato de presentacion distinto es una decision de la interfaz
+     * del documento, no de la zona.
+     *
+     * <p><b>No recorta nada.</b> Escribe las fracciones de segundo que traiga el instante, como
+     * {@link DateTimeFormatter#ISO_OFFSET_DATE_TIME}: si el papel las quiere o no lo decide quien
+     * lo dibuja, no la zona.
+     */
+    public static String textoConSuDesfase(Instant instante) {
+        return DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(conSuDesfase(instante));
     }
 }

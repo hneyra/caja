@@ -2,6 +2,7 @@ package kamayuk.caja.nucleo.aplicacion;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,6 +36,28 @@ import org.springframework.transaction.annotation.Transactional;
  * segundo lo vuelve a calcular y, si no coincide, <b>falla</b> en vez de entregar un papel distinto
  * al original con el mismo numero. Es la misma garantia que {@code EmitirDocumento} le da a un
  * valor (V15), aplicada aqui sobre {@code recibo_movimiento}.
+ *
+ * <h2>Los duplicados que ya salieron con la hora en UTC (#141)</h2>
+ *
+ * <p>#141 cambio como se escribe la hora de emision —de UTC a la de Lima, ver {@link
+ * ModeloDelRecibo.Forma}— y con ella los bytes de todo recibo. Sin mas, cada recibo que ya tenia un
+ * duplicado contestaria 409 al siguiente, porque su resumen guardado es el de la forma antigua.
+ *
+ * <p><b>El resumen ya dice con que forma salio.</b> Es el SHA-256 de los bytes, y las dos formas
+ * nunca dan los mismos —una acaba la hora en «Z» y la otra en «-05:00»—, asi que a lo sumo una de
+ * las dos reproduce el resumen guardado. {@link #formaDelPapel} prueba la vigente y, si no
+ * coincide, la anterior; la que coincida es la que se imprime y la que se vuelve a guardar, y si no
+ * coincide ninguna sigue siendo {@link LaReimpresionNoCoincide}, como antes.
+ *
+ * <p>Por eso no hay una columna {@code version} en {@code recibo_movimiento}. Repetiria lo que el
+ * resumen ya dice, costaria una migracion y un campo mas en {@link MovimientoDeRecibo} y en su
+ * repositorio, y no ahorraria la comprobacion: una columna que dice «v2» no demuestra que los bytes
+ * salgan iguales, y el resumen habria que seguir comparandolo. Lo que cuesta no tenerla es dibujar
+ * dos veces el PDF de un recibo antiguo al reimprimirlo, y nada mas.
+ *
+ * <p>Y la forma antigua <b>se imprime</b>, no solo se reconoce: el primer duplicado de ese recibo
+ * ya circula con su «…Z», y el resumen existe para que con el mismo numero no circulen dos papeles
+ * distintos. Un recibo sin duplicado previo sale en Lima desde el primero.
  *
  * <h2>Por que el recibo no pasa por {@code documento_emitido}</h2>
  *
@@ -119,22 +142,19 @@ public class DuplicadoDeRecibo {
         long reciboId =
                 Objects.requireNonNull(recibo.id(), "Un recibo leido trae su identificador");
 
-        // El resumen se calcula sobre LO CONGELADO -sin el nombre del contribuyente, que
-        // viene del padron de hoy y no del recibo-, para que cubra exactamente lo que
-        // tiene que salir identico: todas las cifras y todo el desglose.
-        String resumen = generador.resumenDe(ModeloDelRecibo.de(recibo, null), FORMATO_DEL_RESUMEN);
-        exigirQueSalgaIgual(numero, reciboId, resumen);
+        Dibujo dibujo = formaDelPapel(numero, recibo, reciboId);
 
         @Nullable MovimientoDeRecibo anulacion = movimientos.anulacionDe(reciboId).orElse(null);
         int cual = (int) movimientos.duplicadosDe(reciboId) + 1;
 
-        ModeloDeDocumento impreso = ModeloDelRecibo.de(recibo, anulacion).comoDuplicado(cual);
+        ModeloDeDocumento impreso =
+                ModeloDelRecibo.de(recibo, anulacion, dibujo.forma()).comoDuplicado(cual);
         byte[] documento = generador.generar(impreso, formato);
 
         MovimientoDeRecibo registrado =
                 movimientos.registrar(
                         MovimientoDeRecibo.duplicado(
-                                recibo, LocalDate.now(reloj), resumen, observacion));
+                                recibo, LocalDate.now(reloj), dibujo.resumen(), observacion));
 
         auditoria.registrar(
                 RegistroDeAuditoria.enLaFechaDe(
@@ -151,7 +171,8 @@ public class DuplicadoDeRecibo {
     // ------------------------------------------------------------------
 
     /**
-     * Comprueba que dibujar lo congelado sigue dando los mismos bytes que la primera vez.
+     * Con que forma se dibuja este recibo, comprobando que dibujar lo congelado sigue dando los
+     * mismos bytes que la primera vez.
      *
      * <p>Es lo unico que convierte «la reimpresion sale identica al original» en una afirmacion
      * comprobable. Si alguien cambia el renderizador —una fuente, un margen— o hace que el modelo
@@ -159,17 +180,50 @@ public class DuplicadoDeRecibo {
      * silencio un papel distinto al original con el mismo numero.
      *
      * <p>Se compara con el <b>primer</b> duplicado y no con el ultimo: si algo se movio entre el
-     * primero y el segundo, el que hay que reproducir es el primero.
+     * primero y el segundo, el que hay que reproducir es el primero. Su resumen es tambien el que
+     * elige la forma (#141): la primera de {@link ModeloDelRecibo.Forma} que lo reproduce. Sin
+     * duplicado previo no hay nada que reproducir, y sale la vigente.
+     *
+     * <p>El resumen se calcula sobre LO CONGELADO —sin la anulacion ni la marca de duplicado, que
+     * cambian despues—, para que cubra exactamente lo que tiene que salir identico: todas las
+     * cifras y todo el desglose.
      */
-    private void exigirQueSalgaIgual(NumeroDeRecibo numero, long reciboId, String ahora) {
-        List<MovimientoDeRecibo> anteriores = movimientos.deRecibo(reciboId);
-        for (MovimientoDeRecibo movimiento : anteriores) {
+    private Dibujo formaDelPapel(NumeroDeRecibo numero, Recibo recibo, long reciboId) {
+        List<String> anteriores = new ArrayList<>();
+        for (MovimientoDeRecibo movimiento : movimientos.deRecibo(reciboId)) {
             String antes = movimiento.resumen();
-            if (antes != null && !antes.equals(ahora)) {
-                throw new LaReimpresionNoCoincide(numero, antes, ahora);
+            if (antes != null) {
+                anteriores.add(antes);
             }
         }
+
+        String vigente = resumenDe(recibo, ModeloDelRecibo.Forma.VIGENTE);
+        if (anteriores.isEmpty()) {
+            return new Dibujo(ModeloDelRecibo.Forma.VIGENTE, vigente);
+        }
+
+        String primero = anteriores.getFirst();
+        for (ModeloDelRecibo.Forma forma : ModeloDelRecibo.Forma.values()) {
+            String resumen =
+                    forma == ModeloDelRecibo.Forma.VIGENTE ? vigente : resumenDe(recibo, forma);
+            if (resumen.equals(primero)) {
+                for (String antes : anteriores) {
+                    if (!antes.equals(resumen)) {
+                        throw new LaReimpresionNoCoincide(numero, antes, resumen);
+                    }
+                }
+                return new Dibujo(forma, resumen);
+            }
+        }
+        throw new LaReimpresionNoCoincide(numero, primero, vigente);
     }
+
+    private String resumenDe(Recibo recibo, ModeloDelRecibo.Forma forma) {
+        return generador.resumenDe(ModeloDelRecibo.de(recibo, null, forma), FORMATO_DEL_RESUMEN);
+    }
+
+    /** La forma con que sale el papel y el resumen que se guarda de ella. */
+    private record Dibujo(ModeloDelRecibo.Forma forma, String resumen) {}
 
     /** Sin datos personales: esto acaba en la columna JSON de la auditoria. */
     private static String descripcion(Recibo recibo, int cual, FormatoDeDocumento formato) {

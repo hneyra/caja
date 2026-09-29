@@ -560,9 +560,10 @@ class ReciboJdbcTest {
 
             assertThat(texto(enSetiembre)).contains("210.00").doesNotContain("777.77");
             // Las dos lineas de fecha del papel, enteras y no como subcadena suelta: el
-            // instante de emision tambien contiene «2026-03-16», asi que buscar solo eso
-            // deja pasar un aLaFecha resuelto con el reloj de la reimpresion —que es
-            // exactamente lo que una rotura de prueba destapo aqui—.
+            // instante de emision tambien lleva un dia —hasta #141, en UTC, era justo
+            // «2026-03-16»—, asi que buscar solo eso deja pasar un aLaFecha resuelto con el
+            // reloj de la reimpresion —que es exactamente lo que una rotura de prueba
+            // destapo aqui—.
             assertThat(texto(enSetiembre))
                     .as("la fecha del papel es la del cobro, no la de la reimpresion (regla 9)")
                     .contains("Datos al " + PAGO)
