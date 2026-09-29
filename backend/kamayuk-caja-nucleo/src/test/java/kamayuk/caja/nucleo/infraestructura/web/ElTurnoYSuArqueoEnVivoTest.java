@@ -73,7 +73,9 @@ class ElTurnoYSuArqueoEnVivoTest {
             MockMvcBuilders.standaloneSetup(
                             new TurnoController(new ConsultaDelTurno(turnos), RELOJ),
                             new EstadoDelCierreController(
-                                    new ArqueoDeTurno(cierres, new BuzonEnMemoria()), RELOJ))
+                                    new ArqueoDeTurno(cierres, new BuzonEnMemoria()),
+                                    new ConsultaDelTurno(turnos),
+                                    RELOJ))
                     .setControllerAdvice(new ManejadorDeErrores())
                     .setMessageConverters(
                             new org.springframework.http.converter.json
@@ -227,11 +229,9 @@ class ElTurnoYSuArqueoEnVivoTest {
     @Test
     @DisplayName("AC 4 — el arqueo en vivo manda declarado, diferencia y cuadra NULOS")
     void elArqueoEnVivoNoInventaUnDeclarado() throws Exception {
-        OrigenContext.fijar(new Origen(CAJERO, null, null));
+        turnos.conTurnoAbierto(TURNO, CAJA_PRINCIPAL, CAJERO, HOY);
 
-        MvcResult resultado =
-                mvc.perform(MockMvcRequestBuilders.get("/caja/api/v1/turnos/10/cierre"))
-                        .andReturn();
+        MvcResult resultado = cierreDe(TURNO);
 
         assertThat(resultado.getResponse().getStatus()).isEqualTo(200);
         String cuerpo = resultado.getResponse().getContentAsString();
@@ -252,7 +252,54 @@ class ElTurnoYSuArqueoEnVivoTest {
                 .doesNotContain("\"diferencia\":{");
     }
 
+    // ── #148: solo se arquea un turno que existe y esta abierto ───────────
+
+    @Test
+    @DisplayName("#148 — un turno que no existe es 404 NO_ENCONTRADO, no «puede cerrar»")
+    void unTurnoQueNoExisteEs404() throws Exception {
+        // Ningun turno sembrado con este id, pero SI recibos: si el controlador arqueara sin
+        // preguntar, saldria 200 con 300,00 de neto y «puede cerrar».
+        MvcResult resultado = cierreDe(TURNO);
+
+        assertThat(resultado.getResponse().getStatus())
+                .as(
+                        "hasta #148 un turnoId que no es de nadie contestaba 200 con el arqueo en"
+                                + " cero y puedeCerrar: true —medido con GET /turnos/999/cierre—")
+                .isEqualTo(404);
+        assertThat(resultado.getResponse().getContentAsString())
+                .contains("\"codigo\":\"NO_ENCONTRADO\"")
+                .contains("No hay ningun turno 10 en esta municipalidad")
+                .doesNotContain("puedeCerrar");
+    }
+
+    @Test
+    @DisplayName("#148 — un turno ya cerrado es 409 CONFLICTO, no «puedeCerrar: true»")
+    void unTurnoCerradoEs409() throws Exception {
+        turnos.conTurnoAbierto(TURNO, CAJA_PRINCIPAL, CAJERO, HOY).cerrar(TURNO);
+
+        MvcResult resultado = cierreDe(TURNO);
+
+        assertThat(resultado.getResponse().getStatus())
+                .as(
+                        "el mismo 409 que POST /turnos/cierre da al cerrar otra vez: la pregunta y"
+                                + " el acto dicen lo mismo del mismo estado")
+                .isEqualTo(409);
+        assertThat(resultado.getResponse().getContentAsString())
+                .contains("\"codigo\":\"CONFLICTO\"")
+                .contains("El turno 10 ya esta cerrado")
+                .doesNotContain("\"puedeCerrar\"")
+                .as("y no publica un segundo arqueo del dinero que el acta ya congelo")
+                .doesNotContain("\"arqueo\"");
+    }
+
     // ------------------------------------------------------------------
+
+    private MvcResult cierreDe(long turnoId) throws Exception {
+        OrigenContext.limpiar();
+        OrigenContext.fijar(new Origen(CAJERO, null, null));
+        return mvc.perform(MockMvcRequestBuilders.get("/caja/api/v1/turnos/" + turnoId + "/cierre"))
+                .andReturn();
+    }
 
     private MvcResult delDia(String cajero) throws Exception {
         OrigenContext.limpiar();

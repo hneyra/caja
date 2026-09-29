@@ -3,7 +3,9 @@ package kamayuk.caja.nucleo.aplicacion;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import kamayuk.caja.nucleo.dominio.TurnoConSuCaja;
+import kamayuk.caja.nucleo.dominio.TurnoDeCaja;
 import kamayuk.caja.nucleo.dominio.TurnoDeCajaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,5 +56,23 @@ public class ConsultaDelTurno {
         Objects.requireNonNull(cajero, "Los turnos son de un cajero concreto");
         Objects.requireNonNull(fecha, "Los turnos son de un dia concreto");
         return turnos.delCajeroEn(cajero.strip(), fecha);
+    }
+
+    /**
+     * El turno con ese identificador, con su estado derivado de {@code cierre_turno} (V32), o vacio
+     * si no existe <b>para esta municipalidad</b> (#148).
+     *
+     * <p>Lo pide {@code EstadoDelCierreController} antes de arquear: hasta #148 arqueaba cualquier
+     * numero, y uno que no era de ningun turno —o que era de otra municipalidad, que RLS esconde—
+     * salia con el arqueo en cero y «puede cerrar». Las dos ausencias son la misma a proposito: la
+     * municipalidad no entra (regla 2), la pone el {@code SET LOCAL} de la transaccion, y un
+     * resultado que distinguiera «no existe» de «es de otra» seria un detector de turnos ajenos.
+     *
+     * <p>Es una foto, no un candado: lo que decide si un cierre se firma lo vuelve a leer {@link
+     * CerrarTurno} con el candado del turno (#110).
+     */
+    @Transactional(readOnly = true)
+    public Optional<TurnoDeCaja> porId(long turnoId) {
+        return turnos.porId(turnoId);
     }
 }
