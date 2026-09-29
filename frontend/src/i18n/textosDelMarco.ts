@@ -2,7 +2,13 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { TextosDelArmazon } from '@kamayuk/shell';
-import { TEXTOS_DE_LA_UI, type TextosDeLaPantalla, type TextosDeLasPiezas, type TextosDelInterprete } from '@kamayuk/ui';
+import {
+  TEXTOS_DE_LA_UI,
+  type TextosDeLaPantalla,
+  type TextosDeLasPiezas,
+  type TextosDelInterprete,
+  type TextosDelMandoDeTema,
+} from '@kamayuk/ui';
 
 /**
  * **Las palabras que el MARCO dice por su cuenta, traducidas por este sistema** (#133).
@@ -223,6 +229,59 @@ type LasDelActo = Pick<
   | 'datoAusente'
 >;
 
+/**
+ * **Las trece palabras del mando de los temas** (#144; `kamayuk-lib`#53).
+ *
+ * <h2>De donde vienen</h2>
+ *
+ * Hasta #144 el mando era una copia del de `rentas` en `src/preferencias/`, con sus palabras
+ * escritas dentro de cada `t()` —y los rotulos de las identidades y los modos, por variable—. La
+ * pieza subio a `@kamayuk/ui` y **no se lleva `t()` con ella**: `i18next` no es `peerDependency` de
+ * la libreria, asi que las palabras entran por `textos`, con el castellano de
+ * `TEXTOS_DEL_MANDO_DE_TEMA` por omision. Sin este saco la ventanilla montaria el mando en el
+ * castellano de la libreria, y en un segundo idioma saldria **el unico cajon sin traducir**.
+ *
+ * <h2>Por que vive aqui, y no escrito en `aplicacion.tsx`</h2>
+ *
+ * Por lo mismo que las del marco: el locale **se deriva** de este dato —`clavesDelMarco`—, y asi un
+ * rotulo nuevo no puede quedarse fuera del inventario. Los de las identidades eran justo los que
+ * `i18next-cli` no veia —se leian por variable— y hasta #144 estaban escritos a mano en
+ * `el-locale-esta-completo.test.ts`.
+ *
+ * <h2>Y por que `satisfies` el tipo de la libreria</h2>
+ *
+ * `identidades` es un `Record<Identidad, string>`: el dia que `@kamayuk/ui` publique una quinta
+ * identidad, este saco **deja de compilar** diciendo cual falta, en vez de ofrecerla en el
+ * castellano de la libreria dentro de un cajon traducido. Las palabras son las mismas que decia la
+ * copia, y las mismas que la libreria trae por omision: este issue cambia quien dibuja, no lo que
+ * se lee.
+ */
+export const FRASES_DEL_MANDO_DE_TEMA = {
+  titulo: 'Preferencias',
+  nota: 'Se guarda en este navegador y solo aqui: no viaja al servidor ni cambia lo que ven las demas personas.',
+  ejeDeLaIdentidad: 'Identidad visual',
+  notaDeLaIdentidad: 'La paleta con que se dibuja este servicio.',
+  ejeDelModo: 'Apariencia',
+  notaDelModo: 'Sin elegir, se sigue lo que el equipo tenga puesto.',
+  identidades: {
+    institucional: 'Institucional',
+    'alto-contraste': 'Alto contraste',
+    sepia: 'Sepia',
+    clasico: 'Clásico',
+  },
+  modos: {
+    claro: 'Claro',
+    oscuro: 'Oscuro',
+  },
+  elDelSistema: 'El del sistema',
+} as const satisfies TextosDelMandoDeTema;
+
+/** Las del mando, planas: el saco lleva dos anidados —`identidades` y `modos`— y el locale no. */
+function clavesDelMando(): readonly string[] {
+  const { identidades, modos, ...sueltas } = FRASES_DEL_MANDO_DE_TEMA;
+  return [...Object.values(sueltas), ...Object.values(identidades), ...Object.values(modos)];
+}
+
 /** Todo lo que este archivo aporta al inventario del locale. Ver `catalogo-de-claves.ts`. */
 export function clavesDelMarco(): readonly string[] {
   return [
@@ -230,7 +289,49 @@ export function clavesDelMarco(): readonly string[] {
     ...Object.values(FRASES_DEL_INTERPRETE),
     ...Object.values(FRASES_DE_LAS_LECTURAS),
     ...Object.values(FRASES_DEL_ACTO),
+    ...clavesDelMando(),
   ];
+}
+
+/**
+ * Cada rotulo de un `Record` atado a su tipo, pasado por `t()`, **sin nombrar sus claves aqui**.
+ *
+ * Escritas a mano —una linea por identidad—, una identidad nueva pediria dos lineas en dos sitios;
+ * asi pide una, en el saco, y el compilador dice donde. La conversion final es segura: las entradas
+ * salen del mismo `Record<K, string>` que se recibe.
+ */
+function cadaRotuloPor<K extends string>(
+  t: (clave: string) => string,
+  rotulos: Readonly<Record<K, string>>,
+): Readonly<Record<K, string>> {
+  return Object.fromEntries(
+    Object.entries<string>(rotulos).map(([clave, rotulo]) => [clave, t(rotulo)]),
+  ) as Record<K, string>;
+}
+
+/**
+ * El saco que `<MandoDeTema>` recibe, con las trece ya pasadas por `t()` (#144).
+ *
+ * Memorizado sobre `t` por lo mismo que el del marco: el mando rehace sus dos listas de opciones con
+ * lo que recibe, y un objeto nuevo en cada pintada del armazon las rehace sin motivo.
+ */
+export function useTextosDelMandoDeTema(): TextosDelMandoDeTema {
+  const { t } = useTranslation();
+
+  return useMemo<TextosDelMandoDeTema>(
+    () => ({
+      titulo: t(FRASES_DEL_MANDO_DE_TEMA.titulo),
+      nota: t(FRASES_DEL_MANDO_DE_TEMA.nota),
+      ejeDeLaIdentidad: t(FRASES_DEL_MANDO_DE_TEMA.ejeDeLaIdentidad),
+      notaDeLaIdentidad: t(FRASES_DEL_MANDO_DE_TEMA.notaDeLaIdentidad),
+      ejeDelModo: t(FRASES_DEL_MANDO_DE_TEMA.ejeDelModo),
+      notaDelModo: t(FRASES_DEL_MANDO_DE_TEMA.notaDelModo),
+      identidades: cadaRotuloPor(t, FRASES_DEL_MANDO_DE_TEMA.identidades),
+      modos: cadaRotuloPor(t, FRASES_DEL_MANDO_DE_TEMA.modos),
+      elDelSistema: t(FRASES_DEL_MANDO_DE_TEMA.elDelSistema),
+    }),
+    [t],
+  );
 }
 
 /** Las del interprete y las de las lecturas, pasadas por `t()`. Memorizadas sobre `t`, como las del marco. */
