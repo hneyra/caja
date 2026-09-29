@@ -56,9 +56,12 @@ guarda contra los `.java`.
 ### 2 · La acción escribe, y es la primera escritura de esta interfaz
 
 Llama a `POST /cobros/{nro}/anulacion` con el número que ya está en la ruta de la hoja, nunca con
-uno tecleado. **ADR-0040 se amplía aquí y sólo aquí**: cobrar, cobrar tasas, cerrar el turno y
-explicar un pago siguen declaradas y sin llamarse, y una guarda lo comprueba buscando sus rutas en
-el código servido.
+uno tecleado — **y sólo mientras la ruta lo siga teniendo elegido**
+([#134](https://github.com/hneyra/caja/issues/134)): elegir otro recibo cierra el acto abierto, su
+rechazo es de ese recibo y de ese envío, y lo que se envía se vuelve a comparar con la ruta antes de
+salir. **ADR-0040 se amplía aquí y sólo aquí**: cobrar, cobrar tasas, cerrar el turno y explicar un
+pago siguen declaradas y sin llamarse, y una guarda lo comprueba buscando sus rutas en el código
+servido.
 
 La escritura vive en **un solo archivo** (`datos/laAnulacion.ts`), y eso no es una convención: el
 barrido de `verificaciones/solo-lee.test.ts` recorre `src/` entero y cualquier otro archivo que
@@ -97,10 +100,11 @@ turnos comparten, el borrador de otra cuenta se descarta en vez de ofrecerse a q
 **Dónde.** `sessionStorage`, no el almacenamiento que persiste: es de esta pestaña y este turno.
 Sobrevive a la ida y vuelta al emisor —que es la misma pestaña— y muere con ella.
 
-**Cuándo se borra.** Al anular con éxito, al cerrar el acto —que es cancelarlo— y al cerrar la
-sesión, antes de irse al emisor. La única excepción es cerrar el acto que sigue a un rechazo 401:
-ahí cerrar no es cancelar, es el paso que el propio remedio pide —cerrar, recargar, volver a
-entrar—, y el borrador tiene que seguir ahí para encontrarse al volver.
+**Cuándo se borra.** Al anular con éxito, al cerrar el acto —que es cancelarlo, lo cierre su botón
+o elegir otro recibo en la lista (#134)— y al cerrar la sesión, antes de irse al emisor. La única
+excepción es cerrar el acto que sigue a un rechazo 401: ahí cerrar no es cancelar, es el paso que el
+propio remedio pide —cerrar, recargar, volver a entrar—, y el borrador tiene que seguir ahí para
+encontrarse al volver.
 
 **Por qué no es una segunda escritura.** No manda nada a ningún backend, no representa un estado del
 recibo ni de la sesión, y desaparece sola con la pestaña o con la cuenta que la dejó. La única

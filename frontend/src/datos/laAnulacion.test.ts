@@ -8,7 +8,7 @@ import {
   loQuePuedeLaSesion,
   rutaDeLaAnulacion,
 } from './laAnulacion.ts';
-import { falloDeLaAnulacion } from './useLaAnulacion.ts';
+import { falloDeLaAnulacion, numeroQueSeAnula, sigueSiendoDelElegido } from './useLaAnulacion.ts';
 
 /**
  * **La unica escritura de la ventanilla, medida sin montar nada** (#100, ADR-0044).
@@ -135,5 +135,33 @@ describe('que dice cada rechazo', () => {
     expect(peldano.peldano.detalle).toMatch(/no contestó/);
     expect(peldano.peldano.remedio).toMatch(/conexión/);
     expect(peldano.tono, 'sin estado no se sabe que fue: se trata como averia').toBe('mal');
+  });
+});
+
+/**
+ * **El acto es del recibo elegido** (#134), medido sin montar nada.
+ *
+ * `verificaciones/el-acto-es-del-recibo-elegido.test.tsx` mide que elegir otro recibo cierra el acto;
+ * esto mide la regla con que se decide, y la segunda comprobacion al enviar, que es la que no depende
+ * de que ese cierre llegue antes que la confirmacion.
+ */
+describe('el acto de anular es del recibo que la ruta tiene elegido', () => {
+  const ACTO = { clave: 'anular-el-recibo', parametros: { numeroDelRecibo: '001-000123' } };
+
+  it('sigue abierto con su recibo elegido, y deja de estarlo con otro o con ninguno', () => {
+    expect(sigueSiendoDelElegido(ACTO, '001-000123')).toBe(true);
+    expect(sigueSiendoDelElegido(ACTO, '001-000124')).toBe(false);
+    expect(sigueSiendoDelElegido(ACTO, null)).toBe(false);
+    // Uno que no se abrio sobre un recibo no se ata a ninguno.
+    expect(sigueSiendoDelElegido({ clave: 'otro' }, '001-000124')).toBe(true);
+  });
+
+  it('se anula el numero del acto SOLO si es el elegido al enviar; si no, ninguno', () => {
+    expect(numeroQueSeAnula(ACTO.parametros, '001-000123')).toBe('001-000123');
+    expect(numeroQueSeAnula(ACTO.parametros, '001-000124')).toBeNull();
+    expect(numeroQueSeAnula(ACTO.parametros, null)).toBeNull();
+    // Sin numero en el acto no hay a quien anular, aunque la ruta tenga uno elegido.
+    expect(numeroQueSeAnula({}, '001-000123')).toBeNull();
+    expect(numeroQueSeAnula({ numeroDelRecibo: '' }, '')).toBeNull();
   });
 });

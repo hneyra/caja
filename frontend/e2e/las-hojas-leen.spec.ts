@@ -40,10 +40,15 @@ async function contestaLosDatos(pagina: Page, sinDuplicado = false): Promise<str
     const url = new URL(ruta.request().url());
     if (url.pathname.endsWith('/duplicado')) {
       pedidas.push(url.pathname);
+      // Con el numero que se pidio (#134): dos recibos elegidos uno tras otro tienen que verse
+      // distintos, o no se sabria cual de los dos esta mirando la hoja.
+      const numero = decodeURIComponent(url.pathname.split('/').at(-2) ?? '');
       await ruta.fulfill({
         status: sinDuplicado ? 404 : 200,
         contentType: 'application/json',
-        body: JSON.stringify(sinDuplicado ? { status: 404 } : DUPLICADO_MEDIDO),
+        body: JSON.stringify(
+          sinDuplicado ? { status: 404 } : { ...DUPLICADO_MEDIDO, recibo: { ...DUPLICADO_MEDIDO.recibo, numero } },
+        ),
       });
       return;
     }
@@ -270,4 +275,58 @@ test('«duplicado-recibo»: el recibo elegido se anula desde aqui, con su confir
     motivo: 'Cobro duplicado del mismo recibo',
     observacion: 'Se anula a pedido de tesorería',
   });
+});
+
+/**
+ * **Elegir otro recibo con el acto abierto lo cierra, y lo que se anula es el de la ruta** (#134),
+ * en el navegador.
+ *
+ * Es el defecto que encontro la auditoria, recorrido sobre el `dist/`: con el acto abierto sobre el
+ * 123 y un motivo escrito, «Ver el duplicado» en el 124 movia la ruta y el recibo de arriba, pero el
+ * acto seguia diciendo 123 y confirmar mandaba `POST /cobros/001-000123/anulacion`. La costura se
+ * mide en jsdom (`verificaciones/el-acto-es-del-recibo-elegido.test.tsx`); esto mide que en
+ * Chromium, con el foco y los clics de verdad, pasa lo mismo.
+ */
+test('«duplicado-recibo»: elegir otro recibo con el acto abierto lo cierra, y se anula el de la ruta', async ({ page }) => {
+  await contestaLosDatos(page);
+  const escritas: string[] = [];
+  await page.route('**/caja/api/v1/cobros/**/anulacion', async (ruta) => {
+    escritas.push(new URL(ruta.request().url()).pathname);
+    await ruta.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ numero: '001-000124', estado: 'ANULADO' }),
+    });
+  });
+  await abrir(page, 'duplicado-recibo/001-000123');
+
+  const anular = page.locator('[data-accion="abre:anular-el-recibo"]');
+  const acto = page.locator('[data-acto="anular-el-recibo"]');
+  await expect(anular).not.toHaveAttribute('aria-disabled', 'true');
+  await anular.click();
+  await expect(acto).toContainText('001-000123');
+  await page.getByLabel(/Motivo/).fill('Era del 123');
+
+  await page.getByRole('row').filter({ hasText: '001-000124' })
+    .getByRole('button', { name: 'Ver el duplicado' })
+    .click();
+
+  await expect(page.locator('tr[aria-current="true"]')).toContainText('001-000124');
+  expect(page.url()).toContain('#/duplicado-recibo/001-000124');
+  await expect(acto, 'el acto del 123 sigue abierto mirando el 124').toHaveCount(0);
+
+  await expect(anular).not.toHaveAttribute('aria-disabled', 'true');
+  await anular.click();
+  await expect(acto).toContainText('001-000124');
+  await expect(acto).not.toContainText('001-000123');
+  await expect(page.getByLabel(/Motivo/), 'lo escrito para el 123 no pasa al 124').toHaveValue('');
+  await page.getByLabel(/Motivo/).fill('Cobro duplicado');
+  await page.getByLabel(/Observación/).fill('Se anula a pedido de tesorería');
+  await acto.locator('button[type="submit"]').click();
+  // La confirmacion nombra el recibo: es el ultimo sitio donde se ve sobre cual se actua.
+  await expect(page.getByRole('alertdialog')).toContainText('Va a anular el recibo 001-000124.');
+  await page.getByRole('button', { name: /confirmar/i }).click();
+
+  await expect(page.getByText('El cobro quedó anulado')).toBeVisible();
+  expect(escritas).toEqual(['/caja/api/v1/cobros/001-000124/anulacion']);
 });

@@ -264,8 +264,12 @@ export const TESORERIA = {
           // Los de `Observacion` del dominio: el `CHECK` de la auditoría y el ancho de la columna.
           largo: { minimo: 5, maximo: 500 },
         },
-        advertencia:
-          'Anular reversa lo cobrado y publica el aviso al sistema de origen. No se deshace desde la ventanilla.',
+        // Con el numero dentro (#134): la confirmacion es el ultimo sitio donde se puede ver sobre
+        // QUE recibo se actua, y sale del acto —de lo que la accion le dio—, no de la ruta.
+        advertencia: {
+          plantilla:
+            'Va a anular el recibo {numeroDelRecibo}. Anular reversa lo cobrado y publica el aviso al sistema de origen. No se deshace desde la ventanilla.',
+        },
         hecho: {
           titulo: 'El cobro quedó anulado',
           texto: {
