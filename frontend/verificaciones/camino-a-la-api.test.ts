@@ -12,6 +12,7 @@ import { PROHIBICIONES } from '../eslint.prohibiciones.mjs';
 import { PREFIJO as RAIZ } from '../src/api/cliente.ts';
 import { RUTA_DE_LA_ANULACION, rutaDeLaAnulacion } from '../src/datos/laAnulacion.ts';
 import { RUTAS, rutaDelDuplicado } from '../src/datos/lecturas.ts';
+import { TESORERIA } from '../src/pantallas/definiciones/tesoreria.ts';
 import configuracion from '../vite.config.ts';
 import { mapeosDelDirectorio } from './controladores.ts';
 
@@ -311,6 +312,83 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     // Y el javadoc del backend es quien lo dice: si dejara de decirlo, esta captura estaria sola.
     const java = readFileSync(join(REPOSITORIO, `${NUCLEO}/ReciboResource.java`), 'utf8');
     expect(java).toContain('nulo si no es una tasa');
+  });
+});
+
+/**
+ * **La lista de recibos pide los mas recientes primero, y en el dialecto que el backend entiende** (#135).
+ *
+ * `RUTAS.recibos` era `/recibos` a secas, y el backend completa lo que falta: `fecha` —el instante
+ * de emision—, `ASCENDENTE` y veinte filas. La hoja ensenaba **los veinte recibos mas antiguos** de
+ * la municipalidad, y como un cobro solo se anula el dia en que se hizo, ninguno de los que se veian
+ * se podia anular. Nada lo delataba: la lista salia llena, con cifras de verdad.
+ *
+ * Aqui no se mira que la cadena diga `DESCENDENTE`, sino que **el backend la lea asi**: cada
+ * parametro es un componente de `ParametrosDePaginacion` —Spring enlaza el `record` por el nombre de
+ * sus componentes, y uno mal escrito se ignora en silencio—; la direccion es la constante de
+ * `Paginacion.Direccion` cuyo SQL es `DESC` —el conversor de Spring pide el nombre exacto—; el campo
+ * esta en la lista blanca de `ReciboRepositoryJdbc` y es la columna que se escribe con `emitidoEn()`;
+ * y el tamano no pasa del tope de `Paginacion`, que contestaria 422.
+ */
+describe('la lista de recibos pide los mas recientes primero (#135)', () => {
+  const PAGINACION = 'backend/kamayuk-caja-plataforma/src/main/java/kamayuk/caja/web/ParametrosDePaginacion.java';
+  const DIRECCION = 'backend/kamayuk-caja-dominio-compartido/src/main/java/kamayuk/caja/compartido/Paginacion.java';
+  const REPOSITORIO_DE_RECIBOS =
+    'backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/ReciboRepositoryJdbc.java';
+  const CONTROLADOR = 'backend/kamayuk-caja-nucleo/src/main/java/kamayuk/caja/nucleo/infraestructura/web/ReciboController.java';
+  const [ruta, consulta = ''] = RUTAS.recibos.split('?');
+  const pedido = new URLSearchParams(consulta);
+  const paginacion = readFileSync(join(REPOSITORIO, DIRECCION), 'utf8');
+  const repositorio = readFileSync(join(REPOSITORIO, REPOSITORIO_DE_RECIBOS), 'utf8');
+
+  it('EL CENTINELA: el listado de `/recibos` se pagina con `ParametrosDePaginacion`', () => {
+    // Si el controlador dejara de recibirlo, sus nombres ya no dirian nada de esta ruta.
+    const controlador = readFileSync(join(REPOSITORIO, CONTROLADOR), 'utf8');
+    const listar = /@GetMapping\("\/recibos"\)[\s\S]*?listar\(([\s\S]*?)\)\s*\{/.exec(controlador)?.[1] ?? '';
+    expect(ruta).toBe('/recibos');
+    expect(listar).toContain('ParametrosDePaginacion paginacion');
+  });
+
+  it('cada parametro de la consulta es un componente de `ParametrosDePaginacion`', () => {
+    expect([...pedido.keys()].sort()).toEqual(['direccion', 'ordenarPor', 'tamano']);
+    expect(componentesDe(PAGINACION)).toEqual(expect.arrayContaining([...pedido.keys()]));
+  });
+
+  it('la direccion es la constante de `Paginacion.Direccion` que ordena `DESC`', () => {
+    const constantes = new Map(
+      [...(/enum Direccion \{([^;]*);/.exec(paginacion)?.[1] ?? '').matchAll(/(\w+)\("(\w+)"\)/g)].map((m) => [m[1], m[2]]),
+    );
+    expect(constantes.size, 'no se leyeron las constantes de la direccion').toBe(2);
+    expect(constantes.get(pedido.get('direccion') ?? ''), `«${pedido.get('direccion') ?? ''}» no ordena DESC`).toBe('DESC');
+  });
+
+  it('el campo esta en la lista blanca del repositorio, y es el instante de emision', () => {
+    const permitidos = [...(/OrdenSeguro\.sobre\(([^)]*)\)/.exec(repositorio)?.[1] ?? '').matchAll(/"(\w+)"/g)].map((m) => m[1]);
+    const campo = pedido.get('ordenarPor') ?? '';
+    expect(permitidos, 'fuera de la lista blanca, el backend contesta 422 ORDEN_NO_ADMITIDO').toContain(campo);
+    expect(repositorio, `«${campo}» no es la columna que se escribe con el instante de emision`).toMatch(
+      new RegExp(`\\.param\\("${campo}",\\s*Timestamp\\.from\\(recibo\\.emitidoEn\\(\\)\\)\\)`),
+    );
+  });
+
+  it('el tamano es un entero entre 1 y el tope de `Paginacion`', () => {
+    const tope = Number(/TAMANO_MAXIMO = (\d+)/.exec(paginacion)?.[1]);
+    const tamano = Number(pedido.get('tamano'));
+    expect(Number.isInteger(tamano) && tamano >= 1 && tamano <= tope, `${String(tamano)} fuera de 1..${String(tope)}`).toBe(true);
+  });
+
+  /**
+   * **Y la hoja dice lo que hace** (#135). Prometia «busque el recibo por el documento del pagador, la
+   * caja, el cajero o las fechas» sin un solo campo donde escribirlo. Si un dia la hoja ofrece donde
+   * buscar, esta prueba es la que hay que cambiar: pedir que se busque exige un campo que escriba.
+   */
+  it('la instruccion de `duplicado-recibo` no pide buscar sin donde, y dice el orden que se pide', () => {
+    const hoja = TESORERIA['duplicado-recibo'];
+    const conEntrada = hoja.bloques.some(
+      (b) => !('tipo' in b && b.tipo === 'acto') && 'campos' in b && b.campos.some((c) => c.tipo !== 'r'),
+    );
+    if (!conEntrada) expect(hoja.instruccion).not.toMatch(/\b(?:busque|filtre|escriba)\b/i);
+    expect(hoja.instruccion).toMatch(/más recientes/);
   });
 });
 

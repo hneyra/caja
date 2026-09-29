@@ -24,6 +24,9 @@ import { abrir, conLaSeguridadContestada } from './instalacion.ts';
  * arrastra `@kamayuk/ui`. Por eso lo esperado se escribe aqui, y es lo que un cajero leeria.
  */
 
+/** La consulta con que salio cada lectura contestada, por su ruta. */
+const consultas = new Map<string, string>();
+
 /**
  * Contesta las lecturas de estas dos hojas y apunta lo que se pidio.
  *
@@ -36,7 +39,10 @@ import { abrir, conLaSeguridadContestada } from './instalacion.ts';
  */
 async function contestaLosDatos(pagina: Page, sinDuplicado = false): Promise<string[]> {
   const pedidas: string[] = [];
-  await pagina.route('**/caja/api/v1/{recibos,recibos/**,pagos/sin-entregar,turnos/**}', async (ruta) => {
+  consultas.clear();
+  // `recibos?*`: la lista sale con su consulta desde #135 —el orden que pide—, y sin esa rama el
+  // patron no la casaria y la contestaria el 404 de `instalacion.ts`.
+  await pagina.route('**/caja/api/v1/{recibos,recibos?*,recibos/**,pagos/sin-entregar,turnos/**}', async (ruta) => {
     const url = new URL(ruta.request().url());
     if (url.pathname.endsWith('/duplicado')) {
       pedidas.push(url.pathname);
@@ -61,6 +67,7 @@ async function contestaLosDatos(pagina: Page, sinDuplicado = false): Promise<str
       return;
     }
     pedidas.push(url.pathname);
+    consultas.set(url.pathname, url.search);
     await ruta.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(cuerpo) });
   });
   return pedidas;
@@ -80,6 +87,9 @@ test('«duplicado-recibo» dibuja los recibos con la hora de Lima y dice de cuan
   await expect(primera).toContainText('15/03/2026 21:04');
   await expect(page.getByText('2 / 356')).toBeVisible();
   expect(pedidas).toEqual(['/caja/api/v1/recibos']);
+  // Y la lista se pide con los mas recientes primero (#135): sin consulta, el backend devuelve los
+  // veinte mas ANTIGUOS. Es `RUTAS.recibos`, escrita aqui porque este cargador no importa `src/`.
+  expect(consultas.get('/caja/api/v1/recibos')).toBe('?tamano=20&ordenarPor=fecha&direccion=DESCENDENTE');
 });
 
 /**

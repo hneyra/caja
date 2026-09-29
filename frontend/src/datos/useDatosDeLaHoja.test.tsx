@@ -22,6 +22,7 @@ import {
   TURNO_MEDIDO,
   TURNO_SIN_ABRIR_MEDIDO,
 } from './tesoreriaMedida.ts';
+import { RUTAS } from './lecturas.ts';
 import { useDatosDeLaHoja } from './useDatosDeLaHoja.ts';
 
 /**
@@ -214,7 +215,8 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
     await waitFor(() => {
       expect(result.current.tablas?.get(TABLA_DE_RECIBOS)?.filas).toHaveLength(2);
     });
-    expect(pedidas).toEqual(['/caja/api/v1/recibos']);
+    // La lista sale con su orden (#135): los mas recientes primero.
+    expect(pedidas).toEqual([`/caja/api/v1${RUTAS.recibos}`]);
     expect(result.current.ausenciaPorCampo?.get(coordenada(1, 0))).toBe('sin elegir');
     expect(result.current.ausenciaPorCampo?.get(coordenada(1, 7))).toBe('sin elegir');
     // Y sin nada elegido no hay recibo sobre el que anular: es lo que deja impedida la accion
@@ -235,7 +237,7 @@ describe('«duplicado-recibo»: lo elegido sale de la ruta', () => {
       expect(result.current.valores?.get(coordenada(1, 0))).toBe('001-000123');
     });
     expect(pedidas).toEqual([
-      '/caja/api/v1/recibos',
+      `/caja/api/v1${RUTAS.recibos}`,
       '/caja/api/v1/recibos/001-000123/duplicado',
     ]);
     expect(result.current.valores?.get(coordenada(1, 2))).toBe('Cajero de la prueba');
