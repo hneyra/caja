@@ -22,18 +22,30 @@ public interface ReciboRepository {
      */
     NumeroDeRecibo siguienteNumero(Caja caja);
 
-    /** Guarda el recibo con su detalle. Devuelve el recibo con su identificador. */
-    Recibo emitir(Recibo recibo, @Nullable String claveDeIdempotencia);
+    /**
+     * Guarda el recibo con su detalle y, si vino, su clave con la huella de la peticion (#143).
+     * Devuelve el recibo con su identificador.
+     *
+     * @throws ClaveEnUso si otra transaccion ya confirmo un recibo con esa clave
+     */
+    Recibo emitir(Recibo recibo, @Nullable ClaveDeIdempotencia clave);
 
     /**
-     * El recibo que se emitio con esa clave de idempotencia, si ya existe.
+     * El recibo que se emitio con esa clave de idempotencia, si ya existe, con la huella de la
+     * peticion que lo emitio (#143).
      *
-     * <p>Se consulta con el candado del turno ya puesto (#110): por si sola una lectura no
-     * garantiza nada —dos peticiones simultaneas no verian nada las dos—, y por eso la garantia
-     * final sigue siendo {@code recibo_idempotencia_uq}. Esta consulta es lo que convierte un
-     * reenvio en una respuesta correcta en vez de en un error.
+     * <p><b>Solo por la clave, y a proposito</b>: una clave es de un cobro. Si se buscara por clave
+     * y huella, la misma clave con otra peticion no encontraria nada y emitiria —o chocaria con
+     * {@code recibo_idempotencia_uq}—; lo que hay que contestarle es que la clave ya es de otro
+     * cobro, y para eso hay que ver ese cobro. Comparar la huella es cosa de {@link
+     * ClaveDeIdempotencia#reconoce}.
+     *
+     * <p>Por si sola una lectura no garantiza nada —dos peticiones simultaneas no verian nada las
+     * dos—: quien cobra la repite con el candado del turno puesto (#110), y la garantia final sigue
+     * siendo {@code recibo_idempotencia_uq}. Esta consulta es lo que convierte un reenvio en una
+     * respuesta correcta en vez de en un error.
      */
-    Optional<Recibo> porClaveDeIdempotencia(String clave);
+    Optional<EmitidoConClave> porClaveDeIdempotencia(String clave);
 
     /** El recibo con ese numero impreso, con su detalle. */
     Optional<Recibo> porNumero(NumeroDeRecibo numero);
@@ -50,4 +62,36 @@ public interface ReciboRepository {
      * un contribuyente sin recibos no es un error, es una busqueda sin resultados.
      */
     Pagina<ReciboEnConsulta> buscar(CriterioDeRecibos criterio, Paginacion paginacion);
+
+    /**
+     * Un recibo emitido con clave de idempotencia, y la huella de la peticion que lo emitio.
+     *
+     * @param huella la de {@code recibo.huella_de_la_peticion}; nula en los recibos anteriores a
+     *     V8, que no la guardaron
+     */
+    record EmitidoConClave(Recibo recibo, @Nullable String huella) {}
+
+    /**
+     * Otra transaccion confirmo un recibo con la misma clave mientras esta emitia el suyo (#143).
+     *
+     * <p>Lo dice {@code recibo_idempotencia_uq}, no una lectura: las dos peticiones miraron antes y
+     * ninguna vio a la otra, porque no compartian candado —otra caja, otro cajero u otro dia—. Esta
+     * transaccion ya no puede leer nada (el motor la aborto con el choque), asi que no sabe si la
+     * otra era su reintento o una peticion distinta: se dice eso, y reintentar con la misma clave
+     * contesta cual de las dos.
+     */
+    final class ClaveEnUso extends RuntimeException {
+
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public ClaveEnUso(String clave, Throwable causa) {
+            super(
+                    "Otra peticion con la cabecera Idempotency-Key '"
+                            + clave
+                            + "' se confirmo mientras esta se atendia, y esta no emitio nada."
+                            + " Reintente con la misma clave: si era el mismo cobro recibira su"
+                            + " recibo, y si era otro, se le dira",
+                    causa);
+        }
+    }
 }

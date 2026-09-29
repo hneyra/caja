@@ -8,6 +8,7 @@ import java.util.Optional;
 import kamayuk.caja.compartido.Pagina;
 import kamayuk.caja.compartido.Paginacion;
 import kamayuk.caja.nucleo.dominio.Caja;
+import kamayuk.caja.nucleo.dominio.ClaveDeIdempotencia;
 import kamayuk.caja.nucleo.dominio.CriterioDeRecibos;
 import kamayuk.caja.nucleo.dominio.NumeroDeRecibo;
 import kamayuk.caja.nucleo.dominio.Recibo;
@@ -19,7 +20,7 @@ import org.jspecify.annotations.Nullable;
 public final class RecibosEnMemoria implements ReciboRepository {
 
     private final List<Recibo> emitidos = new ArrayList<>();
-    private final Map<String, Recibo> porClave = new LinkedHashMap<>();
+    private final Map<String, EmitidoConClave> porClave = new LinkedHashMap<>();
     private final Map<String, Long> correlativos = new LinkedHashMap<>();
     private long siguienteId = 1;
 
@@ -46,8 +47,28 @@ public final class RecibosEnMemoria implements ReciboRepository {
         return caja.numero(ultimo);
     }
 
+    /**
+     * Le pone a un recibo ya emitido una clave <b>sin huella</b>, como las filas anteriores a V8
+     * (#143).
+     *
+     * <p>Contra PostgreSQL no se puede sembrar una fila asi despues de V8 —{@code
+     * recibo_clave_con_huella_ck} la rechaza, y es lo que confina la indulgencia a las viejas—, asi
+     * que lo que el caso de uso hace con una fila vieja se prueba aqui.
+     */
+    public RecibosEnMemoria conClaveSinHuella(String clave, Recibo emitido) {
+        porClave.put(clave, new EmitidoConClave(emitido, null));
+        return this;
+    }
+
     @Override
-    public Recibo emitir(Recibo recibo, @Nullable String claveDeIdempotencia) {
+    public Recibo emitir(Recibo recibo, @Nullable ClaveDeIdempotencia clave) {
+        if (clave != null && porClave.containsKey(clave.valor())) {
+            // Lo que hace `recibo_idempotencia_uq`: la clave es unica, se atienda por donde se
+            // atienda. Sin esto el doble guardaria dos recibos con la misma clave y una prueba
+            // que se olvidara de mirar antes de emitir pasaria en verde.
+            throw new ClaveEnUso(
+                    clave.valor(), new IllegalStateException("recibo_idempotencia_uq"));
+        }
         Recibo guardado =
                 new Recibo(
                         siguienteId++,
@@ -64,14 +85,14 @@ public final class RecibosEnMemoria implements ReciboRepository {
                         recibo.observacion(),
                         recibo.lineas());
         emitidos.add(guardado);
-        if (claveDeIdempotencia != null) {
-            porClave.put(claveDeIdempotencia, guardado);
+        if (clave != null) {
+            porClave.put(clave.valor(), new EmitidoConClave(guardado, clave.huella()));
         }
         return guardado;
     }
 
     @Override
-    public Optional<Recibo> porClaveDeIdempotencia(String clave) {
+    public Optional<EmitidoConClave> porClaveDeIdempotencia(String clave) {
         return Optional.ofNullable(porClave.get(clave));
     }
 

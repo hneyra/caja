@@ -1251,16 +1251,18 @@ class CierreDeCajaJdbcTest {
 
     private static Recibo cobrarLaTasa(
             String cajero, String codigo, int cantidad, FormaDePago forma) {
-        return cobrarTasa.cobrar(
-                new CobrarTasa.CobroDeTasas(
-                        "C-36",
-                        cajero,
-                        PAGADOR,
-                        List.of(new LineaDeTasaPedida(codigo, cantidad)),
-                        forma,
-                        HOY,
-                        null),
-                porQue());
+        return cobrarTasa
+                .cobrar(
+                        new CobrarTasa.CobroDeTasas(
+                                "C-36",
+                                cajero,
+                                PAGADOR,
+                                List.of(new LineaDeTasaPedida(codigo, cantidad)),
+                                forma,
+                                HOY,
+                                null),
+                        porQue())
+                .recibo();
     }
 
     /**

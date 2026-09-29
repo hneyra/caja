@@ -14,6 +14,7 @@ import kamayuk.caja.auditoria.RegistroDeAuditoria;
 import kamayuk.caja.dominio.Dinero;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
+import kamayuk.caja.nucleo.dominio.ClaveDeIdempotencia;
 import kamayuk.caja.nucleo.dominio.EstadoDeOrden;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
@@ -62,7 +63,11 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <ol>
  *   <li>{@code recibo_idempotencia_uq}: el mismo intento reenviado devuelve el recibo de la primera
- *       vez, no emite otro;
+ *       vez, no emite otro. Y desde #143 <b>solo el mismo intento</b>: la clave va atada a la
+ *       huella de la peticion ({@link ClaveDeIdempotencia}), y la misma clave con otra peticion se
+ *       rechaza en vez de devolver el recibo de otra cosa. Se mira antes de abrir el turno —un
+ *       reintento no abre el de un dia en el que no cobra, ni choca con el suyo ya cerrado— y otra
+ *       vez con su candado puesto, que es la mirada que ordena dos reintentos simultaneos;
  *   <li><b>las ordenes, bloqueadas con {@code FOR UPDATE}</b>: dos cobranzas de la misma orden se
  *       ordenan en el motor, y la segunda encuentra la fila ya {@code PAGADA};
  *   <li>{@code orden_recibo_ck}, en la base: una orden {@code PAGADA} nombra su recibo, asi que
@@ -79,6 +84,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class CobrarOrdenes {
+
+    /** El acto, en la huella de la peticion: lo que separa esta ruta de la de tasas (#143). */
+    private static final String ACTO = "cobrar-ordenes";
 
     private final AbrirCaja abrirCaja;
     private final OrdenDeCobroRepository ordenes;
@@ -122,31 +130,32 @@ public class CobrarOrdenes {
         Objects.requireNonNull(peticion, "No se cobra sin peticion");
         Objects.requireNonNull(observacion, "Sin observacion no se guarda (regla 10, RNF-052)");
 
-        // 1. La ventanilla: se abre si no estaba (V2 §5) y se toma el candado consultivo del
-        //    turno, que la ordena contra su cierre (#110). Sin FOR UPDATE: V2 lo impide.
+        // 1. El reenvio del mismo intento, ANTES de abrir nada (#143): un reintento no es un
+        //    cobro, y no abre -ni audita- el turno de un dia en el que no cobra, ni choca con
+        //    el suyo si ya se cerro. Tampoco es el que decide: sin candado, dos peticiones a la
+        //    vez no se ven -eso lo resuelve la segunda mirada, en 2-.
+        ClaveDeIdempotencia clave = peticion.clave();
+        if (clave != null) {
+            Optional<Cobrado> reenvio = reenvioDe(clave);
+            if (reenvio.isPresent()) {
+                return reenvio.get();
+            }
+        }
+
+        // 2. La ventanilla: se abre si no estaba (V2 §5) y se toma el candado consultivo del
+        //    turno, que la ordena contra su cierre (#110). Sin FOR UPDATE: V2 lo impide. Y con
+        //    el candado puesto, la segunda mirada: si el mismo intento estaba emitiendo en otra
+        //    transaccion, ya confirmo -el candado lo esperaba- y esta sentencia lo ve.
         AbrirCaja.Abierta abierta =
                 abrirCaja.enLaCaja(
                         peticion.codigoDeCaja(),
                         peticion.cajero(),
                         peticion.fechaDePago(),
                         observacion);
-
-        // 2. El reenvio del mismo intento: se devuelve lo que ya se emitio, sin cobrar otra vez.
-        String clave = peticion.claveDeIdempotencia();
         if (clave != null) {
-            Optional<Recibo> yaEmitido = recibos.porClaveDeIdempotencia(clave);
-            if (yaEmitido.isPresent()) {
-                Recibo emitido = yaEmitido.get();
-                // Y con el, EL MISMO pagoId: devolver uno nuevo dejaria al cliente creyendo
-                // que hubo dos pagos, que es justo lo que la idempotencia existe para evitar.
-                return new Cobrado(
-                        emitido,
-                        buzon.delRecibo(
-                                        Objects.requireNonNull(emitido.id()),
-                                        TipoDeEventoDePago.PAGO_REGISTRADO)
-                                .map(EventoDePago::eventoId)
-                                .orElse(null),
-                        false);
+            Optional<Cobrado> reenvio = reenvioDe(clave);
+            if (reenvio.isPresent()) {
+                return reenvio.get();
             }
         }
 
@@ -204,6 +213,86 @@ public class CobrarOrdenes {
 
         auditar(emitido, evento, observacion);
         return new Cobrado(emitido, evento.eventoId(), true);
+    }
+
+    /**
+     * El recibo que esa clave ya emitio, si la peticion es la misma; sin abrir ni bloquear nada.
+     *
+     * <p>Es lo que el borde HTTP pregunta <b>antes</b> de mirar la fecha (#143): un reintento que
+     * cruza la medianoche con la fecha de ayer en el cuerpo es el reintento de un cobro de ayer, no
+     * un cobro de ayer, y {@code SOLO_HOY} es una regla del cobro. {@link #cobrar} vuelve a mirar
+     * de todos modos —antes y despues del candado—, asi que esta lectura adelanta la respuesta y no
+     * decide nada que aquel no decida.
+     *
+     * @throws ClaveDeIdempotencia.UsadaConOtraPeticion si la clave ya emitio otra cosa
+     */
+    @Transactional(readOnly = true)
+    public Optional<Cobrado> yaCobrada(ClaveDeIdempotencia clave) {
+        return reenvioDe(Objects.requireNonNull(clave, "Sin clave no hay reintento que buscar"));
+    }
+
+    /**
+     * La clave de una cobranza, atada a lo que la define (#143); nula si no vino cabecera.
+     *
+     * <p>Entran el acto, la caja, el cajero, la forma de pago y las ordenes <b>ordenadas</b>:
+     * marcar las mismas en otro orden es el mismo cobro. No entran la fecha —un reintento despues
+     * de medianoche es el mismo cobro— ni la observacion. Ver {@link ClaveDeIdempotencia}.
+     *
+     * <p>Es estatico y publico porque el borde HTTP la necesita antes de tener la fecha, y por
+     * tanto antes de poder construir la {@link Cobranza}: la definicion es una, y {@link
+     * Cobranza#clave()} la usa tambien.
+     *
+     * @throws IllegalArgumentException si la cabecera no cabe en la columna
+     */
+    public static @Nullable ClaveDeIdempotencia claveDe(
+            @Nullable String cabecera,
+            String codigoDeCaja,
+            String cajero,
+            List<Long> ordenes,
+            FormaDePago formaDePago) {
+        if (cabecera == null) {
+            return null;
+        }
+        List<String> partes = new ArrayList<>();
+        partes.add(ClaveDeIdempotencia.parte("acto", ACTO));
+        partes.add(ClaveDeIdempotencia.parte("caja", codigoDeCaja));
+        partes.add(ClaveDeIdempotencia.parte("cajero", cajero));
+        partes.add(ClaveDeIdempotencia.parte("formaDePago", formaDePago.name()));
+        ordenes.stream()
+                .sorted()
+                .forEach(orden -> partes.add(ClaveDeIdempotencia.parte("orden", orden)));
+        return ClaveDeIdempotencia.de(cabecera, partes);
+    }
+
+    /**
+     * El reenvio: el recibo de esa clave y su mismo {@code pagoId}, si la peticion es la misma.
+     *
+     * <p>Una huella distinta es otra peticion con la misma clave, y se rechaza en vez de devolverle
+     * el recibo de otra cosa. Un recibo de antes de V8 no tiene huella y se reconoce como hasta
+     * entonces, con la unica comprobacion que no la necesita: un recibo de tasa no es la respuesta
+     * a una cobranza de ordenes.
+     */
+    private Optional<Cobrado> reenvioDe(ClaveDeIdempotencia clave) {
+        return recibos.porClaveDeIdempotencia(clave.valor())
+                .map(
+                        guardado -> {
+                            Recibo emitido = guardado.recibo();
+                            if (!clave.reconoce(guardado.huella())
+                                    || emitido.tipoDePago() != TipoDePago.NORMAL) {
+                                throw new ClaveDeIdempotencia.UsadaConOtraPeticion(clave);
+                            }
+                            // Y con el, EL MISMO pagoId: devolver uno nuevo dejaria al cliente
+                            // creyendo que hubo dos pagos, que es justo lo que la idempotencia
+                            // existe para evitar.
+                            return new Cobrado(
+                                    emitido,
+                                    buzon.delRecibo(
+                                                    Objects.requireNonNull(emitido.id()),
+                                                    TipoDeEventoDePago.PAGO_REGISTRADO)
+                                            .map(EventoDePago::eventoId)
+                                            .orElse(null),
+                                    false);
+                        });
     }
 
     // ------------------------------------------------------------------
@@ -287,7 +376,8 @@ public class CobrarOrdenes {
      * @param ordenes las ordenes marcadas en la grilla
      * @param formaDePago con que se paga
      * @param fechaDePago la fecha del cobro; entra como argumento (regla 6)
-     * @param claveDeIdempotencia la cabecera {@code idempotency-key}, si vino
+     * @param claveDeIdempotencia la cabecera {@code idempotency-key}, si vino; se ata a esta
+     *     cobranza con {@link #clave()} (#143)
      */
     public record Cobranza(
             String codigoDeCaja,
@@ -316,6 +406,14 @@ public class CobrarOrdenes {
                 throw new IllegalArgumentException(
                         "La misma orden viene marcada dos veces en el mismo recibo");
             }
+            if (claveDeIdempotencia != null) {
+                ClaveDeIdempotencia.exigirValida(claveDeIdempotencia);
+            }
+        }
+
+        /** La clave de esta cobranza con la huella de lo que pide (#143); nula si no vino. */
+        public @Nullable ClaveDeIdempotencia clave() {
+            return claveDe(claveDeIdempotencia, codigoDeCaja, cajero, ordenes, formaDePago);
         }
     }
 
@@ -324,8 +422,9 @@ public class CobrarOrdenes {
      *
      * @param recibo el papel
      * @param pagoId el identificador del evento con el que el sistema de origen deduplicara; nulo
-     *     solo cuando se devolvio un recibo ya emitido por idempotencia
-     * @param emitido si se emitio de verdad, o se devolvio el de un intento anterior
+     *     solo cuando se devolvio un recibo ya emitido por idempotencia y su evento no esta
+     * @param emitido si se emitio de verdad, o se devolvio el de un intento anterior. El borde HTTP
+     *     contesta 201 al primero y 200 al segundo (#143)
      */
     public record Cobrado(Recibo recibo, @Nullable UUID pagoId, boolean emitido) {}
 

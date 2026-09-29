@@ -142,7 +142,7 @@ class CobrarTasasEnVentanillaTest {
         void elPrecioSaleDeLaTabla() {
             tasas.con(tasa("T-001", Dinero.de("12.50"), LocalDate.of(2026, 1, 1), null));
 
-            Recibo emitido = cobrarTasa.cobrar(cobroDe("T-001", 3, null), porQue());
+            Recibo emitido = cobrarTasa.cobrar(cobroDe("T-001", 3, null), porQue()).recibo();
 
             assertThat(emitido.total()).isEqualTo(Dinero.de("37.50"));
             assertThat(emitido.lineas())
@@ -174,7 +174,7 @@ class CobrarTasasEnVentanillaTest {
                                     julio.minusDays(1)))
                     .con(tasa("T-001", Dinero.de("20.00"), julio, null));
 
-            Recibo enMarzo = cobrarTasa.cobrar(cobroDe("T-001", 1, null), porQue());
+            Recibo enMarzo = cobrarTasa.cobrar(cobroDe("T-001", 1, null), porQue()).recibo();
 
             assertThat(enMarzo.total())
                     .as("una cobranza de marzo no paga la tarifa que rige desde julio")
@@ -198,16 +198,18 @@ class CobrarTasasEnVentanillaTest {
             tasas.con(tasa("T-001", Dinero.de("12.50"), LocalDate.of(2026, 1, 1), null));
 
             Recibo emitido =
-                    cobrarTasa.cobrar(
-                            new CobrarTasa.CobroDeTasas(
-                                    "C-01",
-                                    "cajero.prueba",
-                                    PAGADOR,
-                                    List.of(new LineaDeTasaPedida("T-001", 1)),
-                                    FormaDePago.EFECTIVO,
-                                    ayer,
-                                    null),
-                            porQue());
+                    cobrarTasa
+                            .cobrar(
+                                    new CobrarTasa.CobroDeTasas(
+                                            "C-01",
+                                            "cajero.prueba",
+                                            PAGADOR,
+                                            List.of(new LineaDeTasaPedida("T-001", 1)),
+                                            FormaDePago.EFECTIVO,
+                                            ayer,
+                                            null),
+                                    porQue())
+                            .recibo();
 
             assertThat(emitido.actualizadoA())
                     .as(
@@ -222,8 +224,8 @@ class CobrarTasasEnVentanillaTest {
         void elReenvioDevuelveElMismoRecibo() {
             tasas.con(tasa("T-001", Dinero.de("12.50"), LocalDate.of(2026, 1, 1), null));
 
-            Recibo primero = cobrarTasa.cobrar(cobroDe("T-001", 1, "clave-1"), porQue());
-            Recibo repetido = cobrarTasa.cobrar(cobroDe("T-001", 1, "clave-1"), porQue());
+            Recibo primero = cobrarTasa.cobrar(cobroDe("T-001", 1, "clave-1"), porQue()).recibo();
+            Recibo repetido = cobrarTasa.cobrar(cobroDe("T-001", 1, "clave-1"), porQue()).recibo();
 
             assertThat(repetido.id()).isEqualTo(primero.id());
             assertThat(repetido.numero()).isEqualTo(primero.numero());
@@ -236,16 +238,18 @@ class CobrarTasasEnVentanillaTest {
             tasas.con(tasa("T-001", Dinero.de("12.50"), LocalDate.of(2026, 1, 1), null));
 
             Recibo emitido =
-                    cobrarTasa.cobrar(
-                            new CobrarTasa.CobroDeTasas(
-                                    "C-01",
-                                    "cajero.prueba",
-                                    Pagador.ANONIMO,
-                                    List.of(new LineaDeTasaPedida("T-001", 1)),
-                                    FormaDePago.EFECTIVO,
-                                    PAGO,
-                                    null),
-                            porQue());
+                    cobrarTasa
+                            .cobrar(
+                                    new CobrarTasa.CobroDeTasas(
+                                            "C-01",
+                                            "cajero.prueba",
+                                            Pagador.ANONIMO,
+                                            List.of(new LineaDeTasaPedida("T-001", 1)),
+                                            FormaDePago.EFECTIVO,
+                                            PAGO,
+                                            null),
+                                    porQue())
+                            .recibo();
 
             assertThat(emitido.pagador().esAnonimo()).isTrue();
             assertThat(emitido.pagador().nombreImpreso())

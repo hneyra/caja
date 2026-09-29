@@ -286,7 +286,9 @@ class CajaControllerTest {
                                                     cuerpoDeCobranza(
                                                             orden, "Cobranza en ventanilla")))
                             .andReturn();
-            assertThat(resultado.getResponse().getStatus()).isEqualTo(201);
+            assertThat(resultado.getResponse().getStatus())
+                    .as("201 al que emite y 200 al reintento (#143)")
+                    .isEqualTo(intento == 0 ? 201 : 200);
         }
 
         assertThat(recibos.emitidos()).hasSize(1);
