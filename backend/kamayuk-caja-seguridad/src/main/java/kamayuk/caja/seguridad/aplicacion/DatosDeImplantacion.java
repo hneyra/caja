@@ -31,6 +31,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param ubigeo los seis digitos que identifican a la municipalidad; es la clave por la que el
  *     procedimiento es idempotente
+ * @param municipalidadId el {@code id} con el que se escribe la fila de {@code municipalidad},
+ *     <b>DECLARADO y no pedido a la secuencia</b> (#132, la mitad de {@code caja} de <a
+ *     href="https://github.com/hneyra/infrastructure/issues/73">infrastructure#73</a>). Es el
+ *     inquilino: el claim {@code municipalidad_id} de cada token lleva este numero, el {@code SET
+ *     LOCAL} de cada peticion lo fija y el RLS de cada tabla filtra por el. Con la secuencia, la
+ *     base elegia el suyo y nada lo comparaba con el que Keycloak escribe en el token; coincidian
+ *     porque {@code stg} y {@code prod} declaran 1 y una base recien creada tambien da 1. Con otro
+ *     declarado, cada cajero recibia 403 CON LA FILA DELANTE
  * @param nombre nombre de la municipalidad
  * @param tipo {@code DISTRITAL} o {@code PROVINCIAL}, como exige el {@code CHECK} de la tabla
  * @param administrador cuenta del primer administrador. <b>Tiene que ser el mismo {@code
@@ -45,6 +53,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("kamayuk.implantacion")
 public record DatosDeImplantacion(
         String ubigeo,
+        long municipalidadId,
         String nombre,
         String tipo,
         String administrador,
@@ -59,6 +68,20 @@ public record DatosDeImplantacion(
         if (!ubigeo.matches("\\d{6}")) {
             throw new IllegalArgumentException(
                     "El ubigeo son seis digitos, y llego '" + ubigeo + "'");
+        }
+        // Un `long` sin valor lo enlaza Spring como 0, que no es un id: «no lo declararon» y
+        // «declararon uno malo» se arreglan igual —declarandolo—, asi que el mensaje nombra la
+        // propiedad y la variable que la pone.
+        if (municipalidadId <= 0) {
+            throw new IllegalArgumentException(
+                    "Falta kamayuk.implantacion.municipalidad-id"
+                            + " (KAMAYUK_IMPLANTACION_MUNICIPALIDADID), o no es positivo (llego "
+                            + municipalidadId
+                            + "). Es el `id` con el que se escribe la fila de `municipalidad`, y"
+                            + " de el sale el claim `municipalidad_id` de todo token: sin"
+                            + " declararlo, la secuencia asignaria uno que el ambiente no conoce y"
+                            + " el RLS esconderia las filas de esta municipalidad a cada cajero"
+                            + " (#132, infrastructure#73)");
         }
         nombre = exigir(nombre, "kamayuk.implantacion.nombre");
         tipo = exigir(tipo, "kamayuk.implantacion.tipo").toUpperCase(Locale.ROOT);

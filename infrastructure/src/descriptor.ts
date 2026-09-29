@@ -333,6 +333,17 @@ function variablesDeImplantacion(e: EntornoDelDescriptor): VariableDeEntorno[] {
     ...operacionDeLaCaja(e),
     ...variablesDelConsumidorDeIdentidad(e),
     { name: "KAMAYUK_IMPLANTACION_UBIGEO", value: i.ubigeo },
+    // El `id` DECLARADO de la fila de `municipalidad` (#132, la mitad de caja de
+    // infrastructure#73). Hasta #132 este archivo no lo pasaba y la implantacion dejaba que la
+    // secuencia eligiera; el contexto de cada peticion sale del claim `municipalidad_id`, que
+    // Keycloak escribe con ESTE numero, y los dos coincidian solo porque stg y prod declaran 1 y
+    // una base recien creada tambien da 1. Desde #132 la implantacion lo escribe, y si la fila ya
+    // esta con otro id el Job falla nombrando los dos numeros.
+    //
+    // Sin guion bajo entre MUNICIPALIDAD e ID, como NOMBREDELADMINISTRADOR de abajo: en una
+    // variable de entorno el `_` se traduce a punto, y `KAMAYUK_IMPLANTACION_MUNICIPALIDAD_ID`
+    // seria `kamayuk.implantacion.municipalidad.id`.
+    { name: "KAMAYUK_IMPLANTACION_MUNICIPALIDADID", value: String(i.municipalidadId) },
     { name: "KAMAYUK_IMPLANTACION_NOMBRE", value: i.nombre },
     { name: "KAMAYUK_IMPLANTACION_TIPO", value: i.tipo },
     // No crea ninguna contrasena: la credencial vive en Keycloak, y esta cuenta tiene que ser

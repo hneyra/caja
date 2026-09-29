@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | Estado | Vigente |
-| Abierto por | #18, el último del lote de dieciséis de `caja-web`; ampliado en #79 con el §4 |
+| Abierto por | #18, el último del lote de dieciséis de `caja-web`; ampliado en #79 con el §4 y en #132 con el §5 |
 | Medido en | `infrastructure` en `main`, clonado en `../infrastructure`, con vitest 3.2.7 y `docker compose v5.5.1` |
 
 Este repositorio ya declara su interfaz entera: la imagen (#16), el `Deployment`, el `Service`, el
@@ -294,6 +294,29 @@ detrás»—. Este descriptor ya pide lo menos que puede sin mentir: el publicad
 que corren este mismo jar, y los `limits` de siempre.
 
 Queda declarado en [`infrastructure`#198](https://github.com/hneyra/infrastructure/issues/198).
+
+---
+
+## 5 · Dos docblocks que dicen que `caja` no recibe el `municipalidadId` — de #132
+
+**#132 cierra la mitad de `caja` de la salida 1 de
+[`infrastructure`#73](https://github.com/hneyra/infrastructure/issues/73)**: `DatosDeImplantacion`
+gana `municipalidadId`, el descriptor y el compose pasan `KAMAYUK_IMPLANTACION_MUNICIPALIDADID`, y
+`RegistroDeMunicipalidadesJdbc` escribe la fila con ese id y **falla nombrando los dos números** si
+ya existe con otro. Leído en `infrastructure@1e00e86`, dos textos de allí dicen lo contrario, y
+ninguno es código que se rompa — son la explicación que alguien va a leer cuando el `Job` falle:
+
+| Dónde | Lo que dice, y deja de ser cierto para `caja` |
+|---|---|
+| `infra/verificaciones/el-id-de-la-municipalidad.test.ts`, «Lo que esta guarda NO comprueba» | «los cuatro satelites no reciben el numero —su `DatosDeImplantacion` solo declara `ubigeo`—, asi que el `1` del stack les vale porque las cuatro bases se lo dieron a su primera fila. Es una coincidencia, no una garantia» |
+| `infra/descriptor/tipos.ts`, `implantacion.municipalidadId` | «nada aqui lo comprueba contra la fila» |
+
+**Y lo que el primer despliegue con #132 va a hacer**, que conviene saber antes: si la fila de
+`municipalidad` de la base de `caja` de un ambiente tiene un `id` distinto del que su
+`Pulumi.<ambiente>.yaml` declara (`kamayuk:municipalidadId`, hoy `1` en los dos), el `Job` de
+implantación sale en rojo con «La municipalidad … ya está dada de alta en caja con el id N y lo
+declarado es M» en vez de dejar a cada cajero con un 403. Aquí no se puede medir qué `id` tiene
+esa fila en `stg` ni en `prod`: no hay acceso al clúster desde este repositorio.
 
 ---
 

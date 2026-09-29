@@ -220,6 +220,39 @@ describe("C-14 — que esto se pueda desplegar", () => {
   });
 
   /**
+   * #132 — el `id` de la fila de `municipalidad` es el que el AMBIENTE declara, y el Job lo lleva.
+   *
+   * El contexto de cada peticion sale del claim `municipalidad_id` del token, que Keycloak escribe
+   * con `e.implantacion.municipalidadId`. Hasta #132 este Job no lo recibia y la fila salia con el
+   * id que diera la secuencia: coincidia porque los dos valian 1, no porque nada lo comprobara.
+   *
+   * Con un 42 y no con el 1 del entorno de arriba: un descriptor que escribiera "1" a mano pasaria
+   * con el 1, y es exactamente la coincidencia que #132 deja de dar por buena. Y se lee el Java,
+   * porque Spring IGNORA una variable que ninguna propiedad pide: pasarla sin que
+   * `DatosDeImplantacion` la declare seria un Job verde con la fila en el id de la secuencia.
+   */
+  it("#132: pasa el `municipalidadId` DECLARADO, del entorno y no escrito a mano, y el Java lo lee", () => {
+    for (const municipalidadId of [ENTORNO.implantacion.municipalidadId, 42]) {
+      const entorno: EntornoDelDescriptor = {
+        ...ENTORNO,
+        implantacion: { ...ENTORNO.implantacion, municipalidadId },
+      };
+      const c = contenedoresDe(caja.implantacion(entorno))[0]!;
+      expect(
+        valorDe(c, "KAMAYUK_IMPLANTACION_MUNICIPALIDADID"),
+        `el Job de implantacion no lleva el id declarado (${municipalidadId}): la fila saldria con ` +
+          "el que diera la secuencia, y el claim `municipalidad_id` de cada token con otro — 403 " +
+          "a cada cajero con la fila delante (#132)",
+      ).toBe(String(municipalidadId));
+    }
+    const java = delRepositorio(
+      "backend/kamayuk-caja-seguridad/src/main/java/kamayuk/caja/seguridad/aplicacion/DatosDeImplantacion.java",
+    );
+    expect(java).toContain('@ConfigurationProperties("kamayuk.implantacion")');
+    expect(java).toMatch(/\blong municipalidadId\b/);
+  });
+
+  /**
    * Un `podSelector` sin `namespaceSelector` selecciona pods **del mismo namespace**, y desde
    * ADR-0031 cada sistema tiene el suyo. Una regla escrita asi no abre nada: el sintoma es
    * trafico denegado con una politica que dice permitirlo.
