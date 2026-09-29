@@ -228,7 +228,8 @@ class ElDiaDeLaVentanillaEsElDeLimaTest {
                                         FormaDePago.EFECTIVO,
                                         EL_23,
                                         null),
-                                Observacion.de("Cobro de tasa nocturno, prueba de #112"));
+                                Observacion.de("Cobro de tasa nocturno, prueba de #112"))
+                        .recibo();
 
         TasaCobrada constancia =
                 new CobrosDeTasasTesoreria(recibos, movimientos, new RecaudacionEnMemoria())

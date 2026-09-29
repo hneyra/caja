@@ -18,11 +18,14 @@ import org.jspecify.annotations.Nullable;
  *
  * @param recibo el papel
  * @param pagoId el identificador con el que el sistema de origen deduplicara; nulo solo cuando se
- *     devolvio un recibo ya emitido por idempotencia y su evento no se encuentra —lo que solo puede
- *     pasar con un recibo de tasas, que no produce evento—
- * @param estadoDelPago {@code EN_TRANSITO} o {@code SIN_EVENTO} (caja de tasas)
+ *     devolvio un recibo ya emitido por idempotencia y su evento no se encuentra. Hasta #143 eso
+ *     pasaba con un recibo de tasas —que no produce evento— devuelto por la clave de otra ruta;
+ *     desde #143 la clave de una tasa no contesta a {@code /cobros}, y un recibo de ordenes lleva
+ *     su evento en la misma transaccion
+ * @param estadoDelPago {@code EN_TRANSITO} o {@code SIN_EVENTO}
  * @param emitido si se emitio de verdad, o se devolvio el de un intento anterior. Es lo que le dice
- *     al cliente que su reintento se reconocio, en vez de dejarle creer que cobro dos veces
+ *     al cliente que su reintento se reconocio, en vez de dejarle creer que cobro dos veces; y lo
+ *     dice tambien el estado: 201 al que emite, 200 al reintento (#143)
  */
 public record CobroResource(
         ReciboResource recibo, @Nullable String pagoId, String estadoDelPago, boolean emitido) {

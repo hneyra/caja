@@ -17,6 +17,7 @@ import kamayuk.caja.dominio.Ejercicio;
 import kamayuk.caja.dominio.Observacion;
 import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.nucleo.dominio.Caja;
+import kamayuk.caja.nucleo.dominio.ClaveDeIdempotencia;
 import kamayuk.caja.nucleo.dominio.CriterioDeRecibos;
 import kamayuk.caja.nucleo.dominio.EstadoDeRecibo;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
@@ -30,6 +31,7 @@ import kamayuk.caja.nucleo.dominio.TipoDePago;
 import kamayuk.caja.persistencia.OrdenSeguro;
 import kamayuk.caja.persistencia.RepositorioJdbc;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -71,6 +73,9 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
     private static final OrdenSeguro ORDEN =
             OrdenSeguro.sobre("fecha", "serie", "numero", "cajero", "total").desempatandoPor("id");
 
+    /** El indice que hace unica la clave de idempotencia de un recibo (V1). */
+    private static final String INDICE_DE_LA_CLAVE = "recibo_idempotencia_uq";
+
     private static final String COLUMNAS_DETALLE =
             "tributo, concepto, detalle, ejercicio, periodo, tasa_id, predio_id, vehiculo_id,"
                     + " referencia_externa, cantidad, precio_unitario, insoluto, reajuste, interes,"
@@ -105,47 +110,66 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
         return caja.numero(Objects.requireNonNull(ultimo));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>La huella va en la misma fila que la clave (V8, #143), y {@code
+     * recibo_clave_con_huella_ck} rechaza la una sin la otra. El choque contra {@code
+     * recibo_idempotencia_uq} se traduce a {@link ClaveEnUso}; cualquier otro se deja salir tal
+     * cual, porque no es la clave lo que choco.
+     */
     @Override
-    public Recibo emitir(Recibo recibo, @Nullable String claveDeIdempotencia) {
+    public Recibo emitir(Recibo recibo, @Nullable ClaveDeIdempotencia clave) {
         if (recibo.id() != null) {
             throw new IllegalArgumentException(
                     "Un recibo ya emitido no se vuelve a insertar ni se corrige: se anula (#34)");
         }
 
-        Long id =
-                jdbc().sql(
-                                "INSERT INTO recibo"
-                                        + " (municipalidad_id, serie, numero, caja_id, turno_id,"
-                                        + "  cajero, contribuyente_id, pagador_documento, pagador_nombre,"
-                                        + "  fecha, forma_pago, tipo_pago,"
-                                        + "  campania_beneficio, total, actualizado_a,"
-                                        + "  clave_idempotencia, usuario_registro, observacion)"
-                                        + " VALUES ("
-                                        + MUNICIPALIDAD_ACTUAL
-                                        + ", :serie, :numero, :caja, :turno, :cajero, :contribuyente,"
-                                        + "  :documento, :nombre,"
-                                        + "  :fecha, :formaPago, :tipoPago, :campania, :total,"
-                                        + "  :actualizadoA, :clave, :usuario, :observacion)"
-                                        + " RETURNING id")
-                        .param("serie", recibo.numero().serie())
-                        .param("numero", recibo.numero().numero())
-                        .param("caja", recibo.cajaId())
-                        .param("turno", recibo.turnoId())
-                        .param("cajero", recibo.cajero())
-                        .param("contribuyente", recibo.pagador().idExterno())
-                        .param("documento", recibo.pagador().documento())
-                        .param("nombre", recibo.pagador().nombre())
-                        .param("fecha", Timestamp.from(recibo.emitidoEn()))
-                        .param("formaPago", recibo.formaDePago().name())
-                        .param("tipoPago", recibo.tipoDePago().name())
-                        .param("campania", recibo.campaniaBeneficio())
-                        .param("total", recibo.total().valor())
-                        .param("actualizadoA", recibo.actualizadoA())
-                        .param("clave", claveDeIdempotencia)
-                        .param("usuario", UsuarioDeLaSesion.actual())
-                        .param("observacion", recibo.observacion().texto())
-                        .query(Long.class)
-                        .single();
+        Long id;
+        try {
+            id =
+                    jdbc().sql(
+                                    "INSERT INTO recibo"
+                                            + " (municipalidad_id, serie, numero, caja_id, turno_id,"
+                                            + "  cajero, contribuyente_id, pagador_documento,"
+                                            + "  pagador_nombre, fecha, forma_pago, tipo_pago,"
+                                            + "  campania_beneficio, total, actualizado_a,"
+                                            + "  clave_idempotencia, huella_de_la_peticion,"
+                                            + "  usuario_registro, observacion)"
+                                            + " VALUES ("
+                                            + MUNICIPALIDAD_ACTUAL
+                                            + ", :serie, :numero, :caja, :turno, :cajero,"
+                                            + "  :contribuyente, :documento, :nombre,"
+                                            + "  :fecha, :formaPago, :tipoPago, :campania, :total,"
+                                            + "  :actualizadoA, :clave, :huella, :usuario,"
+                                            + "  :observacion)"
+                                            + " RETURNING id")
+                            .param("serie", recibo.numero().serie())
+                            .param("numero", recibo.numero().numero())
+                            .param("caja", recibo.cajaId())
+                            .param("turno", recibo.turnoId())
+                            .param("cajero", recibo.cajero())
+                            .param("contribuyente", recibo.pagador().idExterno())
+                            .param("documento", recibo.pagador().documento())
+                            .param("nombre", recibo.pagador().nombre())
+                            .param("fecha", Timestamp.from(recibo.emitidoEn()))
+                            .param("formaPago", recibo.formaDePago().name())
+                            .param("tipoPago", recibo.tipoDePago().name())
+                            .param("campania", recibo.campaniaBeneficio())
+                            .param("total", recibo.total().valor())
+                            .param("actualizadoA", recibo.actualizadoA())
+                            .param("clave", clave == null ? null : clave.valor())
+                            .param("huella", clave == null ? null : clave.huella())
+                            .param("usuario", UsuarioDeLaSesion.actual())
+                            .param("observacion", recibo.observacion().texto())
+                            .query(Long.class)
+                            .single();
+        } catch (DuplicateKeyException choque) {
+            if (clave != null && nombra(choque, INDICE_DE_LA_CLAVE)) {
+                throw new ClaveEnUso(clave.valor(), choque);
+            }
+            throw choque;
+        }
 
         for (LineaDeRecibo linea : recibo.lineas()) {
             insertarLinea(Objects.requireNonNull(id), linea);
@@ -168,12 +192,20 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
     }
 
     @Override
-    public Optional<Recibo> porClaveDeIdempotencia(String clave) {
-        return jdbc().sql("SELECT " + COLUMNAS + " FROM recibo WHERE clave_idempotencia = :clave")
+    public Optional<EmitidoConClave> porClaveDeIdempotencia(String clave) {
+        return jdbc().sql(
+                        "SELECT "
+                                + COLUMNAS
+                                + ", huella_de_la_peticion"
+                                + " FROM recibo WHERE clave_idempotencia = :clave")
                 .param("clave", clave)
-                .query(ReciboRepositoryJdbc::mapearCabecera)
+                .query(
+                        (fila, numeroDeFila) ->
+                                new CabeceraConHuella(
+                                        mapearCabecera(fila, numeroDeFila),
+                                        fila.getString("huella_de_la_peticion")))
                 .optional()
-                .map(this::conDetalle);
+                .map(leida -> new EmitidoConClave(conDetalle(leida.cabecera()), leida.huella()));
     }
 
     @Override
@@ -351,6 +383,26 @@ public class ReciboRepositoryJdbc extends RepositorioJdbc implements ReciboRepos
             @Nullable String campaniaBeneficio,
             java.time.LocalDate actualizadoA,
             Observacion observacion) {}
+
+    /** La cabecera de un recibo emitido con clave, con la huella de la peticion (V8, #143). */
+    private record CabeceraConHuella(Cabecera cabecera, @Nullable String huella) {}
+
+    /**
+     * Si el choque es contra ese indice.
+     *
+     * <p>Por el nombre en el mensaje del motor, que lo lleva sea cual sea su idioma: el texto que
+     * lo rodea se traduce, el identificador no. Se recorre la cadena de causas porque Spring
+     * envuelve la {@code SQLException} del controlador.
+     */
+    private static boolean nombra(Throwable choque, String indice) {
+        for (Throwable causa = choque; causa != null; causa = causa.getCause()) {
+            String mensaje = causa.getMessage();
+            if (mensaje != null && mensaje.contains(indice)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static Cabecera mapearCabecera(ResultSet fila, int numeroDeFila) throws SQLException {
         return new Cabecera(

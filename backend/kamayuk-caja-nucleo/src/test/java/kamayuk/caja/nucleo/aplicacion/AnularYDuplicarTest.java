@@ -462,7 +462,8 @@ class AnularYDuplicarTest {
                                 FormaDePago.EFECTIVO,
                                 HOY,
                                 null),
-                        Observacion.de("Cobro de tasas, prueba de #34"));
+                        Observacion.de("Cobro de tasas, prueba de #34"))
+                .recibo();
     }
 
     /**

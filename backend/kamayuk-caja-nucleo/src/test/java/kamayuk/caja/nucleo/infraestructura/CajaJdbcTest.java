@@ -36,6 +36,7 @@ import kamayuk.caja.nucleo.aplicacion.CobrarOrdenes;
 import kamayuk.caja.nucleo.aplicacion.CobrarTasa;
 import kamayuk.caja.nucleo.dominio.BuzonDeSalida;
 import kamayuk.caja.nucleo.dominio.Caja;
+import kamayuk.caja.nucleo.dominio.ClaveDeIdempotencia;
 import kamayuk.caja.nucleo.dominio.EstadoDeOrden;
 import kamayuk.caja.nucleo.dominio.EventoDePago;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
@@ -44,6 +45,7 @@ import kamayuk.caja.nucleo.dominio.OrdenDeCobro;
 import kamayuk.caja.nucleo.dominio.OrdenDeCobroRepository;
 import kamayuk.caja.nucleo.dominio.Pagador;
 import kamayuk.caja.nucleo.dominio.Recibo;
+import kamayuk.caja.nucleo.dominio.ReciboRepository;
 import kamayuk.caja.nucleo.dominio.SistemaDeOrigen;
 import kamayuk.caja.nucleo.dominio.TipoDeEventoDePago;
 import kamayuk.caja.nucleo.dominio.TipoDePago;
@@ -511,16 +513,23 @@ class CajaJdbcTest {
                                                                         + "  forma_pago, total,"
                                                                         + "  actualizado_a,"
                                                                         + "  clave_idempotencia,"
+                                                                        + "  huella_de_la_peticion,"
                                                                         + "  usuario_registro,"
                                                                         + "  observacion)"
                                                                         + " VALUES (:muni, '001',"
                                                                         + "  999999, :caja, 'x', 7,"
                                                                         + "  'EFECTIVO', 1, :fecha,"
-                                                                        + "  :clave, 'x', 'x')")
+                                                                        + "  :clave, :huella, 'x',"
+                                                                        + "  'x')")
                                                         .param("muni", municipalidad)
                                                         .param("caja", cajaId)
                                                         .param("fecha", PAGO)
                                                         .param("clave", clave)
+                                                        // Con huella, y bien formada: desde V8 una
+                                                        // clave sin ella la para
+                                                        // recibo_clave_con_huella_ck antes de
+                                                        // llegar al indice que aqui se mide.
+                                                        .param("huella", "0".repeat(64))
                                                         .update();
                                             }))
                     .as("recibo_idempotencia_uq es la garantia final, no la lectura previa")
@@ -547,6 +556,212 @@ class CajaJdbcTest {
                     .isInstanceOf(CobrarOrdenes.OrdenesDeVariosSistemas.class);
             assertThat(contarRecibos(deRentas)).isZero();
             assertThat(estadoDe(deMercados)).isEqualTo(EstadoDeOrden.PENDIENTE);
+        }
+    }
+
+    @Nested
+    @DisplayName("#143 — La clave de idempotencia se ata a la peticion que la trajo")
+    class DeLaClaveAtadaALaPeticion {
+
+        @Test
+        @DisplayName("la huella de la peticion llega a la fila, al lado de su clave")
+        void laHuellaLlegaALaFila() {
+            Orden orden = ordenPendiente("HUELLA-1", Dinero.de("10.00"));
+            CobrarOrdenes.Cobranza cobranza = cobranza(orden, "C-01", "idem-" + orden.referencia());
+
+            Recibo emitido = cobrarOrdenes.cobrar(cobranza, porQue()).recibo();
+
+            assertThat(
+                            enTransaccion(
+                                    () ->
+                                            jdbc.sql(
+                                                            "SELECT huella_de_la_peticion"
+                                                                    + " FROM recibo WHERE id = :id")
+                                                    .param("id", emitido.id())
+                                                    .query(String.class)
+                                                    .single()))
+                    .isEqualTo(java.util.Objects.requireNonNull(cobranza.clave()).huella());
+        }
+
+        @Test
+        @DisplayName("la clave de un cobro de tasas no cobra ordenes, ni devuelve aquel recibo")
+        void laClaveDeUnaTasaNoCobraOrdenes() {
+            crearTasa("T-143", Dinero.de("5.00"), LocalDate.of(2026, 1, 1));
+            Orden orden = ordenPendiente("HUELLA-2", Dinero.de("80.00"));
+            String clave = "idem-" + orden.referencia();
+            cobrarTasa.cobrar(
+                    new CobrarTasa.CobroDeTasas(
+                            "C-01",
+                            "cajero.prueba",
+                            PAGADOR,
+                            List.of(new LineaDeTasaPedida("T-143", 1)),
+                            FormaDePago.EFECTIVO,
+                            PAGO,
+                            clave),
+                    porQue());
+
+            assertThatThrownBy(() -> cobrarOrdenes.cobrar(cobranza(orden, "C-01", clave), porQue()))
+                    .as("[antes de #143 devolvia el recibo de la tasa, y la orden no se cobraba]")
+                    .isInstanceOf(ClaveDeIdempotencia.UsadaConOtraPeticion.class);
+            assertThat(estadoDe(orden)).isEqualTo(EstadoDeOrden.PENDIENTE);
+            assertThat(contarRecibos(orden)).isZero();
+            assertThat(contarPorClave(clave)).as("[y la clave sigue siendo de la tasa]").isOne();
+        }
+
+        @Test
+        @DisplayName(
+                "el reintento del dia siguiente devuelve su recibo sin abrir el turno de ese dia")
+        void elReintentoDelDiaSiguienteNoAbreTurno() {
+            crearCajaDeLaSerie("C-143", "S143");
+            Orden orden = ordenPendiente("HUELLA-3", Dinero.de("33.00"));
+            String clave = "idem-" + orden.referencia();
+            CobrarOrdenes.Cobrado primero =
+                    cobrarOrdenes.cobrar(cobranza(orden, "C-143", clave), porQue());
+
+            CobrarOrdenes.Cobrado reintento =
+                    cobrarOrdenes.cobrar(
+                            new CobrarOrdenes.Cobranza(
+                                    "C-143",
+                                    "cajero.prueba",
+                                    List.of(orden.id()),
+                                    FormaDePago.EFECTIVO,
+                                    PAGO.plusDays(1),
+                                    clave),
+                            porQue());
+
+            assertThat(reintento.recibo().id()).isEqualTo(primero.recibo().id());
+            assertThat(reintento.emitido()).isFalse();
+            assertThat(turnosDe("C-143", PAGO.plusDays(1)))
+                    .as("[antes de #143: el turno del dia siguiente, abierto, vacio y auditado]")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("diez reintentos simultaneos: un recibo, y los diez contestan con el")
+        void diezReintentosSimultaneos() throws Exception {
+            Orden orden = ordenPendiente("HUELLA-4", Dinero.de("44.00"));
+            String clave = "idem-" + orden.referencia();
+            int hilos = 10;
+            CountDownLatch salida = new CountDownLatch(1);
+            List<Callable<CobrarOrdenes.Cobrado>> tareas = new ArrayList<>();
+            for (int i = 0; i < hilos; i++) {
+                tareas.add(
+                        () -> {
+                            TenantContext.fijar(new MunicipalidadId(municipalidad));
+                            OrigenContext.fijar(new Origen("cajero.prueba", null, null));
+                            salida.await(10, TimeUnit.SECONDS);
+                            return cobrarOrdenes.cobrar(cobranza(orden, "C-01", clave), porQue());
+                        });
+            }
+
+            ExecutorService ejecutor = Executors.newFixedThreadPool(hilos);
+            List<CobrarOrdenes.Cobrado> respuestas = new ArrayList<>();
+            try {
+                List<Future<CobrarOrdenes.Cobrado>> futuros = new ArrayList<>();
+                for (Callable<CobrarOrdenes.Cobrado> tarea : tareas) {
+                    futuros.add(ejecutor.submit(tarea));
+                }
+                salida.countDown();
+                for (Future<CobrarOrdenes.Cobrado> futuro : futuros) {
+                    respuestas.add(futuro.get(60, TimeUnit.SECONDS));
+                }
+            } finally {
+                ejecutor.shutdownNow();
+            }
+
+            assertThat(respuestas.stream().map(r -> r.recibo().id()).distinct().toList())
+                    .as(
+                            "[los diez con el mismo recibo: sin la segunda mirada, con el candado"
+                                    + " del turno puesto, los que esperaban el candado encuentran la"
+                                    + " orden PAGADA y contestan 409 a un reintento]")
+                    .hasSize(1);
+            assertThat(respuestas.stream().filter(CobrarOrdenes.Cobrado::emitido).count())
+                    .as("[y uno solo lo emitio: los demas son reintentos]")
+                    .isOne();
+            assertThat(contarRecibos(orden)).isOne();
+            assertThat(contarEventos(orden)).isOne();
+        }
+
+        @Test
+        @DisplayName(
+                "diez reintentos simultaneos de una tasa: un recibo, y los diez contestan con el")
+        void diezReintentosSimultaneosDeUnaTasa() throws Exception {
+            // Sin orden que bloquear, lo unico que ordena a los diez es el candado del turno y
+            // la mirada que se hace con el puesto: sin ella, el segundo emitiria y chocaria con
+            // recibo_idempotencia_uq -un 409 a un reintento-.
+            crearTasa("T-143C", Dinero.de("3.00"), LocalDate.of(2026, 1, 1));
+            String clave = "idem-tasa-" + CONTADOR.incrementAndGet();
+            CobrarTasa.CobroDeTasas cobro =
+                    new CobrarTasa.CobroDeTasas(
+                            "C-01",
+                            "cajero.prueba",
+                            PAGADOR,
+                            List.of(new LineaDeTasaPedida("T-143C", 1)),
+                            FormaDePago.EFECTIVO,
+                            PAGO,
+                            clave);
+            int hilos = 10;
+            CountDownLatch salida = new CountDownLatch(1);
+            ExecutorService ejecutor = Executors.newFixedThreadPool(hilos);
+            List<CobrarTasa.Cobrada> respuestas = new ArrayList<>();
+            try {
+                List<Future<CobrarTasa.Cobrada>> futuros = new ArrayList<>();
+                for (int i = 0; i < hilos; i++) {
+                    futuros.add(
+                            ejecutor.submit(
+                                    () -> {
+                                        TenantContext.fijar(new MunicipalidadId(municipalidad));
+                                        OrigenContext.fijar(
+                                                new Origen("cajero.prueba", null, null));
+                                        salida.await(10, TimeUnit.SECONDS);
+                                        return cobrarTasa.cobrar(cobro, porQue());
+                                    }));
+                }
+                salida.countDown();
+                for (Future<CobrarTasa.Cobrada> futuro : futuros) {
+                    respuestas.add(futuro.get(60, TimeUnit.SECONDS));
+                }
+            } finally {
+                ejecutor.shutdownNow();
+            }
+
+            assertThat(respuestas.stream().map(r -> r.recibo().id()).distinct().toList())
+                    .hasSize(1);
+            assertThat(respuestas.stream().filter(CobrarTasa.Cobrada::emitido).count()).isOne();
+            assertThat(contarPorClave(clave)).isOne();
+        }
+
+        @Test
+        @DisplayName(
+                "la carrera que ninguna lectura ve choca con el indice y se dice, no es un 500")
+        void laClaveEnUsoSeTraduce() {
+            // Dos peticiones que no comparten candado miran las dos antes de que la otra
+            // confirme: aqui eso lo simula un repositorio que no encuentra nada por la clave.
+            // El choque es el de verdad, contra recibo_idempotencia_uq.
+            CobrarOrdenes ciega =
+                    envolver(
+                            new CobrarOrdenes(
+                                    envolver(
+                                            new AbrirCaja(
+                                                    cajas,
+                                                    new TurnoDeCajaRepositoryJdbc(jdbc),
+                                                    new AuditoriaJdbc(jdbc, RELOJ),
+                                                    RELOJ)),
+                                    ordenes,
+                                    new ReciboRepositoryQueNoVeLaClave(recibos),
+                                    buzon,
+                                    new ComponedorDeEventosJson(new JsonMapper()),
+                                    new AuditoriaJdbc(jdbc, RELOJ),
+                                    RELOJ));
+            Orden una = ordenPendiente("HUELLA-5", Dinero.de("5.00"));
+            Orden otra = ordenPendiente("HUELLA-6", Dinero.de("6.00"));
+            String clave = "idem-" + una.referencia();
+            ciega.cobrar(cobranza(una, "C-01", clave), porQue());
+
+            assertThatThrownBy(() -> ciega.cobrar(cobranza(otra, "C-01", clave), porQue()))
+                    .isInstanceOf(ReciboRepository.ClaveEnUso.class)
+                    .hasStackTraceContaining("recibo_idempotencia_uq");
+            assertThat(estadoDe(otra)).isEqualTo(EstadoDeOrden.PENDIENTE);
         }
     }
 
@@ -831,16 +1046,18 @@ class CajaJdbcTest {
             crearTasa("T-100", Dinero.de("12.50"), LocalDate.of(2026, 1, 1));
 
             Recibo emitido =
-                    cobrarTasa.cobrar(
-                            new CobrarTasa.CobroDeTasas(
-                                    "C-01",
-                                    "cajero.prueba",
-                                    PAGADOR,
-                                    List.of(new LineaDeTasaPedida("T-100", 4)),
-                                    FormaDePago.EFECTIVO,
-                                    PAGO,
-                                    null),
-                            porQue());
+                    cobrarTasa
+                            .cobrar(
+                                    new CobrarTasa.CobroDeTasas(
+                                            "C-01",
+                                            "cajero.prueba",
+                                            PAGADOR,
+                                            List.of(new LineaDeTasaPedida("T-100", 4)),
+                                            FormaDePago.EFECTIVO,
+                                            PAGO,
+                                            null),
+                                    porQue())
+                            .recibo();
 
             assertThat(emitido.total()).isEqualTo(Dinero.de("50.00"));
             assertThat(emitido.tipoDePago()).isEqualTo(TipoDePago.TASA);
@@ -862,16 +1079,18 @@ class CajaJdbcTest {
         void laBaseCompruebaLaMultiplicacion() {
             crearTasa("T-200", Dinero.de("10.00"), LocalDate.of(2026, 1, 1));
             Recibo emitido =
-                    cobrarTasa.cobrar(
-                            new CobrarTasa.CobroDeTasas(
-                                    "C-01",
-                                    "cajero.prueba",
-                                    PAGADOR,
-                                    List.of(new LineaDeTasaPedida("T-200", 2)),
-                                    FormaDePago.EFECTIVO,
-                                    PAGO,
-                                    null),
-                            porQue());
+                    cobrarTasa
+                            .cobrar(
+                                    new CobrarTasa.CobroDeTasas(
+                                            "C-01",
+                                            "cajero.prueba",
+                                            PAGADOR,
+                                            List.of(new LineaDeTasaPedida("T-200", 2)),
+                                            FormaDePago.EFECTIVO,
+                                            PAGO,
+                                            null),
+                                    porQue())
+                            .recibo();
 
             long tasaId =
                     enTransaccion(
@@ -977,6 +1196,42 @@ class CajaJdbcTest {
         @Override
         public List<RecuentoDelDia> recuentoDe(LocalDate dia) {
             return real.recuentoDe(dia);
+        }
+    }
+
+    /**
+     * Los recibos de verdad, salvo que no encuentra nada por la clave (#143): las dos peticiones de
+     * una carrera que no comparten candado, que miraron antes de que la otra confirmara.
+     */
+    private record ReciboRepositoryQueNoVeLaClave(ReciboRepository real)
+            implements ReciboRepository {
+
+        @Override
+        public kamayuk.caja.nucleo.dominio.NumeroDeRecibo siguienteNumero(Caja caja) {
+            return real.siguienteNumero(caja);
+        }
+
+        @Override
+        public Recibo emitir(Recibo recibo, @Nullable ClaveDeIdempotencia clave) {
+            return real.emitir(recibo, clave);
+        }
+
+        @Override
+        public java.util.Optional<EmitidoConClave> porClaveDeIdempotencia(String clave) {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public java.util.Optional<Recibo> porNumero(
+                kamayuk.caja.nucleo.dominio.NumeroDeRecibo numero) {
+            return real.porNumero(numero);
+        }
+
+        @Override
+        public kamayuk.caja.compartido.Pagina<kamayuk.caja.nucleo.dominio.ReciboEnConsulta> buscar(
+                kamayuk.caja.nucleo.dominio.CriterioDeRecibos criterio,
+                kamayuk.caja.compartido.Paginacion paginacion) {
+            return real.buscar(criterio, paginacion);
         }
     }
 
@@ -1112,6 +1367,29 @@ class CajaJdbcTest {
                                                 + " e.recibo_id"
                                                 + " WHERE d.referencia_externa = :r")
                                 .param("r", orden.referencia())
+                                .query(Long.class)
+                                .single());
+    }
+
+    private long contarPorClave(String clave) {
+        return enTransaccion(
+                () ->
+                        jdbc.sql("SELECT count(*) FROM recibo WHERE clave_idempotencia = :clave")
+                                .param("clave", clave)
+                                .query(Long.class)
+                                .single());
+    }
+
+    /** Cuantos turnos tiene esa caja ese dia: una apertura que no debia se ve aqui. */
+    private long turnosDe(String codigoDeCaja, LocalDate dia) {
+        return enTransaccion(
+                () ->
+                        jdbc.sql(
+                                        "SELECT count(*) FROM cierre_caja"
+                                                + " WHERE caja_id = (SELECT id FROM caja"
+                                                + "   WHERE codigo = :caja) AND fecha = :dia")
+                                .param("caja", codigoDeCaja)
+                                .param("dia", dia)
                                 .query(Long.class)
                                 .single());
     }

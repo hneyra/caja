@@ -3,6 +3,7 @@ package kamayuk.caja.nucleo.aplicacion;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -11,6 +12,7 @@ import kamayuk.caja.auditoria.Operacion;
 import kamayuk.caja.auditoria.RegistroDeAuditoria;
 import kamayuk.caja.dominio.Dinero;
 import kamayuk.caja.dominio.Observacion;
+import kamayuk.caja.nucleo.dominio.ClaveDeIdempotencia;
 import kamayuk.caja.nucleo.dominio.FormaDePago;
 import kamayuk.caja.nucleo.dominio.LineaDeRecibo;
 import kamayuk.caja.nucleo.dominio.LineaDeTasaPedida;
@@ -45,6 +47,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CobrarTasa {
 
+    /** El acto, en la huella de la peticion: lo que separa esta ruta de la de ordenes (#143). */
+    private static final String ACTO = "cobrar-tasas";
+
     /** El concepto con el que se rotula una linea de tasa en {@code recibo_detalle}. */
     private static final String CONCEPTO_TASA = "TASA";
 
@@ -74,15 +79,30 @@ public class CobrarTasa {
      * exige que se vea en el punto donde se escribe, y ArchUnit la comprueba mirando los parametros
      * del metodo transaccional.
      *
+     * <p>El reenvio del mismo intento se mira <b>antes</b> de abrir el turno y otra vez con su
+     * candado puesto, igual que en {@link CobrarOrdenes#cobrar} y por lo mismo (#143): un reintento
+     * no abre ni audita el turno de un dia en el que no cobra, ni choca con el suyo ya cerrado; y
+     * dos reintentos simultaneos los ordena la segunda mirada, no la primera.
+     *
      * @param peticion lo que el cajero marco
      * @param observacion por que se cobra (regla 10, RNF-052)
+     * @return el recibo, y si se emitio ahora o era el de un intento anterior
      * @throws TasaSinTarifaVigente si algun concepto no tiene tarifa vigente a esa fecha
      * @throws TarifaEnCero si la tarifa vigente es cero: un recibo por cero no documenta un cobro
+     * @throws ClaveDeIdempotencia.UsadaConOtraPeticion si la clave ya emitio otra cosa
      */
     @Transactional
-    public Recibo cobrar(CobroDeTasas peticion, Observacion observacion) {
+    public Cobrada cobrar(CobroDeTasas peticion, Observacion observacion) {
         Objects.requireNonNull(peticion, "No se cobra sin peticion");
         Objects.requireNonNull(observacion, "Sin observacion no se guarda (regla 10, RNF-052)");
+
+        ClaveDeIdempotencia clave = peticion.clave();
+        if (clave != null) {
+            Optional<Cobrada> reenvio = reenvioDe(clave);
+            if (reenvio.isPresent()) {
+                return reenvio.get();
+            }
+        }
 
         AbrirCaja.Abierta abierta =
                 abrirCaja.enLaCaja(
@@ -90,12 +110,10 @@ public class CobrarTasa {
                         peticion.cajero(),
                         peticion.fechaDeCobro(),
                         observacion);
-
-        String clave = peticion.claveDeIdempotencia();
         if (clave != null) {
-            Optional<Recibo> yaEmitido = recibos.porClaveDeIdempotencia(clave);
-            if (yaEmitido.isPresent()) {
-                return yaEmitido.get();
+            Optional<Cobrada> reenvio = reenvioDe(clave);
+            if (reenvio.isPresent()) {
+                return reenvio.get();
             }
         }
 
@@ -164,7 +182,75 @@ public class CobrarTasa {
                                 Operacion.ALTA,
                                 observacion)
                         .con(null, descripcion(emitido)));
-        return emitido;
+        return new Cobrada(emitido, true);
+    }
+
+    /**
+     * El recibo que esa clave ya emitio, si la peticion es la misma; sin abrir ni bloquear nada. Es
+     * lo que el borde HTTP pregunta antes de mirar la fecha: ver {@link CobrarOrdenes#yaCobrada}.
+     *
+     * @throws ClaveDeIdempotencia.UsadaConOtraPeticion si la clave ya emitio otra cosa
+     */
+    @Transactional(readOnly = true)
+    public Optional<Cobrada> yaCobrada(ClaveDeIdempotencia clave) {
+        return reenvioDe(Objects.requireNonNull(clave, "Sin clave no hay reintento que buscar"));
+    }
+
+    /**
+     * La clave de un cobro de tasas, atada a lo que lo define (#143); nula si no vino cabecera.
+     *
+     * <p>Entran el acto, la caja, el cajero, la forma de pago, el pagador —el papel sale a su
+     * nombre— y los conceptos con su cantidad, <b>ordenados</b>. No entran la fecha ni la
+     * observacion, por lo mismo que en {@link CobrarOrdenes#claveDe}.
+     *
+     * @throws IllegalArgumentException si la cabecera no cabe en la columna
+     */
+    public static @Nullable ClaveDeIdempotencia claveDe(
+            @Nullable String cabecera,
+            String codigoDeCaja,
+            String cajero,
+            Pagador pagador,
+            List<LineaDeTasaPedida> conceptos,
+            FormaDePago formaDePago) {
+        if (cabecera == null) {
+            return null;
+        }
+        List<String> partes = new ArrayList<>();
+        partes.add(ClaveDeIdempotencia.parte("acto", ACTO));
+        partes.add(ClaveDeIdempotencia.parte("caja", codigoDeCaja));
+        partes.add(ClaveDeIdempotencia.parte("cajero", cajero));
+        partes.add(ClaveDeIdempotencia.parte("formaDePago", formaDePago.name()));
+        partes.add(ClaveDeIdempotencia.parte("pagador.documento", pagador.documento()));
+        partes.add(ClaveDeIdempotencia.parte("pagador.nombre", pagador.nombre()));
+        partes.add(ClaveDeIdempotencia.parte("pagador.idExterno", pagador.idExterno()));
+        conceptos.stream()
+                .sorted(
+                        Comparator.comparing(LineaDeTasaPedida::codigoDeTasa)
+                                .thenComparingInt(LineaDeTasaPedida::cantidad))
+                .forEach(
+                        concepto -> {
+                            partes.add(
+                                    ClaveDeIdempotencia.parte("concepto", concepto.codigoDeTasa()));
+                            partes.add(ClaveDeIdempotencia.parte("cantidad", concepto.cantidad()));
+                        });
+        return ClaveDeIdempotencia.de(cabecera, partes);
+    }
+
+    /**
+     * El reenvio: el recibo de esa clave, si la peticion es la misma. Una huella distinta es otra
+     * peticion; un recibo de antes de V8 no tiene huella y se reconoce si al menos es de tasa. Ver
+     * {@link ClaveDeIdempotencia#reconoce}.
+     */
+    private Optional<Cobrada> reenvioDe(ClaveDeIdempotencia clave) {
+        return recibos.porClaveDeIdempotencia(clave.valor())
+                .map(
+                        guardado -> {
+                            if (!clave.reconoce(guardado.huella())
+                                    || guardado.recibo().tipoDePago() != TipoDePago.TASA) {
+                                throw new ClaveDeIdempotencia.UsadaConOtraPeticion(clave);
+                            }
+                            return new Cobrada(guardado.recibo(), false);
+                        });
     }
 
     /** Sin datos personales: esto acaba en la columna JSON de la auditoria. */
@@ -192,7 +278,8 @@ public class CobrarTasa {
      * @param conceptos los del TUPA, con su cantidad
      * @param formaDePago con que se paga
      * @param fechaDeCobro la fecha a la que se resuelve la tarifa vigente (regla 6)
-     * @param claveDeIdempotencia la cabecera {@code idempotency-key}, si vino
+     * @param claveDeIdempotencia la cabecera {@code idempotency-key}, si vino; se ata a este cobro
+     *     con {@link #clave()} (#143)
      */
     public record CobroDeTasas(
             String codigoDeCaja,
@@ -214,8 +301,26 @@ public class CobrarTasa {
             if (conceptos.isEmpty()) {
                 throw new IllegalArgumentException("Hay que marcar al menos un concepto del TUPA");
             }
+            if (claveDeIdempotencia != null) {
+                ClaveDeIdempotencia.exigirValida(claveDeIdempotencia);
+            }
+        }
+
+        /** La clave de este cobro con la huella de lo que pide (#143); nula si no vino. */
+        public @Nullable ClaveDeIdempotencia clave() {
+            return claveDe(
+                    claveDeIdempotencia, codigoDeCaja, cajero, pagador, conceptos, formaDePago);
         }
     }
+
+    /**
+     * Lo que sale de cobrar tasas.
+     *
+     * @param recibo el papel
+     * @param emitido si se emitio ahora, o se devolvio el de un intento anterior. El borde HTTP
+     *     contesta 201 al primero y 200 al segundo (#143)
+     */
+    public record Cobrada(Recibo recibo, boolean emitido) {}
 
     /** Ese concepto no tiene tarifa vigente a esa fecha. */
     public static final class TasaSinTarifaVigente extends RuntimeException {
