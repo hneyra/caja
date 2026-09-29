@@ -49,6 +49,12 @@ import org.springframework.stereotype.Component;
  * <p>Como mucho {@value #VUELTAS_MAXIMAS} paginas por corrida, y se para antes en cuanto una vuelta
  * no progresa. Un proceso que no acaba no es un consumidor: es un pod que nadie mira.
  *
+ * <p>Y pararse en una vuelta sin progreso es pararse ANTES de leer lo que viene detras: una pagina
+ * entera de pospuestos que no se van a resolver pararia aqui todas las corridas, para siempre. Por
+ * eso ninguno puede esperar en cabeza mas de {@link
+ * ConsumirEventosDeIdentidad#MINUTOS_QUE_SE_ESPERA} minutos, y el que depende de un alta apartada
+ * no espera nada: los dos se apartan con su aviso y la vuelta progresa (#139).
+ *
  * <h2>Y al terminar, quien lleva demasiado pospuesto</h2>
  *
  * <p>Lo que quedo pospuesto se junta de TODAS las vueltas —sin repetir, porque el emisor lo vuelve

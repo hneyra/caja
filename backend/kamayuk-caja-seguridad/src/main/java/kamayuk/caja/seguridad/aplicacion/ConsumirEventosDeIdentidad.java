@@ -31,11 +31,28 @@ import org.slf4j.LoggerFactory;
  *   <tr><td>no se podra aplicar nunca</td><td>apartado</td><td>si</td><td>al responsable</td></tr>
  *   <tr><td>todavia no (falta su dependencia)</td><td>intacta</td><td><b>NO</b></td>
  *       <td>una linea, y al responsable si lleva mas de {@value #MINUTOS_QUE_SE_ADMITEN} min</td></tr>
+ *   <tr><td>todavia no, pero lleva mas de {@value #MINUTOS_QUE_SE_ESPERA} min desde que se
+ *       emitio</td><td>apartado</td><td>si</td><td>al responsable, como la tercera fila</td></tr>
  * </table>
  *
  * <p>La cuarta fila es la que separa a este consumidor de uno que «funciona»: un evento que llega
  * antes que aquel del que depende se deja en el buzon del emisor, y la siguiente vuelta —o la
  * siguiente corrida— lo encuentra con su dependencia puesta. Acusarlo lo perderia para siempre.
+ *
+ * <h2>Y la quinta: nada espera para siempre en cabeza del buzon (#139)</h2>
+ *
+ * <p>La cuarta fila tenia un limite que no estaba escrito: el buzon sirve lo mas viejo sin acusar y
+ * lo pospuesto no se acusa, asi que {@value #POR_VUELTA} pospuestos que no se van a resolver nunca
+ * llenan la pagina, la vuelta no progresa, la corrida se para, y todo lo que {@code identidad}
+ * publique despues —una inhabilitacion incluida— no se lee jamas. Habia dos salidas: (a) dejar de
+ * esperar pasado un plazo y apartar con aviso, o (b) leer mas alla de la cabeza. <b>La (b) no
+ * existe sin cambiar {@code identidad}</b>: su {@code GET /eventos/pendientes} solo admite {@code
+ * limite} —de 1 a 500— y su {@code BuzonDeIdentidadJdbc.pendientesPara} es {@code ORDER BY e.id
+ * LIMIT :limite}, sin desplazamiento ni cursor (medido en {@code identidad@6c5e433}; y un cursor es
+ * justo lo que ese buzon rechaza, porque pierde eventos en silencio). Pedir 500 solo moveria el
+ * umbral. Asi que es la (a): {@link #MINUTOS_QUE_SE_ESPERA}, con su porque. Y el caso que de verdad
+ * no iba a llegar nunca —los dependientes de un alta que se aparto aqui— ya no espera ni ese plazo:
+ * el aplicador lo aparta en el primer intento.
  *
  * <h2>El acuse va DESPUES de las transacciones, y esto tiene prueba</h2>
  *
@@ -77,6 +94,38 @@ public class ConsumirEventosDeIdentidad {
 
     private static final Duration EDAD_QUE_SE_AVISA = Duration.ofMinutes(MINUTOS_QUE_SE_ADMITEN);
 
+    /**
+     * Cuanto puede esperar un pospuesto a su dependencia, contado desde que {@code identidad} lo
+     * emitio ({@link EventoDeIdentidadRecibido#creadoEn()}), antes de que se aparte como lo que no
+     * se podra aplicar nunca: <b>una hora</b>, doce ticks del {@code CronJob} y cuatro veces el
+     * umbral del aviso (<a href="https://github.com/hneyra/caja/issues/139">#139</a>).
+     *
+     * <p>Por que hace falta un plazo: el buzon sirve lo mas viejo sin acusar, un pospuesto no se
+     * acusa, y una vuelta cuya pagina entera se pospone no progresa. Con {@value #POR_VUELTA}
+     * pospuestos que no se van a resolver en cabeza, la corrida se para en la primera vuelta y lo
+     * que viene detras —la inhabilitacion de un cajero— no se lee nunca; el aviso de los quince
+     * minutos lo dice cada cinco, y no lo arregla.
+     *
+     * <p>Por que una hora y no mas: la dependencia de un evento sale del emisor ANTES que el —en
+     * {@code identidad} no se afilia ni se concede nada a quien no existe, asi que su alta tiene un
+     * {@code id} menor— y un alta o una modificacion nunca se posponen; medido, cuando la
+     * dependencia llega el pospuesto entra en <b>una</b> corrida (informe de AC-5/AC-6 §3(d)). Lo
+     * que a los quince minutos ya no se explicaba por el troceado en paginas, a la hora no se va a
+     * explicar por nada que llegue solo. Cada minuto de mas es un minuto en que una baja puede no
+     * aplicarse. El unico caso que esperando se habria arreglado es un acceso que {@code identidad}
+     * concede antes de que esta caja despliegue el catalogo que lo trae —hoy no pasa: los dos
+     * declaran los mismos siete—, y ese falla cerrado: el permiso no rige aqui hasta que se vuelva
+     * a fijar en {@code identidad}, y el apartado lo dice.
+     *
+     * <p>Por que desde que se EMITIO y no desde que se vio por primera vez: es lo que el sobre ya
+     * trae, lo mismo con que se mide el aviso de arriba, y no exige una tabla nueva. Tras una
+     * parada larga del consumidor, un pospuesto viejo se aparta la primera vez que se lee; por lo
+     * de arriba, esperar mas no le habria traido la dependencia.
+     */
+    public static final int MINUTOS_QUE_SE_ESPERA = 60;
+
+    private static final Duration EDAD_QUE_SE_APARTA = Duration.ofMinutes(MINUTOS_QUE_SE_ESPERA);
+
     private final FuenteDeEventosDeIdentidad fuente;
     private final AplicarUnEventoDeIdentidad aplicador;
     private final AlertaDeEventosSinAplicar alerta;
@@ -105,7 +154,7 @@ public class ConsumirEventosDeIdentidad {
 
         for (EventoDeIdentidadRecibido evento : lote.eventos()) {
             try {
-                AplicarUnEventoDeIdentidad.Aplicacion resultado = aplicador.aplicar(evento);
+                AplicarUnEventoDeIdentidad.Aplicacion resultado = aplicarSinEsperarDeMas(evento);
                 switch (resultado) {
                     case APLICADO -> aplicados++;
                     case YA_APLICADO -> yaEstaban++;
@@ -174,6 +223,41 @@ public class ConsumirEventosDeIdentidad {
                 List.copyOf(pospuestos),
                 lote.quedan(),
                 acuseRechazado);
+    }
+
+    /**
+     * Aplica el evento y, si lo que vuelve es un «todavia no» de un evento que ya lleva {@value
+     * #MINUTOS_QUE_SE_ESPERA} minutos desde que se emitio, lo convierte en un «nunca» (#139): el
+     * {@code catch} de {@link AplicarUnEventoDeIdentidad.NoSePuedeAplicar} de {@link #consumir()}
+     * lo aparta, lo acusa y avisa al responsable, igual que a cualquier otro apartado. La
+     * transaccion del intento ya se deshizo al salir de {@code aplicar}, asi que no queda nada
+     * escrito a medias.
+     *
+     * <p>Aqui y no en el aplicador: el aplicador dice que falta y no mira el reloj; cuanto se
+     * espera es una politica de la corrida, como el umbral del aviso, y vive junto a el.
+     */
+    private AplicarUnEventoDeIdentidad.Aplicacion aplicarSinEsperarDeMas(
+            EventoDeIdentidadRecibido evento) {
+        try {
+            return aplicador.aplicar(evento);
+        } catch (AplicarUnEventoDeIdentidad.TodaviaNo todaviaNo) {
+            Duration espera = Duration.between(evento.creadoEn(), reloj.instant());
+            if (espera.compareTo(EDAD_QUE_SE_APARTA) < 0) {
+                throw todaviaNo;
+            }
+            throw new AplicarUnEventoDeIdentidad.NoSePuedeAplicar(
+                    "Llevaba "
+                            + espera.toMinutes()
+                            + " min sin poder aplicarse desde que `identidad` lo emitio ("
+                            + evento.creadoEn()
+                            + "), y el plazo es de "
+                            + MINUTOS_QUE_SE_ESPERA
+                            + ": su dependencia sale antes que el en el buzon, asi que ya no va a"
+                            + " llegar sola, y esperarla mas deja que los pospuestos tapen el buzon"
+                            + " (#139). Lo que se dijo en cada intento: "
+                            + todaviaNo.getMessage(),
+                    todaviaNo);
+        }
     }
 
     /**
