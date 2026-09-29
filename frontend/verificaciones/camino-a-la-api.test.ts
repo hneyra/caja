@@ -221,7 +221,7 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
     expect(suyas.map((m) => [m.verbo, m.controlador, m.privilegio])).toEqual([
       ['POST', 'ReciboController', 'ELIMINACION'],
     ]);
-    expect(rutaDeLaAnulacion('001-000123')).toBe('/cobros/001-000123/anulacion');
+    expect(rutaDeLaAnulacion('001-0000123')).toBe('/cobros/001-0000123/anulacion');
     // Y una serie con una barra dentro no parte la ruta en dos.
     expect(rutaDeLaAnulacion('001/A-9')).toBe('/cobros/001%2FA-9/anulacion');
   });
@@ -247,7 +247,7 @@ describe('lo que las pantallas leen existe en el backend, con la forma que se le
       ['formato', 'IMPRESION'],
     ]);
     // Y lo que la interfaz compone no lleva ninguna busqueda: ni ese parametro ni ningun otro.
-    expect(rutaDelDuplicado('001-000123')).toBe('/recibos/001-000123/duplicado');
+    expect(rutaDelDuplicado('001-0000123')).toBe('/recibos/001-0000123/duplicado');
   });
 
   it('y las capturas tienen los campos de sus `Resource`, ni uno mas', async () => {

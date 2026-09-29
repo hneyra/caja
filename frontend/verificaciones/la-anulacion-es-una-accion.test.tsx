@@ -80,7 +80,7 @@ beforeEach(() => {
         json({ contenido, pagina: 0, tamano: 200, totalElementos: contenido.length, totalPaginas: 1, hayMas: false });
       if (opciones?.method === 'POST') {
         escrituras.push({ url, cuerpo: JSON.parse(String(opciones.body)) });
-        return json({ numero: '001-000123', estado: 'ANULADO' }, 201);
+        return json({ numero: '001-0000123', estado: 'ANULADO' }, 201);
       }
       if (url.includes('/seguridad/modulos')) return pagina(MODULOS_MEDIDOS);
       if (url.includes('/seguridad/accesos')) return pagina(ACCESOS_MEDIDOS);
@@ -120,7 +120,7 @@ function motivoDelBoton(): string {
   return parrafo?.textContent ?? '';
 }
 
-const EL_RECIBO = '001-000123';
+const EL_RECIBO = '001-0000123';
 
 describe('la accion de anular se ofrece donde esta el recibo', () => {
   it('EL CENTINELA: la captura del duplicado trae un recibo EMITIDO, no uno ya anulado', () => {

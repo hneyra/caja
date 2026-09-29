@@ -4,7 +4,11 @@ import type { MunicipalidadDeLaSesion, SesionDeLaVentanilla } from './lecturas.t
  * La sesion de la ventanilla, **tal como la contesta su backend** (#74).
  *
  * `GET /caja/api/v1/seguridad/sesion` y `GET /caja/api/v1/seguridad/sesion/municipalidad` con la
- * cuenta del administrador. El origen y su marca son los de `seguridadMedida.ts`.
+ * cuenta del administrador. El origen y su marca son los de `seguridadMedida.ts`: **la forma esta
+ * medida con `curl` el 2026-09-28** (#89) —tres campos y cuatro, sin nulos, con las dos cuentas— y
+ * coincidio con la derivada. **Los valores son elegidos**: la plataforma local implanta Sullana
+ * (`200101`, `PROVINCIAL`) y da al administrador el nombre que su `.env` le pone, y ni una cosa ni
+ * la otra es lo que estas pruebas necesitan decir.
  *
  * **Es la cuenta de la implantacion, no una persona.** «Administrador del Sistema» es el nombre con
  * que `identidad` da de alta al administrador; `caja` retiro en #44 un cajero inventado que su

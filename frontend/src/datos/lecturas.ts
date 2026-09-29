@@ -358,7 +358,7 @@ export const RUTAS = {
  * Ese parametro cambia de operacion: exige `IMPRESION` y registra la reimpresion (ADR-0040). Aqui
  * no se anade nunca, y por eso esta funcion no admite ninguno.
  *
- * El numero se codifica: un `001-000123` no lo necesita, pero la serie la pone cada instalacion y
+ * El numero se codifica: un `001-0000123` no lo necesita, pero la serie la pone cada instalacion y
  * un numero con una barra dentro partiria la ruta en dos.
  */
 export function rutaDelDuplicado(numero: string): string {

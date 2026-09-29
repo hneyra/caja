@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
@@ -9,6 +9,7 @@ import {
   CUENTA_DE_MEDICION,
   MedicionImposible,
   VARIABLE_DE_LA_CLAVE,
+  anadirALaFormaMedida,
   codigoDeSalida,
   medir,
   problemasDeLasOpciones,
@@ -42,6 +43,12 @@ import {
  *
  * Sale con `0` si las catorce lecturas llegaron en 200 con la forma de su captura, `1` si alguna
  * difiere o fallo, y `2` si no se pudo medir: la orden esta incompleta o no hubo token.
+ *
+ * **`--forma <archivo>` es lo unico que escribe fuera de `--salida`**, y a proposito: une la FIRMA
+ * de lo medido —la forma sin un solo valor, `firmaDe`— a la que ya tuviera ese archivo, y anota la
+ * orden, la fecha, la base y la cuenta. Es como se hizo `verificaciones/forma-medida.json` (#89):
+ * varias corridas, una por cuenta y por recibo, sobre el mismo archivo. Para empezar de cero, se
+ * borra antes.
  */
 
 const AYUDA = `Uso: node desarrollo/medir-las-capturas.mjs --base <origen> --emisor <emisor> [opciones]
@@ -56,6 +63,7 @@ const AYUDA = `Uso: node desarrollo/medir-las-capturas.mjs --base <origen> --emi
   --turno    El turno del arqueo. Por omision, el ABIERTO de /turnos/del-dia.
   --fecha    El dia de la conciliacion (AAAA-MM-DD). Por omision, el de /turnos/del-dia.
   --salida   Donde dejar lo medido. Por omision, un directorio temporal nuevo con permisos 700.
+  --forma    Une la forma de lo medido, sin valores, a este archivo (verificaciones/forma-medida.json).
 
   La clave, SOLO en ${VARIABLE_DE_LA_CLAVE}.`;
 
@@ -76,6 +84,7 @@ try {
       turno: { type: 'string' },
       fecha: { type: 'string' },
       salida: { type: 'string' },
+      forma: { type: 'string' },
       ayuda: { type: 'boolean', short: 'h' },
     },
     strict: true,
@@ -146,6 +155,18 @@ try {
     },
   );
   const codigo = codigoDeSalida(resultados);
+  if (argumentos.forma !== undefined) {
+    const archivo = resolve(argumentos.forma);
+    const anterior = existsSync(archivo) ? JSON.parse(readFileSync(archivo, 'utf8')) : null;
+    const forma = anadirALaFormaMedida(anterior, resultados, {
+      orden: invocacion,
+      fecha: new Date().toISOString(),
+      base,
+      cuenta: argumentos.cuenta ?? entorno.KAMAYUK_MEDICION_CUENTA ?? CUENTA_DE_MEDICION,
+    });
+    writeFileSync(archivo, redactar(`${JSON.stringify(forma, null, 2)}\n`, [clave]));
+    process.stdout.write(`\nLa forma de lo medido, sin valores, esta unida en ${archivo}\n`);
+  }
   process.stdout.write(`\nLo medido esta en ${salida}\n`);
   process.exit(codigo);
 } catch (error) {

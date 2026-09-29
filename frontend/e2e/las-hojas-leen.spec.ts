@@ -74,7 +74,7 @@ test('«duplicado-recibo» dibuja los recibos con la hora de Lima y dice de cuan
   const pedidas = await contestaLosDatos(page);
   await abrir(page, 'duplicado-recibo');
 
-  const primera = page.getByRole('row').filter({ hasText: '001-000123' });
+  const primera = page.getByRole('row').filter({ hasText: '001-0000123' });
   await expect(primera).toBeVisible();
   // 02:04 del 16 en UTC: la celda dice las 21:04 del 15, que es cuando se cobro en la ventanilla.
   await expect(primera).toContainText('15/03/2026 21:04');
@@ -98,22 +98,23 @@ test('«duplicado-recibo»: sin elegir dice «sin elegir», y al elegir una fila
   await expect(page.getByText('Cajero de la prueba')).toHaveCount(0);
   expect(pedidas).toEqual(['/caja/api/v1/recibos']);
 
-  await page.getByRole('row').filter({ hasText: '001-000123' })
+  await page.getByRole('row').filter({ hasText: '001-0000123' })
     .getByRole('button', { name: 'Ver el duplicado' })
     .click();
 
   await expect(page.getByText('Cajero de la prueba')).toBeVisible();
-  expect(pedidas).toEqual(['/caja/api/v1/recibos', '/caja/api/v1/recibos/001-000123/duplicado']);
+  expect(pedidas).toEqual(['/caja/api/v1/recibos', '/caja/api/v1/recibos/001-0000123/duplicado']);
   // El numero elegido esta en la direccion: recargar —o pasar el enlace— ensena el mismo recibo.
-  expect(page.url()).toContain('#/duplicado-recibo/001-000123');
-  // Las dos lineas, con los nulos de la que no es una tasa marcados y no puestos a cero.
-  const deTributo = page.getByRole('row').filter({ hasText: 'TRIB-01 · PAGO' });
+  expect(page.url()).toContain('#/duplicado-recibo/001-0000123');
+  // La linea de la orden de cobro, con los nulos de lo que no es una tasa marcados y no puestos a
+  // cero: su tributo es el sistema de origen en mayusculas, como lo escribe el backend (#89).
+  const deTributo = page.getByRole('row').filter({ hasText: 'RENTAS · PAGO' });
   await expect(deTributo).toBeVisible();
   await expect(deTributo.getByRole('cell').nth(1)).toHaveText('—');
   await expect(deTributo.getByRole('cell').nth(2)).toHaveText('—');
   // Y la fila elegida se ve: es la que lleva `aria-current`.
   await expect(page.locator('tr[aria-current="true"]')).toHaveCount(1);
-  await expect(page.locator('tr[aria-current="true"]')).toContainText('001-000123');
+  await expect(page.locator('tr[aria-current="true"]')).toContainText('001-0000123');
 });
 
 test('«duplicado-recibo»: con el recibo en la direccion se pide al abrir, y un 404 no vacia la lista', async ({ page }) => {
@@ -123,7 +124,7 @@ test('«duplicado-recibo»: con el recibo en la direccion se pide al abrir, y un
   await expect(page.getByText('no está').first()).toBeVisible();
   expect(pedidas).toEqual(['/caja/api/v1/recibos', '/caja/api/v1/recibos/001-999999/duplicado']);
   // La lista sigue donde estaba: la que fallo es la otra lectura.
-  await expect(page.getByRole('row').filter({ hasText: '001-000123' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: '001-0000123' })).toBeVisible();
 });
 
 /**
@@ -144,7 +145,7 @@ test('«cierre-caja» encadena su turno con el arqueo de ese turno, y dibuja sus
   await expect(page.getByText('sin turno')).toHaveCount(0);
   // Y desde cuando esta abierto (#104): el `abiertoEn` del turno, dicho en Lima y no en UTC —en UTC
   // seria el 16—, aunque el navegador de la prueba este en otra zona.
-  await expect(page.getByText('15/03/2026 21:30')).toBeVisible();
+  await expect(page.getByText('15/03/2026 21:03')).toBeVisible();
 
   expect([...pedidas].sort()).toEqual([
     '/caja/api/v1/pagos/sin-entregar',
@@ -200,7 +201,7 @@ test('«cierre-caja» no concilia hasta que se elige un dia, y entonces lo pide 
   // La tabla se llena, y la linea del origen que no contesto dice por que en vez de un cero.
   const sinContestar = page.getByRole('row').filter({ hasText: 'mercados' });
   await expect(sinContestar).toBeVisible();
-  await expect(sinContestar).toContainText('El sistema de origen no contesto: Connection refused');
+  await expect(sinContestar).toContainText('No se pudo preguntar que aplico «mercados» el 2026-03-15: «mercados» no contesta');
   // Con los dos filtros: «rentas» tambien es el destino de un pago sin entregar, dos bloques mas
   // arriba, y una sola condicion casa con las dos filas.
   await expect(page.getByRole('row').filter({ hasText: 'rentas' }).filter({ hasText: 'NO CUADRA' })).toContainText(
@@ -226,10 +227,10 @@ test('«duplicado-recibo»: el recibo elegido se anula desde aqui, con su confir
     await ruta.fulfill({
       status: 201,
       contentType: 'application/json',
-      body: JSON.stringify({ numero: '001-000123', estado: 'ANULADO' }),
+      body: JSON.stringify({ numero: '001-0000123', estado: 'ANULADO' }),
     });
   });
-  await abrir(page, 'duplicado-recibo/001-000123');
+  await abrir(page, 'duplicado-recibo/001-0000123');
 
   const anular = page.locator('[data-accion="abre:anular-el-recibo"]');
   await expect(anular).toBeVisible();
@@ -244,8 +245,8 @@ test('«duplicado-recibo»: el recibo elegido se anula desde aqui, con su confir
   const acto = page.locator('[data-acto="anular-el-recibo"]');
   await expect(acto).toBeVisible();
   // El formulario dice sobre QUE recibo se actua, y la lista de arriba sigue donde estaba.
-  await expect(acto).toContainText('001-000123');
-  await expect(page.getByRole('row').filter({ hasText: '001-000123' }).first()).toBeVisible();
+  await expect(acto).toContainText('001-0000123');
+  await expect(page.getByRole('row').filter({ hasText: '001-0000123' }).first()).toBeVisible();
 
   const primario = acto.locator('button[type="submit"]');
   await expect(primario, 'nace impedido: faltan el motivo y la observacion (regla 10)').toHaveAttribute(
@@ -265,7 +266,7 @@ test('«duplicado-recibo»: el recibo elegido se anula desde aqui, con su confir
 
   await expect(page.getByText('El cobro quedó anulado')).toBeVisible();
   expect(escritas).toHaveLength(1);
-  expect(escritas[0]?.url).toBe('/caja/api/v1/cobros/001-000123/anulacion');
+  expect(escritas[0]?.url).toBe('/caja/api/v1/cobros/001-0000123/anulacion');
   expect(escritas[0]?.cuerpo).toEqual({
     motivo: 'Cobro duplicado del mismo recibo',
     observacion: 'Se anula a pedido de tesorería',

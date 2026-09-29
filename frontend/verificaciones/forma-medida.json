@@ -1,0 +1,1327 @@
+{
+  "mediciones": [
+    {
+      "orden": "node desarrollo/medir-las-capturas.mjs --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --turno 1 --forma verificaciones/forma-medida.json",
+      "fecha": "2026-09-28T19:26:49.073Z",
+      "base": "http://localhost:8080",
+      "cuenta": "medicion-de-interfaces"
+    },
+    {
+      "orden": "node desarrollo/medir-las-capturas.mjs --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez --forma verificaciones/forma-medida.json",
+      "fecha": "2026-09-28T19:26:49.491Z",
+      "base": "http://localhost:8080",
+      "cuenta": "jperez"
+    },
+    {
+      "orden": "node desarrollo/medir-las-capturas.mjs --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez --recibo 001-0000002 --forma verificaciones/forma-medida.json",
+      "fecha": "2026-09-28T19:26:49.927Z",
+      "base": "http://localhost:8080",
+      "cuenta": "jperez"
+    },
+    {
+      "orden": "node desarrollo/medir-las-capturas.mjs --base http://localhost:8080 --emisor http://localhost:8180/realms/kamayuk --cuenta jperez --recibo 001-0000003 --forma verificaciones/forma-medida.json",
+      "fecha": "2026-09-28T19:26:50.389Z",
+      "base": "http://localhost:8080",
+      "cuenta": "jperez"
+    }
+  ],
+  "lecturas": {
+    "sesion": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.cuenta": [
+          "texto"
+        ],
+        "$.nombre": [
+          "texto"
+        ],
+        "$.usuarioId": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "cuenta",
+          "nombre",
+          "usuarioId"
+        ]
+      }
+    },
+    "municipalidadDeLaSesion": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.id": [
+          "numero:entero"
+        ],
+        "$.nombre": [
+          "texto"
+        ],
+        "$.tipo": [
+          "texto"
+        ],
+        "$.ubigeo": [
+          "texto:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "id",
+          "nombre",
+          "tipo",
+          "ubigeo"
+        ]
+      }
+    },
+    "modulos": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.contenido": [
+          "lista"
+        ],
+        "$.contenido[]": [
+          "objeto"
+        ],
+        "$.contenido[].activo": [
+          "booleano"
+        ],
+        "$.contenido[].codigo": [
+          "texto"
+        ],
+        "$.contenido[].id": [
+          "numero:entero"
+        ],
+        "$.contenido[].nombre": [
+          "texto"
+        ],
+        "$.contenido[].orden": [
+          "numero:entero"
+        ],
+        "$.hayMas": [
+          "booleano"
+        ],
+        "$.pagina": [
+          "numero:entero"
+        ],
+        "$.tamano": [
+          "numero:entero"
+        ],
+        "$.totalElementos": [
+          "numero:entero"
+        ],
+        "$.totalPaginas": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "contenido",
+          "hayMas",
+          "pagina",
+          "tamano",
+          "totalElementos",
+          "totalPaginas"
+        ],
+        "$.contenido[]": [
+          "activo",
+          "codigo",
+          "id",
+          "nombre",
+          "orden"
+        ]
+      }
+    },
+    "accesos": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.contenido": [
+          "lista"
+        ],
+        "$.contenido[]": [
+          "objeto"
+        ],
+        "$.contenido[].activo": [
+          "booleano"
+        ],
+        "$.contenido[].codigo": [
+          "texto"
+        ],
+        "$.contenido[].id": [
+          "numero:entero"
+        ],
+        "$.contenido[].moduloId": [
+          "numero:entero"
+        ],
+        "$.contenido[].nombre": [
+          "texto"
+        ],
+        "$.contenido[].tipo": [
+          "texto"
+        ],
+        "$.hayMas": [
+          "booleano"
+        ],
+        "$.pagina": [
+          "numero:entero"
+        ],
+        "$.tamano": [
+          "numero:entero"
+        ],
+        "$.totalElementos": [
+          "numero:entero"
+        ],
+        "$.totalPaginas": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "contenido",
+          "hayMas",
+          "pagina",
+          "tamano",
+          "totalElementos",
+          "totalPaginas"
+        ],
+        "$.contenido[]": [
+          "activo",
+          "codigo",
+          "id",
+          "moduloId",
+          "nombre",
+          "tipo"
+        ]
+      }
+    },
+    "permisosDeLaSesion": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.anulacion_recibo": [
+          "lista"
+        ],
+        "$.anulacion_recibo[]": [
+          "texto"
+        ],
+        "$.avance_recaudacion": [
+          "lista"
+        ],
+        "$.avance_recaudacion[]": [
+          "texto"
+        ],
+        "$.caja_tasas": [
+          "lista"
+        ],
+        "$.caja_tasas[]": [
+          "texto"
+        ],
+        "$.caja_tributaria": [
+          "lista"
+        ],
+        "$.caja_tributaria[]": [
+          "texto"
+        ],
+        "$.cierre_caja": [
+          "lista"
+        ],
+        "$.cierre_caja[]": [
+          "texto"
+        ],
+        "$.duplicado_recibo": [
+          "lista"
+        ],
+        "$.duplicado_recibo[]": [
+          "texto"
+        ],
+        "$.recaudacion_area": [
+          "lista"
+        ],
+        "$.recaudacion_area[]": [
+          "texto"
+        ]
+      },
+      "campos": {
+        "$": [
+          "anulacion_recibo",
+          "avance_recaudacion",
+          "caja_tasas",
+          "caja_tributaria",
+          "cierre_caja",
+          "duplicado_recibo",
+          "recaudacion_area"
+        ]
+      }
+    },
+    "cajas": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.contenido": [
+          "lista"
+        ],
+        "$.contenido[]": [
+          "objeto"
+        ],
+        "$.contenido[].activa": [
+          "booleano"
+        ],
+        "$.contenido[].areaCodigo": [
+          "nulo",
+          "texto"
+        ],
+        "$.contenido[].areaNombre": [
+          "nulo",
+          "texto"
+        ],
+        "$.contenido[].codigo": [
+          "texto"
+        ],
+        "$.contenido[].nombre": [
+          "texto"
+        ],
+        "$.hayMas": [
+          "booleano"
+        ],
+        "$.pagina": [
+          "numero:entero"
+        ],
+        "$.tamano": [
+          "numero:entero"
+        ],
+        "$.totalElementos": [
+          "numero:entero"
+        ],
+        "$.totalPaginas": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "contenido",
+          "hayMas",
+          "pagina",
+          "tamano",
+          "totalElementos",
+          "totalPaginas"
+        ],
+        "$.contenido[]": [
+          "activa",
+          "areaCodigo",
+          "areaNombre",
+          "codigo",
+          "nombre"
+        ]
+      }
+    },
+    "recibos": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.contenido": [
+          "lista"
+        ],
+        "$.contenido[]": [
+          "objeto"
+        ],
+        "$.contenido[].documentoDelPagador": [
+          "nulo",
+          "texto:entero"
+        ],
+        "$.contenido[].duplicados": [
+          "numero:entero"
+        ],
+        "$.contenido[].emitidoEn": [
+          "texto:instante-utc-fraccion-6"
+        ],
+        "$.contenido[].estado": [
+          "texto"
+        ],
+        "$.contenido[].importe": [
+          "objeto"
+        ],
+        "$.contenido[].importe.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.contenido[].importe.importe": [
+          "texto:decimal-2"
+        ],
+        "$.contenido[].medioDePago": [
+          "texto"
+        ],
+        "$.contenido[].numero": [
+          "texto"
+        ],
+        "$.contenido[].pagador": [
+          "nulo",
+          "texto"
+        ],
+        "$.hayMas": [
+          "booleano"
+        ],
+        "$.pagina": [
+          "numero:entero"
+        ],
+        "$.tamano": [
+          "numero:entero"
+        ],
+        "$.totalElementos": [
+          "numero:entero"
+        ],
+        "$.totalPaginas": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "contenido",
+          "hayMas",
+          "pagina",
+          "tamano",
+          "totalElementos",
+          "totalPaginas"
+        ],
+        "$.contenido[]": [
+          "documentoDelPagador",
+          "duplicados",
+          "emitidoEn",
+          "estado",
+          "importe",
+          "medioDePago",
+          "numero",
+          "pagador"
+        ],
+        "$.contenido[].importe": [
+          "actualizadoA",
+          "importe"
+        ]
+      }
+    },
+    "duplicadoDeUnRecibo": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.anulacion": [
+          "nulo",
+          "objeto"
+        ],
+        "$.anulacion.fecha": [
+          "texto:fecha"
+        ],
+        "$.anulacion.motivo": [
+          "texto"
+        ],
+        "$.anulacion.usuario": [
+          "texto"
+        ],
+        "$.duplicados": [
+          "numero:entero"
+        ],
+        "$.estado": [
+          "texto"
+        ],
+        "$.recibo": [
+          "objeto"
+        ],
+        "$.recibo.beneficioDeclarado": [
+          "nulo"
+        ],
+        "$.recibo.cajero": [
+          "texto"
+        ],
+        "$.recibo.correlativo": [
+          "numero:entero"
+        ],
+        "$.recibo.emitidoEn": [
+          "texto:instante-utc-fraccion-6"
+        ],
+        "$.recibo.formaDePago": [
+          "texto"
+        ],
+        "$.recibo.lineas": [
+          "lista"
+        ],
+        "$.recibo.lineas[]": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].cantidad": [
+          "nulo",
+          "numero:entero"
+        ],
+        "$.recibo.lineas[].concepto": [
+          "texto"
+        ],
+        "$.recibo.lineas[].ejercicio": [
+          "nulo"
+        ],
+        "$.recibo.lineas[].gasto": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].gasto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].gasto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].insoluto": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].insoluto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].insoluto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].interes": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].interes.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].interes.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].monto": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].monto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].monto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].precioUnitario": [
+          "nulo",
+          "objeto"
+        ],
+        "$.recibo.lineas[].precioUnitario.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].precioUnitario.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].predioId": [
+          "nulo"
+        ],
+        "$.recibo.lineas[].reajuste": [
+          "objeto"
+        ],
+        "$.recibo.lineas[].reajuste.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.lineas[].reajuste.importe": [
+          "texto:decimal-2"
+        ],
+        "$.recibo.lineas[].tributo": [
+          "texto"
+        ],
+        "$.recibo.lineas[].vehiculoId": [
+          "nulo"
+        ],
+        "$.recibo.numero": [
+          "texto"
+        ],
+        "$.recibo.serie": [
+          "texto:entero"
+        ],
+        "$.recibo.tipoDePago": [
+          "texto"
+        ],
+        "$.recibo.total": [
+          "objeto"
+        ],
+        "$.recibo.total.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.recibo.total.importe": [
+          "texto:decimal-2"
+        ]
+      },
+      "campos": {
+        "$": [
+          "anulacion",
+          "duplicados",
+          "estado",
+          "recibo"
+        ],
+        "$.anulacion": [
+          "fecha",
+          "motivo",
+          "usuario"
+        ],
+        "$.recibo": [
+          "beneficioDeclarado",
+          "cajero",
+          "correlativo",
+          "emitidoEn",
+          "formaDePago",
+          "lineas",
+          "numero",
+          "serie",
+          "tipoDePago",
+          "total"
+        ],
+        "$.recibo.lineas[]": [
+          "cantidad",
+          "concepto",
+          "ejercicio",
+          "gasto",
+          "insoluto",
+          "interes",
+          "monto",
+          "precioUnitario",
+          "predioId",
+          "reajuste",
+          "tributo",
+          "vehiculoId"
+        ],
+        "$.recibo.lineas[].gasto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.lineas[].insoluto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.lineas[].interes": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.lineas[].monto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.lineas[].precioUnitario": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.lineas[].reajuste": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.recibo.total": [
+          "actualizadoA",
+          "importe"
+        ]
+      }
+    },
+    "turnoDelDia": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.cajero": [
+          "texto"
+        ],
+        "$.fecha": [
+          "texto:fecha"
+        ],
+        "$.situacion": [
+          "texto"
+        ],
+        "$.turnos": [
+          "lista"
+        ],
+        "$.turnos[]": [
+          "objeto"
+        ],
+        "$.turnos[].abiertoEn": [
+          "texto:instante-utc-fraccion-6"
+        ],
+        "$.turnos[].caja": [
+          "texto"
+        ],
+        "$.turnos[].cajaNombre": [
+          "texto"
+        ],
+        "$.turnos[].cajero": [
+          "texto"
+        ],
+        "$.turnos[].estadoDelTurno": [
+          "texto"
+        ],
+        "$.turnos[].fecha": [
+          "texto:fecha"
+        ],
+        "$.turnos[].turnoId": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "cajero",
+          "fecha",
+          "situacion",
+          "turnos"
+        ],
+        "$.turnos[]": [
+          "abiertoEn",
+          "caja",
+          "cajaNombre",
+          "cajero",
+          "estadoDelTurno",
+          "fecha",
+          "turnoId"
+        ]
+      }
+    },
+    "cierreDelTurno": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.arqueo": [
+          "objeto"
+        ],
+        "$.arqueo.anulado": [
+          "objeto"
+        ],
+        "$.arqueo.anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.anulado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.arqueo.cobrado": [
+          "objeto"
+        ],
+        "$.arqueo.cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.arqueo.cuadra": [
+          "nulo"
+        ],
+        "$.arqueo.declarado": [
+          "nulo"
+        ],
+        "$.arqueo.diferencia": [
+          "nulo"
+        ],
+        "$.arqueo.fecha": [
+          "texto:fecha"
+        ],
+        "$.arqueo.lineas": [
+          "lista"
+        ],
+        "$.arqueo.lineas[]": [
+          "objeto"
+        ],
+        "$.arqueo.lineas[].anulado": [
+          "objeto"
+        ],
+        "$.arqueo.lineas[].anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.lineas[].anulado.importe": [
+          "texto:decimal-2",
+          "texto:entero"
+        ],
+        "$.arqueo.lineas[].cobrado": [
+          "objeto"
+        ],
+        "$.arqueo.lineas[].cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.lineas[].cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.arqueo.lineas[].declarado": [
+          "nulo"
+        ],
+        "$.arqueo.lineas[].diferencia": [
+          "nulo"
+        ],
+        "$.arqueo.lineas[].formaDePago": [
+          "texto"
+        ],
+        "$.arqueo.lineas[].neto": [
+          "objeto"
+        ],
+        "$.arqueo.lineas[].neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.lineas[].neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.arqueo.neto": [
+          "objeto"
+        ],
+        "$.arqueo.neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.arqueo.neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.arqueo.recibosAnulados": [
+          "numero:entero"
+        ],
+        "$.arqueo.recibosEmitidos": [
+          "numero:entero"
+        ],
+        "$.arqueo.turnoId": [
+          "numero:entero"
+        ],
+        "$.cobradoConEvento": [
+          "nulo"
+        ],
+        "$.cobradoSinEvento": [
+          "nulo"
+        ],
+        "$.loQueImpideCerrar": [
+          "lista"
+        ],
+        "$.loQueImpideCerrar[]": [
+          "objeto"
+        ],
+        "$.loQueImpideCerrar[].creadoEn": [
+          "texto:instante-utc-fraccion-6"
+        ],
+        "$.loQueImpideCerrar[].destino": [
+          "texto"
+        ],
+        "$.loQueImpideCerrar[].entregadoEn": [
+          "nulo"
+        ],
+        "$.loQueImpideCerrar[].estado": [
+          "texto"
+        ],
+        "$.loQueImpideCerrar[].explicacion": [
+          "nulo"
+        ],
+        "$.loQueImpideCerrar[].intentos": [
+          "numero:entero"
+        ],
+        "$.loQueImpideCerrar[].pagoId": [
+          "texto:uuid"
+        ],
+        "$.loQueImpideCerrar[].reciboId": [
+          "numero:entero"
+        ],
+        "$.loQueImpideCerrar[].tipo": [
+          "texto"
+        ],
+        "$.loQueImpideCerrar[].turnoId": [
+          "numero:entero"
+        ],
+        "$.loQueImpideCerrar[].ultimoError": [
+          "texto"
+        ],
+        "$.puedeCerrar": [
+          "booleano"
+        ],
+        "$.turnoId": [
+          "numero:entero"
+        ]
+      },
+      "campos": {
+        "$": [
+          "arqueo",
+          "cobradoConEvento",
+          "cobradoSinEvento",
+          "loQueImpideCerrar",
+          "puedeCerrar",
+          "turnoId"
+        ],
+        "$.arqueo": [
+          "anulado",
+          "cobrado",
+          "cuadra",
+          "declarado",
+          "diferencia",
+          "fecha",
+          "lineas",
+          "neto",
+          "recibosAnulados",
+          "recibosEmitidos",
+          "turnoId"
+        ],
+        "$.arqueo.anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.arqueo.cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.arqueo.lineas[]": [
+          "anulado",
+          "cobrado",
+          "declarado",
+          "diferencia",
+          "formaDePago",
+          "neto"
+        ],
+        "$.arqueo.lineas[].anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.arqueo.lineas[].cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.arqueo.lineas[].neto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.arqueo.neto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.loQueImpideCerrar[]": [
+          "creadoEn",
+          "destino",
+          "entregadoEn",
+          "estado",
+          "explicacion",
+          "intentos",
+          "pagoId",
+          "reciboId",
+          "tipo",
+          "turnoId",
+          "ultimoError"
+        ]
+      }
+    },
+    "pagosSinEntregar": {
+      "formas": {
+        "$": [
+          "lista"
+        ],
+        "$[]": [
+          "objeto"
+        ],
+        "$[].creadoEn": [
+          "texto:instante-utc-fraccion-6"
+        ],
+        "$[].destino": [
+          "texto"
+        ],
+        "$[].entregadoEn": [
+          "nulo"
+        ],
+        "$[].estado": [
+          "texto"
+        ],
+        "$[].explicacion": [
+          "nulo"
+        ],
+        "$[].intentos": [
+          "numero:entero"
+        ],
+        "$[].pagoId": [
+          "texto:uuid"
+        ],
+        "$[].reciboId": [
+          "numero:entero"
+        ],
+        "$[].tipo": [
+          "texto"
+        ],
+        "$[].turnoId": [
+          "numero:entero"
+        ],
+        "$[].ultimoError": [
+          "texto"
+        ]
+      },
+      "campos": {
+        "$[]": [
+          "creadoEn",
+          "destino",
+          "entregadoEn",
+          "estado",
+          "explicacion",
+          "intentos",
+          "pagoId",
+          "reciboId",
+          "tipo",
+          "turnoId",
+          "ultimoError"
+        ]
+      }
+    },
+    "avanceDeRecaudacion": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.aLaFecha": [
+          "texto:fecha"
+        ],
+        "$.anulado": [
+          "objeto"
+        ],
+        "$.anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.anulado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.cobrado": [
+          "objeto"
+        ],
+        "$.cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.desde": [
+          "texto:fecha"
+        ],
+        "$.filas": [
+          "lista"
+        ],
+        "$.filas[]": [
+          "objeto"
+        ],
+        "$.filas[].anulado": [
+          "objeto"
+        ],
+        "$.filas[].anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].anulado.importe": [
+          "texto:decimal-2",
+          "texto:entero"
+        ],
+        "$.filas[].cobrado": [
+          "objeto"
+        ],
+        "$.filas[].cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.filas[].neto": [
+          "objeto"
+        ],
+        "$.filas[].neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.filas[].tributo": [
+          "texto"
+        ],
+        "$.hasta": [
+          "texto:fecha"
+        ],
+        "$.neto": [
+          "objeto"
+        ],
+        "$.neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.turno": [
+          "nulo"
+        ]
+      },
+      "campos": {
+        "$": [
+          "aLaFecha",
+          "anulado",
+          "cobrado",
+          "desde",
+          "filas",
+          "hasta",
+          "neto",
+          "turno"
+        ],
+        "$.anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.filas[]": [
+          "anulado",
+          "cobrado",
+          "neto",
+          "tributo"
+        ],
+        "$.filas[].anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.filas[].cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.filas[].neto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.neto": [
+          "actualizadoA",
+          "importe"
+        ]
+      }
+    },
+    "recaudacionPorArea": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.aLaFecha": [
+          "texto:fecha"
+        ],
+        "$.desde": [
+          "texto:fecha"
+        ],
+        "$.filas": [
+          "lista"
+        ],
+        "$.filas[]": [
+          "objeto"
+        ],
+        "$.filas[].anulado": [
+          "objeto"
+        ],
+        "$.filas[].anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].anulado.importe": [
+          "texto:decimal-2",
+          "texto:entero"
+        ],
+        "$.filas[].area": [
+          "nulo",
+          "texto"
+        ],
+        "$.filas[].areaNombre": [
+          "nulo",
+          "texto"
+        ],
+        "$.filas[].cobrado": [
+          "objeto"
+        ],
+        "$.filas[].cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.filas[].neto": [
+          "objeto"
+        ],
+        "$.filas[].neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.filas[].neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.filas[].partida": [
+          "nulo",
+          "texto"
+        ],
+        "$.filas[].tributo": [
+          "texto"
+        ],
+        "$.hasta": [
+          "texto:fecha"
+        ],
+        "$.neto": [
+          "objeto"
+        ],
+        "$.neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.netoSinPartida": [
+          "objeto"
+        ],
+        "$.netoSinPartida.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.netoSinPartida.importe": [
+          "texto:decimal-2"
+        ]
+      },
+      "campos": {
+        "$": [
+          "aLaFecha",
+          "desde",
+          "filas",
+          "hasta",
+          "neto",
+          "netoSinPartida"
+        ],
+        "$.filas[]": [
+          "anulado",
+          "area",
+          "areaNombre",
+          "cobrado",
+          "neto",
+          "partida",
+          "tributo"
+        ],
+        "$.filas[].anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.filas[].cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.filas[].neto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.neto": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.netoSinPartida": [
+          "actualizadoA",
+          "importe"
+        ]
+      }
+    },
+    "conciliacion": {
+      "formas": {
+        "$": [
+          "objeto"
+        ],
+        "$.cuadra": [
+          "booleano"
+        ],
+        "$.fecha": [
+          "texto:fecha"
+        ],
+        "$.lineas": [
+          "lista"
+        ],
+        "$.lineas[]": [
+          "objeto"
+        ],
+        "$.lineas[].anulado": [
+          "objeto"
+        ],
+        "$.lineas[].anulado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.lineas[].anulado.importe": [
+          "texto:decimal-2",
+          "texto:entero"
+        ],
+        "$.lineas[].anulados": [
+          "numero:entero"
+        ],
+        "$.lineas[].aplicadosEnElOrigen": [
+          "nulo"
+        ],
+        "$.lineas[].cobrado": [
+          "objeto"
+        ],
+        "$.lineas[].cobrado.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.lineas[].cobrado.importe": [
+          "texto:decimal-2"
+        ],
+        "$.lineas[].cuadra": [
+          "booleano"
+        ],
+        "$.lineas[].diferencia": [
+          "nulo"
+        ],
+        "$.lineas[].enTransito": [
+          "numero:entero"
+        ],
+        "$.lineas[].explicados": [
+          "numero:entero"
+        ],
+        "$.lineas[].importeAplicadoEnElOrigen": [
+          "nulo"
+        ],
+        "$.lineas[].muertos": [
+          "numero:entero"
+        ],
+        "$.lineas[].neto": [
+          "objeto"
+        ],
+        "$.lineas[].neto.actualizadoA": [
+          "texto:fecha"
+        ],
+        "$.lineas[].neto.importe": [
+          "texto:decimal-2"
+        ],
+        "$.lineas[].porQueNoSeSabe": [
+          "texto"
+        ],
+        "$.lineas[].rechazadosEnElOrigen": [
+          "nulo"
+        ],
+        "$.lineas[].recibidosEnElOrigen": [
+          "nulo"
+        ],
+        "$.lineas[].registrados": [
+          "numero:entero"
+        ],
+        "$.lineas[].sistema": [
+          "texto"
+        ]
+      },
+      "campos": {
+        "$": [
+          "cuadra",
+          "fecha",
+          "lineas"
+        ],
+        "$.lineas[]": [
+          "anulado",
+          "anulados",
+          "aplicadosEnElOrigen",
+          "cobrado",
+          "cuadra",
+          "diferencia",
+          "enTransito",
+          "explicados",
+          "importeAplicadoEnElOrigen",
+          "muertos",
+          "neto",
+          "porQueNoSeSabe",
+          "rechazadosEnElOrigen",
+          "recibidosEnElOrigen",
+          "registrados",
+          "sistema"
+        ],
+        "$.lineas[].anulado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.lineas[].cobrado": [
+          "actualizadoA",
+          "importe"
+        ],
+        "$.lineas[].neto": [
+          "actualizadoA",
+          "importe"
+        ]
+      }
+    }
+  }
+}

@@ -114,7 +114,7 @@ afterEach(() => {
   window.location.hash = '';
 });
 
-const EL_RECIBO = '001-000123';
+const EL_RECIBO = '001-0000123';
 
 async function abrir(hash: string) {
   window.location.hash = `#/${hash}`;

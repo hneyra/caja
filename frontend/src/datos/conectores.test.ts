@@ -19,6 +19,7 @@ import {
   CIERRE_MEDIDO,
   CONCILIACION_MEDIDA,
   DISTRIBUCION_MEDIDA,
+  DUPLICADO_DE_TASA_MEDIDO,
   DUPLICADO_MEDIDO,
   PAGOS_MEDIDOS,
   RECIBOS_MEDIDOS,
@@ -175,7 +176,23 @@ describe('lo que el reparto decide, con los casos que la captura planta', () => 
 
   it('los nulos del backend se marcan, y no se sustituyen', () => {
     expect(repartoDe('caja-tributaria').filas.get(0)?.[1]).toEqual(['C-02', 'Caja de mercado', '—', 'INACTIVA']);
-    expect(repartoDe('recaudacion-area').filas.get(0)?.[1]?.slice(0, 2)).toEqual(['—', '—']);
+    // La fila de lo que sale de una orden: sin area ni partida. Va primera porque cobro mas (#89).
+    expect(repartoDe('recaudacion-area').filas.get(0)?.[0]?.slice(0, 2)).toEqual(['—', '—']);
+  });
+
+  it('un importe que llega `"0"`, sin decimales, se pinta con los dos: es la forma medida (#89)', () => {
+    // El `anulado` de una forma de pago o de un tributo sin anulaciones: `Dinero.CERO`, escala cero.
+    expect(CIERRE_MEDIDO.arqueo.lineas[0]?.anulado.importe).toBe('0');
+    expect(repartoDe('cierre-caja').filas.get(0)?.[0]?.[2]).toBe('S/ 0.00');
+    expect(AVANCE_MEDIDO.filas[1]?.anulado.importe).toBe('0');
+    expect(repartoDe('avance-recaudacion').filas.get(0)?.[1]?.[2]).toBe('S/ 0.00');
+  });
+
+  it('un instante con sus seis decimales de segundo se dice en Lima igual que sin ellos (#89)', () => {
+    // Es la forma medida: `ISO_INSTANT` sobre un `timestamptz`. Los decimales no mueven el minuto.
+    expect(RECIBOS_MEDIDOS.contenido[0]?.emitidoEn).toBe('2026-03-16T02:04:00.557166Z');
+    expect(instanteEnLima('2026-03-16T02:04:59.999999Z')).toBe('15/03/2026 21:04');
+    expect(instanteEnLima('2026-03-16T02:04:00.557166Z')).toBe(instanteEnLima('2026-03-16T02:04:00Z'));
   });
 
   it('los totales se leen de la respuesta: no se suman las filas', () => {
@@ -184,7 +201,7 @@ describe('lo que el reparto decide, con los casos que la captura planta', () => 
     const distinto = { ...DISTRIBUCION_MEDIDA, neto: { importe: '999.99', actualizadoA: '2026-03-15' } };
     const reparto = CONECTORES['recaudacion-area']?.repartir(distinto as never);
     expect(reparto?.valores.get(coordenada(0, 3))).toBe(formatearImporte('999.99'));
-    expect(reparto?.valores.get(coordenada(0, 3))).not.toBe(formatearImporte('1962.60'));
+    expect(reparto?.valores.get(coordenada(0, 3))).not.toBe(formatearImporte(DISTRIBUCION_MEDIDA.neto.importe));
   });
 
   it('en el cierre, ni el arqueo espera al turno ni la conciliacion deja un hueco por la fecha', () => {
@@ -242,9 +259,9 @@ describe('«cierre-caja»: el turno del dia, y lo que nadie ha contado', () => {
 
   it('la hora de apertura se dice en Lima, desde el turno y no desde el arqueo (#104)', () => {
     const cierre = repartoDe('cierre-caja');
-    // `TURNO_MEDIDO` se abrio a las 02:30 UTC del 16, que en Lima son las 21:30 del 15. Cortar el
+    // `TURNO_MEDIDO` se abrio a las 02:03 UTC del 16, que en Lima son las 21:03 del 15. Cortar el
     // instante en UTC fecharia la apertura al dia siguiente del turno que arquea.
-    expect(cierre.valores.get(coordenada(0, 10)), 'abierto desde').toBe('15/03/2026 21:30');
+    expect(cierre.valores.get(coordenada(0, 10)), 'abierto desde').toBe('15/03/2026 21:03');
     expect(cierre.sinDato.has(coordenada(0, 10))).toBe(false);
   });
 
@@ -254,7 +271,7 @@ describe('«cierre-caja»: el turno del dia, y lo que nadie ha contado', () => {
       cierre: null,
       pagos: PAGOS_MEDIDOS,
     } as never);
-    expect(reparto?.valores.get(coordenada(0, 10))).toBe('15/03/2026 21:30');
+    expect(reparto?.valores.get(coordenada(0, 10))).toBe('15/03/2026 21:03');
     expect(reparto?.sinDato.has(coordenada(0, 10))).toBe(false);
     expect(reparto?.sinDato.get(coordenada(0, 0)), 'el resto sigue esperando al arqueo').toBeDefined();
   });
@@ -280,9 +297,9 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
     expect(deLoElegido?.enLaRuta).toBe('sujeto');
     expect(deLoElegido?.ruta).toBe('/recibos/{nro}/duplicado');
     // Sin `?formato=`: esa exige IMPRESION y registra la reimpresion (ADR-0040).
-    expect(rutaDelDuplicado('001-000123')).toBe('/recibos/001-000123/duplicado');
+    expect(rutaDelDuplicado('001-0000123')).toBe('/recibos/001-0000123/duplicado');
     // La clave de TanStack lleva el numero dentro: dos recibos no comparten cache.
-    expect(deLoElegido?.clave('001-000123')).not.toEqual(deLoElegido?.clave('001-000124'));
+    expect(deLoElegido?.clave('001-0000123')).not.toEqual(deLoElegido?.clave('001-0000124'));
   });
 
   it('sin elegir nada, los ocho campos del bloque dicen «sin elegir» y no hay lineas', () => {
@@ -296,9 +313,9 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
 
   it('elegida una fila, es la unica realzada y la lista NO cambia de ninguna otra forma', () => {
     const sinElegir = repartoDe('duplicado-recibo');
-    const conElegido = repartoDe('duplicado-recibo', '001-000124');
+    const conElegido = repartoDe('duplicado-recibo', '001-0000124');
     const realzadas = conElegido.tablas.get(TABLA_DE_RECIBOS)?.filas.filter((f) => f.realzada === true);
-    expect(realzadas?.map((f) => f.clave)).toEqual(['001-000124']);
+    expect(realzadas?.map((f) => f.clave)).toEqual(['001-0000124']);
     expect(sinElegir.tablas.get(TABLA_DE_RECIBOS)?.filas.some((f) => f.realzada === true)).toBe(false);
     // Y las celdas son las mismas: realzar no reescribe ni una.
     expect(conElegido.tablas.get(TABLA_DE_RECIBOS)?.filas.map((f) => f.celdas)).toEqual(
@@ -308,20 +325,20 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
 
   it('cada fila lleva el numero con que su boton pide el duplicado', () => {
     const filas = repartoDe('duplicado-recibo').tablas.get(TABLA_DE_RECIBOS)?.filas ?? [];
-    expect(filas.map((f) => f.datos?.get(NUMERO_DE_LA_FILA))).toEqual(['001-000123', '001-000124']);
+    expect(filas.map((f) => f.datos?.get(NUMERO_DE_LA_FILA))).toEqual(['001-0000123', '001-0000124']);
   });
 
   it('con el duplicado contestado, los ocho campos se llenan y ninguno se queda con la palabra', () => {
     const aporte = deLoElegido?.repartir({ paso: 'dato', respuesta: DUPLICADO_MEDIDO as never });
     const valores = aporte?.reparto.valores;
 
-    expect(valores?.get(coordenada(1, 0))).toBe('001-000123');
+    expect(valores?.get(coordenada(1, 0))).toBe('001-0000123');
     expect(valores?.get(coordenada(1, 1))).toBe('EMITIDO');
     expect(valores?.get(coordenada(1, 2))).toBe('Cajero de la prueba');
     expect(valores?.get(coordenada(1, 3))).toBe('EFECTIVO');
     expect(valores?.get(coordenada(1, 4))).toBe('15/03/2026 21:04');
     expect(valores?.get(coordenada(1, 5))).toBe('1');
-    expect(valores?.get(coordenada(1, 6))).toBe(formatearImporte('1842.60'));
+    expect(valores?.get(coordenada(1, 6))).toBe(formatearImporte('1722.60'));
     expect(valores?.get(coordenada(1, 7))).toBe(formatearFecha('2026-03-15'));
     expect(aporte?.reparto.sinDato.size).toBe(0);
     expect(aporte?.ausencia?.explicacion).toBe('');
@@ -339,21 +356,15 @@ describe('«duplicado-recibo»: elegir una fila y lo que su detalle llena', () =
   });
 
   it('las lineas se pintan, y los nulos de una que no es tasa se marcan en vez de valer cero', () => {
-    const lineas = deLoElegido?.repartir({ paso: 'dato', respuesta: DUPLICADO_MEDIDO as never }).reparto.tablas.get(
-      TABLA_DE_LINEAS,
-    );
-    expect(lineas?.filas).toHaveLength(2);
-    expect(lineas?.filas[0]?.celdas).toEqual([
-      'TASA-MER-01 · TASA',
-      '3',
-      formatearImporte('40.00'),
-      formatearImporte('120.00'),
+    // Dos recibos y no uno: una orden y una tasa no comparten papel —son dos rutas de cobro—, y asi
+    // es como se midieron (#89). La de la orden trae `cantidad` y `precioUnitario` NULOS.
+    const lineasDe = (duplicado: unknown) =>
+      deLoElegido?.repartir({ paso: 'dato', respuesta: duplicado as never }).reparto.tablas.get(TABLA_DE_LINEAS);
+    expect(lineasDe(DUPLICADO_MEDIDO)?.filas.map((f) => f.celdas)).toEqual([
+      ['RENTAS · PAGO', '—', '—', formatearImporte('1722.60')],
     ]);
-    expect(lineas?.filas[1]?.celdas).toEqual([
-      'TRIB-01 · PAGO',
-      '—',
-      '—',
-      formatearImporte('1722.60'),
+    expect(lineasDe(DUPLICADO_DE_TASA_MEDIDO)?.filas.map((f) => f.celdas)).toEqual([
+      ['TASA-MER-01 · TASA', '3', formatearImporte('40.00'), formatearImporte('120.00')],
     ]);
   });
 
@@ -437,11 +448,13 @@ describe('la conciliacion se pide con la fecha elegida, y no antes (#98)', () =>
 
   it('la linea del origen que NO contesto dice por que, y nunca un cero', () => {
     const filas = conLaConciliacion()?.reparto.filas.get(3);
+    // Por sistema, como las ordena el backend (#89): primero `mercados`, luego `rentas`.
+    expect(filas?.map((f) => f[0])).toEqual(['mercados', 'rentas']);
     // `rentas` contesto: su diferencia es una cifra formateada.
-    expect(filas?.[0]).toEqual(['rentas', '12', '1', '1', formatearImporte('1842.60'), formatearImporte('0.00'), 'NO CUADRA']);
+    expect(filas?.[1]).toEqual(['rentas', '12', '1', '1', formatearImporte('1842.60'), formatearImporte('0.00'), 'NO CUADRA']);
     // `mercados` no: en el sitio de la diferencia va el motivo, que es lo que el backend publica.
-    expect(filas?.[1]?.[5]).toBe('El sistema de origen no contesto: Connection refused');
-    expect(filas?.[1]?.[5]).not.toBe(formatearImporte('0.00'));
+    expect(filas?.[0]?.[5]).toBe('No se pudo preguntar que aplico «mercados» el 2026-03-15: «mercados» no contesta');
+    expect(filas?.[0]?.[5]).not.toBe(formatearImporte('0.00'));
   });
 
   it('el cuadre del dia es el que dice el backend, no uno deducido de las lineas', () => {
