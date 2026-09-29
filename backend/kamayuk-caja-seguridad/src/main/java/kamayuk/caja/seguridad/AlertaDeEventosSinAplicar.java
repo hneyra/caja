@@ -69,10 +69,13 @@ public interface AlertaDeEventosSinAplicar {
      * <p>No hay evento detras: son filas de antes de V5 que ninguno adopto. Desde aqui no se sabe
      * si cada una es una cuenta legitima que espera su primer evento o una huerfana que no lo
      * recibira nunca (ver {@link kamayuk.caja.seguridad.dominio.PlazoDeAdopcion}), asi que el aviso
-     * dice lo que hay que hacer en los dos casos: si existe en {@code identidad}, tocarla alli —la
-     * adopta el evento—; si no, nada: deja de conceder sola el dia que dice. Las que YA no conceden
-     * no se listan: no son un riesgo, y listarlas cada cinco minutos para siempre seria el canal
-     * que grita en lo corriente (#437). Van en cuenta, para que el aviso diga cuantas hay.
+     * dice lo que hay que hacer en los dos casos: si es el MISMO sujeto en {@code identidad} —no
+     * basta con la misma clave, que puede haberse reasignado—, tocarlo alli con un acto que lo
+     * nombre por esa clave —la adopta el evento—; si no, nada: deja de conceder sola el dia que
+     * dice, o en el acto si llega el alta del sujeto nuevo (ver {@code
+     * docs/40-datos/filas-sin-sujeto.md}). Las que YA no conceden no se listan: no son un riesgo, y
+     * listarlas cada cinco minutos para siempre seria el canal que grita en lo corriente (#437).
+     * Van en cuenta, para que el aviso diga cuantas hay.
      *
      * @param queConceden las que conceden hoy, ordenadas por tabla y clave; nunca vacia
      * @param queYaNoConceden cuantas habilitadas sin sujeto ya pasaron su plazo o no tienen fecha

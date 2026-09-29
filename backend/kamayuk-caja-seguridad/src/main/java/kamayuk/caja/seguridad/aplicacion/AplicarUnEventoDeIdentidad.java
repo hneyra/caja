@@ -96,13 +96,16 @@ import tools.jackson.databind.json.JsonMapper;
  * la migracion sea precisamente un renombrado tampoco se adopta —se busca por la clave que el
  * evento trae, la NUEVA, y la huerfana todavia tiene la vieja— asi que se inserta una fila nueva y
  * la huerfana queda intacta, un duplicado distinto del de un choque. Las dos son <a
- * href="https://github.com/hneyra/caja/issues/125">#125</a>, y se cierran SIN escribirlas: el
- * guardia deja de conceder por una fila sin sujeto pasado {@link PlazoDeAdopcion#DIAS} dias desde
- * {@code sin_sujeto_desde} (V6), y mientras tanto {@link #filasSinSujeto} las lista para que el
- * consumidor avise al responsable en cada corrida. Esta clase sigue siendo el unico escritor: la
- * forma de «arreglar» una fila legitima es que {@code identidad} la toque y su evento la adopte
- * aqui.) El acceso sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por
- * su cuenta.
+ * href="https://github.com/hneyra/caja/issues/125">#125</a>, y el plazo las cierra SIN escribirlas:
+ * el guardia deja de conceder por una fila sin sujeto pasado {@link PlazoDeAdopcion#DIAS} dias
+ * desde {@code sin_sujeto_desde} (V6), y mientras tanto {@link #filasSinSujeto} las lista para que
+ * el consumidor avise al responsable en cada corrida. La unica escritura que #125 anade es la de
+ * {@link #apartar}: cuando un alta —o el evento de un sujeto cuya alta ya se aparto— cae sobre una
+ * fila sin sujeto, esa fila deja de conceder en el acto: quien entra con su clave es un sujeto cuya
+ * alta no entro aqui, y no se sabe si la fila era suya. Esta clase sigue siendo el unico escritor:
+ * la forma de «arreglar» una fila legitima es que {@code identidad} publique un evento que la
+ * nombre por su clave y la adopte aqui; ver {@code docs/40-datos/filas-sin-sujeto.md}.) El acceso
+ * sigue casando por su {@code codigo}, porque cada sistema siembra su catalogo por su cuenta.
  *
  * <p>Un choque —la clave nueva ya es de otra fila— tiene dos desenlaces distintos segun de que lado
  * este la fila que cambia: ver {@code casarParaEscribir} y {@code casarParaNombrar}, y la tabla de
@@ -219,15 +222,66 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
     }
 
     /**
-     * Aparta un evento que no se podra aplicar nunca, en SU PROPIA transaccion.
+     * Aparta un evento que no se podra aplicar nunca, en SU PROPIA transaccion, y devuelve el
+     * motivo tal como quedo escrito, para que el aviso diga lo mismo que la fila.
      *
      * <p>Aparte porque la transaccion en la que fallo esta deshecha: marcar algo dentro de ella no
      * sirve de nada, el {@code commit} muere igual y se lleva la marca por delante (la leccion de
      * {@code RechazoDelPago}, P5D). Se guarda el <b>cuerpo entero</b>: lo que se aparta tiene que
      * poder aplicarse a mano el dia que alguien decida que hacer con el.
+     *
+     * <p><b>Y si el rechazo dice que una clave la trae un sujeto que no tiene fila aqui, la fila
+     * sin sujeto que la tiene deja de conceder AQUI MISMO</b> (seguimiento de #125). Un {@code
+     * *_DADO_DE_ALTA} cuya clave ya es de una fila sin sujeto —o cualquier evento de un sujeto cuya
+     * alta ya se aparto, que cae sobre una— dice que en {@code identidad} esa clave es de un sujeto
+     * cuya alta no entro en esta copia, y desde aqui no se sabe si esa fila era suya. La persona
+     * que entra con esa clave ({@code preferred_username}) es ese sujeto, y el guardia y la matriz
+     * casan por {@code u.cuenta}: dentro del plazo de {@link PlazoDeAdopcion}, la fila le
+     * concederia lo que tenga, sea de quien sea. Asi que en esta misma transaccion se le quita su
+     * {@code sin_sujeto_desde} —sin sujeto y sin fecha no concede nunca— y el motivo lo dice
+     * delante, para que no lo corte el tope de la columna. Falla cerrado: si la fila era de esa
+     * misma persona —un alta que llego tarde—, hoy no tiene remedio dentro de las reglas, y por eso
+     * el documento pide vaciar el buzon antes de desplegar esto. Solo si SIGUE sin sujeto: una fila
+     * que lo gano entre el rechazo y este apartado ya no es la de nadie mas, y no se toca. Es la
+     * unica escritura de {@code usuario} o {@code grupo} que no sale de un evento aplicado, y por
+     * eso vive aqui, en el unico escritor de la regla 12: la tabla sale de {@link Sujeto}, nunca de
+     * texto del evento. Lo razona {@code docs/40-datos/filas-sin-sujeto.md}.
+     *
+     * @return el motivo guardado en {@code identidad_evento_muerto}, entero (la columna lo recorta
+     *     a 400)
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void apartar(EventoDeIdentidadRecibido evento, String motivo) {
+    public String apartar(EventoDeIdentidadRecibido evento, NoSePuedeAplicar porQue) {
+        String mensaje = porQue.getMessage();
+        String motivo = mensaje == null ? porQue.getClass().getSimpleName() : mensaje;
+        FilaARetirar retirar = porQue.retirar;
+        if (retirar != null) {
+            int retiradas =
+                    jdbc().sql(
+                                    "UPDATE "
+                                            + retirar.sujeto().tabla
+                                            + " SET sin_sujeto_desde = NULL WHERE municipalidad_id = "
+                                            + MUNICIPALIDAD_ACTUAL
+                                            + " AND id = :id AND identidad_sujeto_id IS NULL")
+                            .param("id", retirar.id())
+                            .update();
+            motivo =
+                    (retiradas == 1
+                                    ? "La fila "
+                                            + retirar.id()
+                                            + " de "
+                                            + retirar.sujeto().tabla
+                                            + " DEJA DE CONCEDER DESDE YA (se le quito su"
+                                            + " sin_sujeto_desde): su clave la trae un sujeto sin"
+                                            + " fila aqui. "
+                                    : "La fila "
+                                            + retirar.id()
+                                            + " de "
+                                            + retirar.sujeto().tabla
+                                            + " ya tenia sujeto al apartar este evento y no se"
+                                            + " retiro. ")
+                            + motivo;
+        }
         jdbc().sql(
                         "INSERT INTO identidad_evento_muerto (municipalidad_id, evento_id,"
                                 + " secuencia, tipo, sujeto_id, cuerpo, huella, motivo, apartado_en)"
@@ -245,6 +299,7 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                 .param("motivo", recortar(motivo, 400))
                 .param("cuando", reloj.instant().atOffset(java.time.ZoneOffset.UTC))
                 .update();
+        return motivo;
     }
 
     /** Cuantos eventos hay apartados en la municipalidad del contexto. */
@@ -330,7 +385,8 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *
      * @param queConceden las que conceden hoy, por tabla y clave
      * @param queDejaronDeConcederHoy las que concedieron ayer por ultima vez (ronda 2): el WARN las
-     *     nombra solo el dia en que cruzan, no cada corrida para siempre
+     *     nombra en cada corrida del dia en que cruzan —cada cinco minutos, ese dia— y ningun otro,
+     *     no en cada corrida para siempre
      * @param queYaNoConceden cuantas habilitadas ya no conceden, las de hoy incluidas y las que no
      *     tienen fecha tambien
      */
@@ -591,7 +647,9 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      *       «jperez» renombrado en {@code identidad} y un «jperez» nuevo dado de alta despues:
      *       adoptar la huerfana le heredaria al nuevo los miembros y los permisos del anterior—. Se
      *       aparta con {@link NoSePuedeAplicar}, nombrando la fila y el sujeto nuevo, y el nuevo no
-     *       recibe nada hasta que alguien lo resuelva: falla cerrado.
+     *       recibe nada hasta que alguien lo resuelva: falla cerrado. <b>Y la huerfana deja de
+     *       conceder en ese mismo apartado</b> (seguimiento de #125, ver {@link #apartar}): quien
+     *       entra con su clave es el sujeto de ese alta, y no se sabe si la fila era suya.
      *   <li>Si ninguna de las dos, es nueva.
      * </ol>
      *
@@ -695,11 +753,11 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                                 + clave
                                 + "», y en esta copia ese nombre lo tiene la fila "
                                 + porClave.id()
-                                + " sin sujeto de `identidad`: una huerfana (de antes de V5, o la"
-                                + " que dejo un renombrado antes de #111) que ya tuvo su propia"
-                                + " alta. Un alta es un sujeto NUEVO, y adoptar esa fila le"
-                                + " heredaria sus miembros y sus permisos; no se aplica hasta"
-                                + " resolverlo a mano (#125)");
+                                + " sin sujeto de `identidad`. Adoptarla por la clave le daria lo"
+                                + " que esa fila tiene sin saber si era suya —un sujeto NUEVO con"
+                                + " la clave de otro, o un alta que llego tarde—; no se aplica hasta"
+                                + " resolverlo a mano (#125, docs/40-datos/filas-sin-sujeto.md)",
+                        new FilaARetirar(sujeto, porClave.id()));
             }
             exigirQueSuAltaNoSeHayaApartado(sujeto, identidadId, clave, porClave);
             return new Casamiento(porClave.id(), clave, null);
@@ -719,7 +777,10 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
      * apartada aqui nunca tuvo fila en esta copia: no puede ser el dueno de una fila sin sujeto. Se
      * aparta con {@link NoSePuedeAplicar}, que avisa al responsable nombrando la huerfana y el
      * sujeto, y todos sus eventos siguientes se apartaran igual hasta que alguien lo resuelva:
-     * falla cerrado.
+     * falla cerrado. Y la huerfana deja de conceder en ese apartado, por lo mismo que con el alta
+     * (ver {@link #apartar}): casi siempre ya lo hizo al apartarse el alta, pero si el alta se
+     * aparto por otro motivo —un cuerpo roto, o una clave que era de otro sujeto— y el sujeto se
+     * renombra despues a la clave de una huerfana, es este evento el que lo prueba.
      *
      * <p><b>Solo el alta APARTADA, no la APLICADA</b>, y esta medido. Antes de V5 este mismo
      * aplicador ya acusaba en {@code identidad_evento_aplicado} (V3, etapa 4), pero creaba la fila
@@ -755,10 +816,11 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
                             + huerfana.id()
                             + " sin sujeto de `identidad`. El alta de "
                             + identidadId
-                            + " se aparto aqui (identidad_evento_muerto): es un sujeto que nunca"
-                            + " tuvo fila en esta copia, no el dueno de esa huerfana, y adoptarla le"
-                            + " heredaria sus miembros y sus permisos. No se aplica hasta"
-                            + " resolverlo a mano (#125)");
+                            + " se aparto aqui: nunca tuvo fila en esta copia y no es el dueno de"
+                            + " esa huerfana; adoptarla le heredaria sus miembros y permisos. No se"
+                            + " aplica hasta resolverlo a mano (#125,"
+                            + " docs/40-datos/filas-sin-sujeto.md)",
+                    new FilaARetirar(sujeto, huerfana.id()));
         }
     }
 
@@ -987,18 +1049,41 @@ public class AplicarUnEventoDeIdentidad extends RepositorioJdbc {
         return texto.length() <= largo ? texto : texto.substring(0, largo);
     }
 
-    /** Ciertamente irrecuperable: mandarlo otra vez da lo mismo. Se aparta y se avisa. */
+    /**
+     * Ciertamente irrecuperable: mandarlo otra vez da lo mismo. Se aparta y se avisa.
+     *
+     * <p>Lleva, cuando el rechazo dice que una clave la trae un sujeto sin fila aqui, la fila sin
+     * sujeto que {@link #apartar} tiene que dejar de hacer conceder en la misma transaccion
+     * (seguimiento de #125). Solo la pone esta clase, con la tabla de {@link Sujeto}: el
+     * constructor que la recibe es privado, y quien la atrapa no la puede leer ni cambiar, solo
+     * entregarla a {@link #apartar}.
+     */
     public static final class NoSePuedeAplicar extends RuntimeException {
-        @java.io.Serial private static final long serialVersionUID = 1L;
+        @java.io.Serial private static final long serialVersionUID = 2L;
+
+        private final @Nullable FilaARetirar retirar;
 
         public NoSePuedeAplicar(String mensaje) {
             super(mensaje);
+            this.retirar = null;
         }
 
         public NoSePuedeAplicar(String mensaje, Throwable causa) {
             super(mensaje, causa);
+            this.retirar = null;
+        }
+
+        private NoSePuedeAplicar(String mensaje, FilaARetirar retirar) {
+            super(mensaje);
+            this.retirar = retirar;
         }
     }
+
+    /**
+     * La fila sin sujeto que un apartado deja de hacer conceder desde ya: su tabla —de {@link
+     * Sujeto}, nunca de texto que llego en el evento— y su {@code id} en esta copia.
+     */
+    private record FilaARetirar(Sujeto sujeto, long id) implements java.io.Serializable {}
 
     /**
      * Nombra algo que esta copia no tiene AUN. No se aparta y no se acusa: se vuelve a intentar.

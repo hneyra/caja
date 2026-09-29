@@ -3,6 +3,7 @@ package kamayuk.caja.seguridad.aplicacion;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.io.IOException;
 import java.sql.Connection;
@@ -16,16 +17,21 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kamayuk.caja.autorizacion.Privilegio;
 import kamayuk.caja.compartido.TenantContext;
 import kamayuk.caja.dominio.MunicipalidadId;
+import kamayuk.caja.dominio.ZonaHoraria;
 import kamayuk.caja.esquema.BaseDeDatosDePrueba;
 import kamayuk.caja.plataforma.tenant.TenantTransactionManager;
 import kamayuk.caja.seguridad.AlertaDeEventosSinAplicar;
 import kamayuk.caja.seguridad.EventoDeIdentidadRecibido;
 import kamayuk.caja.seguridad.FilaSinSujeto;
+import kamayuk.caja.seguridad.dominio.PlazoDeAdopcion;
 import kamayuk.caja.seguridad.infraestructura.ComprobadorDeAccesoJdbc;
+import kamayuk.caja.seguridad.infraestructura.LecturaDeLaCopiaLocalJdbc;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -55,6 +61,14 @@ import tools.jackson.databind.json.JsonMapper;
 class AplicarUnEventoDeIdentidadJdbcTest {
 
     private static final Instant AHORA = Instant.parse("2026-09-09T15:00:00Z");
+
+    /** El dia de {@link #AHORA} en Lima. */
+    private static final LocalDate HOY = LocalDate.of(2026, 9, 9);
+
+    /** Un {@code sin_sujeto_desde} de hace dos dias en Lima: dentro del plazo de #125. */
+    private static final String DENTRO_DEL_PLAZO =
+            ZonaHoraria.comienzoDelDia(HOY.minusDays(2)).toString();
+
     private static final String ACCESO_DE_CAJA = "caja_tributaria";
     private static final String HUELLA = "f".repeat(64);
 
@@ -902,12 +916,15 @@ class AplicarUnEventoDeIdentidadJdbcTest {
             TenantContext.fijar(new MunicipalidadId(municipalidadA));
             EventoDeIdentidadRecibido roto = evento(51, "USUARIO_DADO_DE_ALTA", "esto no es json");
 
-            Throwable nunca = catchThrowable(() -> aplicador.aplicar(roto));
-            assertThat(nunca).isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class);
+            AplicarUnEventoDeIdentidad.NoSePuedeAplicar nunca =
+                    catchThrowableOfType(
+                            AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class,
+                            () -> aplicador.aplicar(roto));
+            assertThat(nunca).isNotNull();
 
             long antes = aplicador.apartados();
-            aplicador.apartar(roto, nunca.getMessage());
-            aplicador.apartar(roto, nunca.getMessage());
+            aplicador.apartar(roto, nunca);
+            aplicador.apartar(roto, nunca);
 
             assertThat(aplicador.apartados()).isEqualTo(antes + 1);
             assertThat(
@@ -1276,11 +1293,184 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                     .isEqualTo("1|980");
         }
 
-        /** Lo que hace el consumidor con un NoSePuedeAplicar: apartarlo en su transaccion. */
-        private void apartarComoElConsumidor(EventoDeIdentidadRecibido alta) {
-            assertThatThrownBy(() -> aplicador.aplicar(alta))
-                    .isInstanceOf(AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class);
-            aplicador.apartar(alta, "alta sobre una huerfana");
+        // ------------------------------------------------ seguimiento de #125: la retirada
+
+        @Test
+        @DisplayName(
+                "seguimiento: la retirada solo alcanza a la fila que SIGUE sin sujeto al apartar:"
+                        + " la que lo gano entre el rechazo y el apartado ya es de ese sujeto")
+        void laRetiradaNoTocaUnaFilaQueYaTieneSujeto() throws SQLException {
+            ejecutarComoAdmin(
+                    "INSERT INTO usuario (municipalidad_id, cuenta, nombre, sin_sujeto_desde)"
+                            + " VALUES ("
+                            + municipalidadA
+                            + ", 'carreraR125', 'La huerfana', '"
+                            + DENTRO_DEL_PLAZO
+                            + "')");
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            EventoDeIdentidadRecibido alta =
+                    evento(340, "USUARIO_DADO_DE_ALTA", usuario(990, "carreraR125", true));
+            AplicarUnEventoDeIdentidad.NoSePuedeAplicar nunca =
+                    catchThrowableOfType(
+                            AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class,
+                            () -> aplicador.aplicar(alta));
+            assertThat(nunca).isNotNull();
+            // Entre el rechazo y el apartado la fila gana un sujeto —en produccion, otra pasada que
+            // la adopto—. Desde ahi ya no es una fila sin sujeto, y el apartado no puede tocarla.
+            ejecutarComoAdmin(
+                    "UPDATE usuario SET identidad_sujeto_id = 991 WHERE municipalidad_id = "
+                            + municipalidadA
+                            + " AND cuenta = 'carreraR125'");
+
+            String motivo = aplicador.apartar(alta, nunca);
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT identidad_sujeto_id || '|' || coalesce((sin_sujeto_desde"
+                                            + " = '"
+                                            + DENTRO_DEL_PLAZO
+                                            + "'::timestamptz)::text, 'sin fecha') FROM usuario"
+                                            + " WHERE municipalidad_id = {muni} AND cuenta ="
+                                            + " 'carreraR125'"))
+                    .as(
+                            "[la guarda `identidad_sujeto_id IS NULL`: sin ella, el apartado le"
+                                    + " quitaria la fecha a una fila que ya es de otro sujeto]")
+                    .isEqualTo("991|true");
+            assertThat(motivo)
+                    .as("y el motivo no dice que la retiro")
+                    .contains("ya tenia sujeto")
+                    .doesNotContain("DEJA DE CONCEDER");
+            assertThat(autorizaEl("carreraR125", HOY)).isFalse();
+        }
+
+        @Test
+        @DisplayName(
+                "seguimiento: el evento de un sujeto cuya alta se aparto por OTRO motivo, cuando"
+                        + " cae sobre una fila sin sujeto, tambien la deja sin conceder en el acto")
+        void elEventoDeUnSujetoApartadoRetiraLaHuerfanaQueNombra() throws SQLException {
+            long huerfana =
+                    insertarComoAdmin(
+                            "INSERT INTO usuario (municipalidad_id, cuenta, nombre,"
+                                    + " sin_sujeto_desde) VALUES ("
+                                    + municipalidadA
+                                    + ", 'huerfanaR125c', 'La huerfana', '"
+                                    + DENTRO_DEL_PLAZO
+                                    + "') RETURNING id");
+            darleLecturaComoAdmin(huerfana);
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+            assertThat(autorizaEl("huerfanaR125c", HOY))
+                    .as("precondicion: dentro de su plazo, la huerfana concede")
+                    .isTrue();
+            // El alta de 992 se aparta por un cuerpo al que le falta el nombre, no por un choque:
+            // no nombra a la huerfana, asi que no la retira...
+            apartarComoElConsumidor(
+                    evento(
+                            350,
+                            "USUARIO_DADO_DE_ALTA",
+                            "{\"usuarioId\":992,\"cuenta\":\"otraR125c\",\"habilitado\":true}"));
+            assertThat(autorizaEl("huerfanaR125c", HOY)).isTrue();
+
+            // ...y despues `identidad` nombra a 992 con la clave de la huerfana.
+            String motivo =
+                    apartarComoElConsumidor(
+                            evento(351, "USUARIO_MODIFICADO", usuario(992, "huerfanaR125c", true)));
+
+            assertThat(motivo)
+                    .startsWith("La fila " + huerfana + " de usuario DEJA DE CONCEDER DESDE YA");
+            assertThat(autorizaEl("huerfanaR125c", HOY))
+                    .as(
+                            "[992 nunca tuvo fila aqui y ahora entra con esa clave: la fila del"
+                                    + " anterior no le puede conceder ni un dia mas del plazo]")
+                    .isFalse();
+            assertThat(matrizDe("huerfanaR125c", HOY)).isEmpty();
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT coalesce(identidad_sujeto_id::text, 'sin sujeto') ||"
+                                            + " '|' || coalesce(sin_sujeto_desde::text, 'sin"
+                                            + " fecha') FROM usuario WHERE id = "
+                                            + huerfana))
+                    .isEqualTo("sin sujeto|sin fecha");
+        }
+
+        /**
+         * Lo que hace el consumidor con un NoSePuedeAplicar: apartarlo en su transaccion,
+         * entregandole el rechazo entero.
+         */
+        private String apartarComoElConsumidor(EventoDeIdentidadRecibido evento) {
+            AplicarUnEventoDeIdentidad.NoSePuedeAplicar nunca =
+                    catchThrowableOfType(
+                            AplicarUnEventoDeIdentidad.NoSePuedeAplicar.class,
+                            () -> aplicador.aplicar(evento));
+            assertThat(nunca).as("%s no se puede aplicar", evento.tipoPublicado()).isNotNull();
+            return aplicador.apartar(evento, nunca);
+        }
+    }
+
+    @Nested
+    @DisplayName("#125: la fila de antes de V5 cuyo PRIMER evento es un renombrado")
+    class ElRenombradoDeUnaFilaSinSujeto {
+
+        @Test
+        @DisplayName(
+                "no se adopta —entra otra fila con el sujeto—, se lista como sin sujeto, y la"
+                        + " clave vieja concede hasta el dia desde+7 incluido y deja de conceder el"
+                        + " octavo")
+        void concedeDentroDelPlazoYDejaDeConcederDespues() throws SQLException {
+            LocalDate desde = LocalDate.of(2026, 9, 2);
+            long vieja =
+                    insertarComoAdmin(
+                            "INSERT INTO usuario (municipalidad_id, cuenta, nombre,"
+                                    + " sin_sujeto_desde) VALUES ("
+                                    + municipalidadA
+                                    + ", 'viejaR125d', 'De antes de V5', '"
+                                    + ZonaHoraria.comienzoDelDia(desde)
+                                    + "') RETURNING id");
+            darleLecturaComoAdmin(vieja);
+            TenantContext.fijar(new MunicipalidadId(municipalidadA));
+
+            // El primer evento de su sujeto tras el despliegue: un renombrado. Trae la clave NUEVA
+            // y el id 993, que ninguna fila lleva; la vieja no casa ni por uno ni por otra.
+            assertThat(
+                            aplicador.aplicar(
+                                    evento(
+                                            360,
+                                            "USUARIO_MODIFICADO",
+                                            usuario(993, "nuevaR125d", true))))
+                    .isEqualTo(AplicarUnEventoDeIdentidad.Aplicacion.APLICADO);
+
+            assertThat(
+                            leerTexto(
+                                    municipalidadA,
+                                    "SELECT count(*) || '|' || max(identidad_sujeto_id) || '|' ||"
+                                            + " bool_or(id = "
+                                            + vieja
+                                            + ") FROM usuario WHERE municipalidad_id = {muni} AND"
+                                            + " cuenta = 'nuevaR125d'"))
+                    .as("[entra OTRA fila, con el sujeto 993; la vieja no se adopta]")
+                    .isEqualTo("1|993|false");
+            assertThat(aplicador.filasSinSujeto(desde.plusDays(PlazoDeAdopcion.DIAS)).queConceden())
+                    .as("[el aviso la lista: ningun evento la adopto]")
+                    .extracting(FilaSinSujeto::clave)
+                    .contains("viejaR125d");
+            assertThat(autorizaEl("viejaR125d", desde.plusDays(PlazoDeAdopcion.DIAS)))
+                    .as("[el dia desde+7 concede por ultima vez, como una vigencia]")
+                    .isTrue();
+            assertThat(matrizDe("viejaR125d", desde.plusDays(PlazoDeAdopcion.DIAS)))
+                    .containsEntry(ACCESO_DE_CAJA, Set.of(Privilegio.LECTURA));
+            assertThat(autorizaEl("viejaR125d", desde.plusDays(PlazoDeAdopcion.DIAS + 1L)))
+                    .as(
+                            "[y el octavo ya no: la clave vieja de un renombrado no puede conceder"
+                                    + " para siempre, que es el defecto de #111]")
+                    .isFalse();
+            assertThat(matrizDe("viejaR125d", desde.plusDays(PlazoDeAdopcion.DIAS + 1L))).isEmpty();
+            assertThat(
+                            aplicador
+                                    .filasSinSujeto(desde.plusDays(PlazoDeAdopcion.DIAS + 1L))
+                                    .queConceden())
+                    .extracting(FilaSinSujeto::clave)
+                    .doesNotContain("viejaR125d");
         }
     }
 
@@ -1389,6 +1579,52 @@ class AplicarUnEventoDeIdentidadJdbcTest {
                 Statement sentencia = admin.createStatement()) {
             sentencia.execute(sql);
         }
+    }
+
+    /** Un {@code INSERT … RETURNING id} como superusuario, como las filas de antes de V5. */
+    private static long insertarComoAdmin(String sql) throws SQLException {
+        try (Connection admin = base.conexionAdmin();
+                Statement sentencia = admin.createStatement();
+                ResultSet fila = sentencia.executeQuery(sql)) {
+            fila.next();
+            return fila.getLong(1);
+        }
+    }
+
+    /** Un permiso propio de LECTURA sobre la opcion de caja, para que la fila conceda algo. */
+    private static void darleLecturaComoAdmin(long usuario) throws SQLException {
+        ejecutarComoAdmin(
+                "INSERT INTO permiso (municipalidad_id, acceso_id, usuario_id, lectura,"
+                        + " usuario_registro) SELECT municipalidad_id, id, "
+                        + usuario
+                        + ", true, 'antes-de-v5' FROM acceso WHERE municipalidad_id = "
+                        + municipalidadA
+                        + " AND codigo = '"
+                        + ACCESO_DE_CAJA
+                        + "'");
+    }
+
+    /** El guardia de produccion, en una transaccion con el contexto que la prueba fijo. */
+    private static boolean autorizaEl(String cuenta, LocalDate fecha) {
+        ComprobadorDeAccesoJdbc comprobador =
+                new ComprobadorDeAccesoJdbc(JdbcClient.create(gestor.getDataSource()));
+        return Boolean.TRUE.equals(
+                new TransactionTemplate(gestor)
+                        .execute(
+                                estado ->
+                                        comprobador.autoriza(
+                                                cuenta,
+                                                ACCESO_DE_CAJA,
+                                                Privilegio.LECTURA,
+                                                fecha)));
+    }
+
+    /** La matriz de la sesion de produccion, con la misma transaccion que el guardia. */
+    private static Map<String, Set<Privilegio>> matrizDe(String cuenta, LocalDate fecha) {
+        LecturaDeLaCopiaLocalJdbc lectura =
+                new LecturaDeLaCopiaLocalJdbc(JdbcClient.create(gestor.getDataSource()));
+        return new TransactionTemplate(gestor)
+                .execute(estado -> lectura.permisosEfectivosDe(cuenta, fecha));
     }
 
     /**
